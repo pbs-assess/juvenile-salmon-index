@@ -8,7 +8,8 @@ library(RODBC); library(tidyverse); library(ggplot2)
 # databases
 pathHighSeas <- "R:/SCIENCE/IPES/DB/chinookIndex/HSSALMON.accdb" 
 conHS <- odbcConnectAccess2007(pathHighSeas)
-pathIPES <- "R:/SCIENCE/IPES/DB/IPES_TrawlDB_v19.07f_2017_18_19.mdb"
+# similar DB is saved in parent directory, but doesn't include GSI tables
+pathIPES <- "R:/SCIENCE/IPES/DB/chinookIndex/IPES_TrawlDB_v19.07f_2017_18_19_wGSI.mdb"
 conIPES <- odbcConnectAccess2007(pathIPES)
 
 # High seas bridge data - includes catch totals
@@ -138,7 +139,7 @@ saveRDS(bridgeOut, here::here("data", "mergedCatch.rds"))
 ## NEED TO MATCH TO STATION NUMBER ##
 
 # High seas Chinook GSI data
-chinDNAQry <- "SELECT FISH_NUMBER, STATION_INFO.REGION, BRIDGE.Year, 
+chinDNAQry <- "SELECT BIOLOGICAL.FISH_NUMBER, STATION_INFO.REGION, BRIDGE.Year, 
   BRIDGE.Month, BRIDGE.Day, BRIDGE.START_LAT, BRIDGE.START_LONG, 
   SPECIES, SHIP_FL, SHIP_TL, SHIP_WT, 
   [BATCH-DNA_NUMBER], STOCK_1, 
@@ -161,7 +162,6 @@ WHERE (((BIOLOGICAL.SPECIES)='chinook'));
 "
 chinHS <- sqlQuery(conHS, chinDNAQry)
 
-
 # IPES Chinook GSI
 dnaIPESQuery <- "SELECT DNA_STOCK_INDIVIDUAL_FISH_ID, BCSI_FISH_NUMBER, 
   BATCH_DNA_NUMBER, STOCK_1, STOCK_2, STOCK_3, STOCK_4, STOCK_5, REGION_1, 
@@ -171,8 +171,9 @@ FROM DNA_STOCK_INDIVIDUAL_FISH;
 "
 dnaIPES <- sqlQuery(conIPES, dnaIPESQuery)
 
-#Samples from specimen table have differently formatted fish identifier
-fishID <- dnaIPES$BCSI_FISH_NUMBER %>% 
+#Samples from specimen table have differently formatted fish identifier and 
+#include other species
+dnaIPES_ck <- dnaIPES$BCSI_FISH_NUMBER %>% 
   as.vector() %>% 
   strsplit(., split = "-") %>% 
   unlist() %>%
@@ -185,31 +186,16 @@ fishID <- dnaIPES$BCSI_FISH_NUMBER %>%
   filter(species %in% c("124", "124J", "124A")) 
 
 dnaIPESTrim <- dnaIPES %>% 
-  right_join(., fishID, by = "BCSI_FISH_NUMBER") 
-# %>% 
-#   mutate(
-#     year = as.numeric(
-#       case_when(
-#         survey == "201873" ~ "2018",
-#         survey == "201742" ~ "2017",
-#         TRUE ~ "NA")),
-#     survey = case_when(
-#       survey == "201873" ~ "73",
-#       survey == "201742" ~ "42",
-#       TRUE ~ "NA"),
-#     age = case_when(
-#       grepl("J", species) ~ "J",
-#       grepl("A", species) ~ "A"),
-#     # species = "124",
-#     UNIVERSAL_FISH_LABEL = prog %>% #matches identifier from next query
-#       paste(., year, sep = "") %>% 
-#       paste(., survey, event, species, sep = "-") %>% 
-#       paste(., paste("0", conFish, sep = ""), sep = "-")
-#     )
+  filter(BCSI_FISH_NUMBER %in% dnaIPES_ck$BCSI_FISH_NUMBER) 
   
 # IPES sampling key (necessary to match to station_id)
-chinIPESQuery <- "SELECT SPECIMEN.SPECIMEN_ID, BRIDGE_LOG.BRIDGE_LOG_ID, BRIDGE_LOG.EVENT_NUMBER, TRIP.TRIP_YEAR, TRIP.TRIP_START_DATE, SPECIMEN.CATCH_ID, SPECIMEN.FISH_ID, SPECIMEN.UNIVERSAL_FISH_LABEL, SPECIMEN.SPECIES_CODE, SPECIMEN.LENGTH, SPECIMEN.WEIGHT
-FROM TRIP INNER JOIN ((BRIDGE_LOG INNER JOIN CATCH ON BRIDGE_LOG.BRIDGE_LOG_ID = CATCH.BRIDGE_LOG_ID) INNER JOIN SPECIMEN ON CATCH.CATCH_ID = SPECIMEN.CATCH_ID) ON TRIP.TRIP_ID = BRIDGE_LOG.TRIP_ID
+chinIPESQuery <- "SELECT SPECIMEN.SPECIMEN_ID, BRIDGE_LOG.BRIDGE_LOG_ID, 
+  BRIDGE_LOG.EVENT_NUMBER, TRIP.TRIP_YEAR, TRIP.TRIP_START_DATE, 
+  SPECIMEN.CATCH_ID, SPECIMEN.FISH_ID, SPECIMEN.UNIVERSAL_FISH_LABEL, 
+  SPECIMEN.SPECIES_CODE, SPECIMEN.LENGTH, SPECIMEN.WEIGHT
+FROM TRIP INNER JOIN ((BRIDGE_LOG INNER JOIN CATCH ON BRIDGE_LOG.BRIDGE_LOG_ID 
+  = CATCH.BRIDGE_LOG_ID) INNER JOIN SPECIMEN ON CATCH.CATCH_ID = 
+  SPECIMEN.CATCH_ID) ON TRIP.TRIP_ID = BRIDGE_LOG.TRIP_ID
 WHERE (((SPECIMEN.SPECIES_CODE)='124'));"
 chinIPES <- sqlQuery(conIPES, chinIPESQuery) 
   
