@@ -132,7 +132,7 @@ bridgeOut <- dum %>%
   select(station_id, dataset, date, jday, month, year, start_time, start_lat, 
        start_long, xUTM_start, yUTM_start, dur, avg_bottom_depth, head_depth,
        ck_juv, ck_adult)
-saveRDS(bridgeOut, here::here("data", "mergedCatch.rds"))
+# saveRDS(bridgeOut, here::here("data", "mergedCatch.rds"))
 
 ## Clean genetics data ##
 
@@ -140,7 +140,7 @@ saveRDS(bridgeOut, here::here("data", "mergedCatch.rds"))
 
 # High seas Chinook GSI data
 chinDNAQry <- "SELECT BIOLOGICAL.FISH_NUMBER, STATION_INFO.REGION, BRIDGE.Year, 
-  BRIDGE.Month, BRIDGE.Day, BRIDGE.START_LAT, BRIDGE.START_LONG, 
+  BRIDGE.Month, BRIDGE.Day, BRIDGE.DATE, BRIDGE.START_LAT, BRIDGE.START_LONG, 
   SPECIES, SHIP_FL, SHIP_TL, SHIP_WT, 
   [BATCH-DNA_NUMBER], STOCK_1, 
   STOCK_2, STOCK_3, 
@@ -160,7 +160,14 @@ INNER JOIN ((BRIDGE INNER JOIN BIOLOGICAL_JUNCTION ON BRIDGE.STATION_ID =
   (STATION_INFO.STATION_ID = BIOLOGICAL_JUNCTION.STATION_ID)
 WHERE (((BIOLOGICAL.SPECIES)='chinook'));
 "
-chinHS <- sqlQuery(conHS, chinDNAQry)
+chinHS <- sqlQuery(conHS, chinDNAQry) %>% 
+  mutate(age = case_when(
+    SHIP_FL <= 300 ~ "J",
+    SHIP_FL > 300 ~ "A",
+    TRUE ~ "NA"),
+    MONTH = lubridate::month(DATE),
+    YEAR = lubridate::year(DATE),
+    jDay = lubridate::yday(DATE))
 
 # IPES Chinook GSI
 dnaIPESQuery <- "SELECT DNA_STOCK_INDIVIDUAL_FISH_ID, BCSI_FISH_NUMBER, 
@@ -200,7 +207,7 @@ WHERE (((SPECIMEN.SPECIES_CODE)='124'));"
 chinIPES <- sqlQuery(conIPES, chinIPESQuery) 
   
 # Join stock identification data, new survey ID and individual sampling data 
-dum <- chinIPES$UNIVERSAL_FISH_LABEL %>% 
+newID <- chinIPES$UNIVERSAL_FISH_LABEL %>% 
   as.vector() %>% 
   strsplit(., split = "-") %>% 
   unlist() %>%
@@ -209,7 +216,8 @@ dum <- chinIPES$UNIVERSAL_FISH_LABEL %>%
   data.frame() %>%
   dplyr::rename("prog" = X1, "survey" = X2, "event" = X3, "species" = X4,
                 "conFish" = X5) %>% 
-  mutate(UNIVERSAL_FISH_LABEL = chinIPES$UNIVERSAL_FISH_LABEL) %>% 
+  mutate(UNIVERSAL_FISH_LABEL = chinIPES$UNIVERSAL_FISH_LABEL,
+         SPECIMEN_ID = chinIPES$SPECIMEN_ID) %>% 
   filter(species %in% c("124", "124J", "124A")) %>% 
   mutate(
     year = as.numeric(
@@ -219,16 +227,22 @@ dum <- chinIPES$UNIVERSAL_FISH_LABEL %>%
         grepl("2019", prog) ~ "2019")),
     prog = case_when(
       grepl("IPES", prog) ~ "IPES",
-      TRUE ~ "NA"),
-    conFish = formatC(conFish, width = 3, format = "d", flag = "0")
-  )
+      TRUE ~ "NA")
+  ) %>%
+  group_by(survey, event, year) %>%
+  mutate(conFish = case_when(
+    # 2017 data are not consecutive but 2018/2019 are; adjust accordingly
+    as.character(year) == "2017" ~ row_number() %>%
+           formatC(., width = 3, format = "d", flag = "0"),
+    TRUE ~ formatC(conFish, width = 3, format = "d", flag = "0"))
+  ) %>%
+  ungroup()
 
-dum2 <- chinIPES %>% 
-  left_join(., dum, by = "UNIVERSAL_FISH_LABEL") %>% 
+dnaIPESOut <- chinIPES %>% 
+  left_join(., newID, by = c("SPECIMEN_ID", "UNIVERSAL_FISH_LABEL")) %>% 
   mutate(
+    #redefine age based on length (misentered by genetics lab)
     age = case_when(
-      grepl("J", species) ~ "J",
-      grepl("A", species) ~ "A",
       LENGTH <= 300 ~ "J",
       LENGTH > 300 ~ "A",
       TRUE ~ "NA"
@@ -236,8 +250,33 @@ dum2 <- chinIPES %>%
     species = paste("124", age, sep = ""),
     BCSI_FISH_NUMBER = paste(year, survey, sep = "") %>% 
       paste(prog, ., event, species, conFish, sep = "-")
-  )
+  ) %>% 
+  left_join(dnaIPESTrim, ., by = "BCSI_FISH_NUMBER") %>% 
+  #add lat longs and dates from ipes bridge data
+  left_join(., 
+            bridgeIPES %>% 
+              select(BRIDGE_LOG_ID, EVENT_DATE, START_LATITUDE, 
+                     START_LONGITUDE),
+            by = "BRIDGE_LOG_ID") %>% 
+  mutate(month = lubridate::month(EVENT_DATE),
+         year = lubridate::year(EVENT_DATE),
+         jday = lubridate::yday(EVENT_DATE)) %>% 
+  select(fish_number = BCSI_FISH_NUMBER, year, month, jday, 
+         start_lat = START_LATITUDE, start_long = START_LONGITUDE, age, 
+         ship_fl = LENGTH, BATCH_DNA_NUMBER:PROB_5) %>% 
+  rename_all(., tolower)
 
-dnaIPESOut <- dum2 %>% 
-  right_join(., dnaIPESTrim, by = "BCSI_FISH_NUMBER") 
+geneticsOut <- chinHS %>% 
+  
+
+missed <- dnaIPESOut %>%
+  filter(is.na(BRIDGE_LOG_ID)) %>%
+  select(BCSI_FISH_NUMBER) %>%
+  as.vector()
+
+bridgeIPES %>% 
+  select(BRIDGE_LOG_ID, START_LATITUDE, START_LONGITUDE) %>% 
+  right_join(., dnaIPESOut, by = "BRIDGE_LOG_ID") %>% 
+  filter(is.na(START_LATITUDE))
+glimpse() 
 
