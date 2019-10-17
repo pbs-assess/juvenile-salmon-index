@@ -7,5 +7,6 @@ inst/doc
 .Rhistory
 prediction-grids/*
 *.rds
+!data/*.rds
 *.pdf
 .DS_Store
