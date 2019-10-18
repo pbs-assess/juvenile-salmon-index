@@ -1,0 +1,364 @@
+"Stock.Code","Stock","Region2Name","Region1Name","Region3Name","Region1Code","Region2Code","Region3Code","FraserGroupCode"
+1,"Robertson","West Coast Hatchery","WCVI","WCVI",8,4,2,NA
+2,"Big_Qualicum","Lower Strait of Georgia/Lower GS Hatchery","ECVI","SOG",7,2,3,NA
+3,"Quinsam","Upper Strait of Georgia","ECVI","SOG",7,3,3,NA
+4,"Kitimat","North/Central BC","NOMN","North/Central BC",10,7,1,NA
+5,"Conuma","West Coast Hatchery","WCVI","WCVI",8,4,2,NA
+6,"Harrison","Fraser Late","LWFR-F","Fraser River",3,6,4,5
+7,"Nanaimo_SU","Lower Strait of Georgia/Lower GS Hatchery","ECVI","SOG",7,2,3,NA
+7,"NanaimoSu_BackX","Lower Strait of Georgia/Lower GS Hatchery","ECVI","SOG",7,2,3,NA
+8,"Quesnel","Fraser Early","MUFR","Fraser River",2,1,4,3
+9,"Nitinat","West Coast Hatchery","WCVI","WCVI",8,4,2,NA
+11,"Cowichan","Lower Strait of Georgia/Lower GS Hatchery","ECVI","SOG",7,2,3,NA
+15,"Bulkley_Early","North/Central BC","Skeena Bulkley","North/Central BC",21,7,1,NA
+16,"Kitwanga","North/Central BC","Skeena Mid","North/Central BC",22,7,1,NA
+18,"Chemainus","Lower Strait of Georgia/Lower GS Hatchery","ECVI","SOG",7,2,3,NA
+20,"Bear","North/Central BC","Skeena Upper","North/Central BC",19,7,1,NA
+21,"Ecstall","North/Central BC","Skeena Lower","North/Central BC",23,7,1,NA
+23,"Wannock_R","North/Central BC","NOMN","North/Central BC",10,7,1,NA
+24,"Kitsumkalum_R","North/Central BC","Skeena Lower","North/Central BC",23,7,1,NA
+25,"Kwinageese","North/Central BC","NASS","North/Central BC",11,7,1,NA
+27,"Atnarko","North/Central BC","NOMN","North/Central BC",10,7,1,NA
+29,"Stuart","Fraser Early","MUFR","Fraser River",2,1,4,3
+30,"Nechako","Fraser Early","MUFR","Fraser River",2,1,4,3
+31,"Kennedy","West Coast Wild","WCVI","WCVI",8,5,2,NA
+34,"Thornton","West Coast Hatchery","WCVI","WCVI",8,4,2,NA
+37,"Dome","Fraser Early","UPFR","Fraser River",1,1,4,2
+38,"Salmon@PG","Fraser Early","UPFR","Fraser River",1,1,4,2
+39,"Tete_Jaune","Fraser Early","UPFR","Fraser River",1,1,4,2
+40,"Chilliwack_F","Fraser Late","LWFR-F","Fraser River",3,6,4,5
+42,"Nicola","Fraser Early","LWTH","Fraser River",6,1,4,1
+43,"L_Shuswap","Fraser Early","SOTH","Fraser River",5,1,4,4
+44,"Chilko","Fraser Early","MUFR","Fraser River",2,1,4,3
+45,"Bridge","Fraser Early","MUFR","Fraser River",2,1,4,2
+46,"Coldwater","Fraser Early","LWTH","Fraser River",6,1,4,1
+47,"M_Shuswap","Fraser Early","SOTH","Fraser River",5,1,4,4
+49,"Bowron","Fraser Early","UPFR","Fraser River",1,1,4,2
+50,"Cottonwood","Fraser Early","MUFR","Fraser River",2,1,4,2
+51,"Sustut","North/Central BC","Skeena Upper","North/Central BC",19,7,1,NA
+53,"Damdochax","North/Central BC","NASS","North/Central BC",11,7,1,NA
+54,"Exchamsiks","North/Central BC","Skeena Lower","North/Central BC",23,7,1,NA
+55,"Kispiox","North/Central BC","Skeena Mid","North/Central BC",22,7,1,NA
+57,"Meziadin","North/Central BC","NASS","North/Central BC",11,7,1,NA
+58,"Owegee","North/Central BC","NASS","North/Central BC",11,7,1,NA
+59,"Seaskinnish","North/Central BC","NASS","North/Central BC",11,7,1,NA
+61,"Tseax","North/Central BC","NASS","North/Central BC",11,7,1,NA
+62,"Cranberry","North/Central BC","NASS","North/Central BC",11,7,1,NA
+64,"Goat","Fraser Early","UPFR","Fraser River",1,1,4,2
+65,"Holmes","Fraser Early","UPFR","Fraser River",1,1,4,2
+66,"Swift","Fraser Early","UPFR","Fraser River",1,1,4,2
+67,"Slim_C","Fraser Early","UPFR","Fraser River",1,1,4,2
+68,"Indianpoint","Fraser Early","UPFR","Fraser River",1,1,4,2
+69,"Willow_R","Fraser Early","UPFR","Fraser River",1,1,4,2
+70,"Raft_R","Fraser Early","NOTH","Fraser River",4,1,4,3
+71,"Elkin_R","Fraser Early","MUFR","Fraser River",2,1,4,2
+72,"Marble@NVI","West Coast Wild","WCVI","WCVI",8,5,2,NA
+73,"U_Chilcotin","Fraser Early","MUFR","Fraser River",2,1,4,2
+74,"Portage_C","Fraser Early","MUFR","Fraser River",2,1,4,3
+75,"Eagle_R","Fraser Early","SOTH","Fraser River",5,1,4,2
+76,"Salmon@SA","Fraser Early","SOTH","Fraser River",5,1,4,4
+78,"Snowbank","North/Central BC","NASS","North/Central BC",11,7,1,NA
+79,"Kincolith","North/Central BC","NASS","North/Central BC",11,7,1,NA
+80,"Teigen","North/Central BC","NASS","North/Central BC",11,7,1,NA
+81,"Spius","Fraser Early","LWTH","Fraser River",6,1,4,1
+82,"Deadman","Fraser Early","LWTH","Fraser River",6,1,4,1
+83,"Bonaparte","Fraser Early","LWTH","Fraser River",6,1,4,1
+84,"L_Adams","Fraser Early","SOTH","Fraser River",5,1,4,4
+85,"South_Thom","Fraser Early","SOTH","Fraser River",5,1,4,4
+86,"Cedar_Early","North/Central BC","Skeena Lower","North/Central BC",23,7,1,NA
+87,"Finn","Fraser Early","NOTH","Fraser River",4,1,4,2
+90,"Louis","Fraser Early","LWTH","Fraser River",6,1,4,1
+92,"Big_Silver","Fraser Early","LWFR-Sp","Fraser River",12,1,4,3
+93,"Birkenhead","Fraser Early","LWFR-Sp","Fraser River",12,1,4,2
+94,"Nimpkish","North/Central BC","ECVI","North/Central BC",7,7,1,NA
+95,"Little_R","Fraser Early","SOTH","Fraser River",5,1,4,4
+96,"Horsefly","Fraser Early","MUFR","Fraser River",2,1,4,2
+97,"L_Qualicum","Lower Strait of Georgia/Lower GS Hatchery","ECVI","SOG",7,2,3,NA
+98,"Fontoniko","Fraser Early","UPFR","Fraser River",1,1,4,2
+99,"L_Cariboo","Fraser Early","MUFR","Fraser River",2,1,4,3
+101,"Nanaimo_F","Lower Strait of Georgia/Lower GS Hatchery","ECVI","SOG",7,2,3,NA
+102,"L_Chilcoti","Fraser Early","MUFR","Fraser River",2,1,4,2
+103,"Westroad","Fraser Early","MUFR","Fraser River",2,1,4,2
+104,"Endako","Fraser Early","MUFR","Fraser River",2,1,4,2
+105,"Puntledge_Su","Lower Strait of Georgia/Lower GS Hatchery","ECVI","SOG",7,2,3,NA
+106,"Puntledge_F","Lower Strait of Georgia/Lower GS Hatchery","ECVI","SOG",7,2,3,NA
+107,"Sarita","West Coast Wild","WCVI","WCVI",8,5,2,NA
+108,"Nahmint","West Coast Wild","WCVI","WCVI",8,5,2,NA
+111,"Tranquil","West Coast Wild","WCVI","WCVI",8,5,2,NA
+112,"U_Atnarko","North/Central BC","NOMN","North/Central BC",10,7,1,NA
+116,"Kilbella","North/Central BC","NOMN","North/Central BC",10,7,1,NA
+117,"Chuckwalla","North/Central BC","NOMN","North/Central BC",10,7,1,NA
+118,"Kildala","North/Central BC","NOMN","North/Central BC",10,7,1,NA
+121,"Nusatsum","North/Central BC","NOMN","North/Central BC",10,7,1,NA
+135,"San_Juan","West Coast Wild","WCVI","WCVI",8,5,2,NA
+137,"L_Thompson","Fraser Early","SOTH","Fraser River",5,1,4,4
+142,"McGregor","Fraser Early","UPFR","Fraser River",1,1,4,2
+143,"Taseko","Fraser Early","MUFR","Fraser River",2,1,4,3
+145,"Clearwater","Fraser Early","NOTH","Fraser River",4,1,4,3
+147,"Klinaklini","North/Central BC","SOMN","North/Central BC",9,7,1,NA
+148,"Devereux","North/Central BC","SOMN","North/Central BC",9,7,1,NA
+183,"Bessette","Fraser Early","SOTH","Fraser River",5,1,4,1
+186,"Yakoun","North/Central BC","QCI","North/Central BC",14,7,1,NA
+187,"Unuk","Alaska South SE","Alaska","Alaska South SE",15,21,10,NA
+188,"King_Salmon","Alaska South SE","Alaska","Alaska South SE",15,21,10,NA
+189,"Little_Tatsam","North/Central BC","Taku","North/Central BC",17,7,1,NA
+190,"Chickamin","Alaska South SE","Alaska","Alaska South SE",15,21,10,NA
+191,"Little_Tahltan","North/Central BC","Stikine","North/Central BC",18,7,1,NA
+192,"Nahlin","North/Central BC","Taku","North/Central BC",17,7,1,NA
+194,"Chilliwac@Stav","Fraser Late","LWFR-F","Fraser River",3,6,4,5
+206,"Chilako","Fraser Early","MUFR","Fraser River",2,1,4,2
+208,"Barriere","Fraser Early","NOTH","Fraser River",4,1,4,3
+210,"Blue","Fraser Early","NOTH","Fraser River",4,1,4,2
+211,"Lemieux_Cr","Fraser Early","NOTH","Fraser River",4,1,4,1
+212,"Maria_Slough","Fraser Early","LWFR-Su","Fraser River",13,1,4,4
+214,"Neechanze","North/Central BC","NOMN","North/Central BC",10,7,1,NA
+215,"Ashlulm","North/Central BC","NOMN","North/Central BC",10,7,1,NA
+223,"U_Coldwat_SP","Fraser Early","LWTH","Fraser River",6,1,4,1
+224,"U_Spius_SP","Fraser Early","LWTH","Fraser River",6,1,4,1
+226,"N_Thom@Main","Fraser Early","NOTH","Fraser River",4,1,4,3
+228,"Kuzkwa_Cr","Fraser Early","MUFR","Fraser River",2,1,4,2
+231,"Kenneth_Cr","Fraser Early","UPFR","Fraser River",1,1,4,2
+235,"Duteau_Cr","Fraser Early","SOTH","Fraser River",5,1,4,1
+236,"Blanchard","North/Central BC","Alsek","North/Central BC",24,7,1,NA
+237,"Klukshu","North/Central BC","Alsek","North/Central BC",24,7,1,NA
+239,"Takhanne","North/Central BC","Alsek","North/Central BC",24,7,1,NA
+240,"Christina","North/Central BC","Stikine","North/Central BC",18,7,1,NA
+241,"Phillips","North/Central BC","SOMN","North/Central BC",9,7,1,NA
+242,"Burman","West Coast Wild","WCVI","WCVI",8,5,2,NA
+243,"Verrett","North/Central BC","Stikine","North/Central BC",18,7,1,NA
+246,"Morkill","Fraser Early","UPFR","Fraser River",1,1,4,2
+247,"Torpy","Fraser Early","UPFR","Fraser River",1,1,4,2
+248,"Shakes_Cr","North/Central BC","Stikine","North/Central BC",18,7,1,NA
+249,"U_Dean","North/Central BC","NOMN","North/Central BC",10,7,1,NA
+252,"Craig","North/Central BC","Stikine","North/Central BC",18,7,1,NA
+253,"Nakina","North/Central BC","Taku","North/Central BC",17,7,1,NA
+254,"U_Cariboo","Fraser Early","MUFR","Fraser River",2,1,4,2
+257,"Toquart","West Coast Hatchery","WCVI","WCVI",8,4,2,NA
+261,"Docee","North/Central BC","NOMN","North/Central BC",10,7,1,NA
+262,"Capilano","Fraser Late","SOMN","Fraser River",9,6,4,NA
+267,"Nanaimo_SP","Lower Strait of Georgia/Lower GS Hatchery","ECVI","SOG",7,2,3,NA
+270,"Seymour@Thomp","Fraser Early","SOTH","Fraser River",5,1,4,4
+271,"Gitnadoix","North/Central BC","Skeena Lower","North/Central BC",23,7,1,NA
+272,"Upper_Pitt","Fraser Early","LWFR-Sp","Fraser River",12,1,4,2
+314,"Gold_R","West Coast Hatchery","WCVI","WCVI",8,4,2,NA
+315,"Zeballos","West Coast Wild","WCVI","WCVI",8,5,2,NA
+326,"Dudidontu","North/Central BC","Taku","North/Central BC",17,7,1,NA
+331,"Tahsis","West Coast Wild","WCVI","WCVI",8,5,2,NA
+332,"Tlupana","West Coast Wild","WCVI","WCVI",8,5,2,NA
+336,"Johnny_Tashoot","North/Central BC","Stikine","North/Central BC",18,7,1,NA
+345,"Takia","North/Central BC","NOMN","North/Central BC",10,7,1,NA
+346,"Dean","North/Central BC","NOMN","North/Central BC",10,7,1,NA
+349,"Nazko","Fraser Early","MUFR","Fraser River",2,1,4,2
+350,"James","Fraser Early","UPFR","Fraser River",1,1,4,2
+351,"Baezaeko","Fraser Early","MUFR","Fraser River",2,1,4,2
+394,"Kitlope","North/Central BC","NOMN","North/Central BC",10,7,1,NA
+395,"Kateen","North/Central BC","NOMN","North/Central BC",10,7,1,NA
+396,"Slamgeesh","North/Central BC","Skeena Upper","North/Central BC",19,7,1,NA
+397,"Ishkheenickh","North/Central BC","NASS","North/Central BC",11,7,1,NA
+398,"Kiteen","North/Central BC","NASS","North/Central BC",11,7,1,NA
+399,"Suskwa","North/Central BC","Skeena Bulkley","North/Central BC",21,7,1,NA
+401,"Sweetin","North/Central BC","Skeena Mid","North/Central BC",22,7,1,NA
+402,"Thomas_Cr","North/Central BC","Skeena Lower","North/Central BC",23,7,1,NA
+405,"Sooke","West Coast Wild","WCVI","WCVI",8,5,2,NA
+414,"Tseta","North/Central BC","Taku","North/Central BC",17,7,1,NA
+415,"Cheakamus","Lower Strait of Georgia/Lower GS Hatchery","SOMN","SOG",9,2,3,NA
+418,"Kluatantan","North/Central BC","Skeena Upper","North/Central BC",19,7,1,NA
+422,"Kowatua","North/Central BC","Taku","North/Central BC",17,7,1,NA
+426,"BlueCr_UpPitt","Fraser Early","LWFR-Sp","Fraser River",12,1,4,2
+428,"Tahini","Alaska South SE","Alaska","Alaska South SE",15,21,10,NA
+429,"Situk","Alaska South SE","Alaska","Alaska South SE",15,21,10,NA
+430,"Big_Boulder_C","Alaska South SE","Alaska","Alaska South SE",15,21,10,NA
+437,"Hackett_r","North/Central BC","Taku","North/Central BC",17,7,1,NA
+459,"Megin_R","West Coast Wild","WCVI","WCVI",8,5,2,NA
+463,"Kaouk_R","West Coast Wild","WCVI","WCVI",8,5,2,NA
+464,"Moyeha_R","West Coast Wild","WCVI","WCVI",8,5,2,NA
+465,"Tatsamenie","North/Central BC","Taku","North/Central BC",17,7,1,NA
+466,"Kluayaz_Cr","North/Central BC","Skeena Upper","North/Central BC",19,7,1,NA
+469,"Goat_Cr","North/Central BC","Alsek","North/Central BC",24,7,1,NA
+470,"Cheakamus_F","Lower Strait of Georgia/Lower GS Hatchery","SOMN","SOG",9,2,3,NA
+476,"Tahltan_R","North/Central BC","Stikine","North/Central BC",18,7,1,NA
+478,"Kudwat_Cr","North/Central BC","Alsek","North/Central BC",24,7,1,NA
+479,"Squingula_R","North/Central BC","Skeena Upper","North/Central BC",19,7,1,NA
+480,"Kuldo_C","North/Central BC","Skeena Upper","North/Central BC",19,7,1,NA
+482,"Baker_Cr","Fraser Early","MUFR","Fraser River",2,1,4,2
+488,"Cheakamus_Su","Lower Strait of Georgia/Lower GS Hatchery","SOMN","SOG",9,2,3,NA
+492,"Otsi_Cr","North/Central BC","Skeena Upper","North/Central BC",19,7,1,NA
+493,"Shegunia_R","North/Central BC","Skeena Mid","North/Central BC",22,7,1,NA
+494,"Kitseguecla_R","North/Central BC","Skeena Mid","North/Central BC",22,7,1,NA
+495,"Sicintine_R","North/Central BC","Skeena Upper","North/Central BC",19,7,1,NA
+496,"Exstew_R","North/Central BC","Skeena Lower","North/Central BC",23,7,1,NA
+497,"Kasiks_R","North/Central BC","Skeena Lower","North/Central BC",23,7,1,NA
+498,"Zymogotitz_R","North/Central BC","Skeena Lower","North/Central BC",23,7,1,NA
+500,"Fiddler_Cr","North/Central BC","Skeena Lower","North/Central BC",23,7,1,NA
+501,"Nangeese_R","North/Central BC","Skeena Mid","North/Central BC",22,7,1,NA
+502,"Khyex_R","North/Central BC","Skeena Lower","North/Central BC",23,7,1,NA
+505,"Yeth_Cr","North/Central BC","Taku","North/Central BC",17,7,1,NA
+510,"Morice_R","North/Central BC","Skeena Bulkley","North/Central BC",21,7,1,NA
+511,"Babine","North/Central BC","Skeena Babine","North/Central BC",20,7,1,NA
+530,"Puntledge_BackX","Lower Strait of Georgia/Lower GS Hatchery","ECVI","SOG",7,2,3,NA
+534,"LowAtnarko","North/Central BC","NOMN","North/Central BC",10,7,1,NA
+5000,"Abernathy_Cr_Fa","Fall Cowlitz/Willamette","L_Columbia_R_fa","Columbia",5008,13,7,NA
+5001,"Abernathy_NFH_F","Fall Cowlitz/Willamette","L_Columbia_R_fa","Columbia",5008,13,7,NA
+5002,"Alsea_R","Oregon Coastal North Migrating","N_Oregon_Coast","Oregon/California",5015,19,9,NA
+5003,"American_Sp","Mid-Columbia Brights/Upriver Brights","Mid_and_Upper_Columbia_R_sp","Columbia",5010,15,7,NA
+5004,"Andrew_Cr","Alaska South SE","SSE_Alaska_Stikine_R","Alaska South SE",5024,21,10,NA
+5005,"Andrew_CryH","Alaska South SE","SSE_Alaska_Stikine_R","Alaska South SE",5024,21,10,NA
+5006,"Andrew_MedH","Alaska South SE","SSE_Alaska_Stikine_R","Alaska South SE",5024,21,10,NA
+5007,"Applegate_Cr","Oregon Coastal North Migrating","Rogue_R","Oregon/California",5019,19,9,NA
+5008,"Battle_Cr","Califormia","Central_Valley_fa","Oregon/California",5001,20,9,NA
+5009,"Bear_Cr_SuFa","South Puget Sound Fall","S_Puget_Sound","Puget Sound",5020,11,5,NA
+5010,"Bear_Valley_Cr","Snake Sp-Su","Snake_R_sp/su","Snake",5022,18,8,NA
+5011,"Big_Boulder_Cr","Alaska South SE","NSE_Alaska_Chilkat_R","Alaska South SE",5017,21,10,NA
+5012,"Big_Cr","Snake Sp-Su","Snake_R_sp/su","Snake",5022,18,8,NA
+5013,"Butte_Cr_f","Califormia","Central_Valley_fa","Oregon/California",5001,20,9,NA
+5014,"Butte_Cr_sp","Califormia","Central_Valley_sp","Oregon/California",5002,20,9,NA
+5015,"Camas_Cr","Snake Sp-Su","Snake_R_sp/su","Snake",5022,18,8,NA
+5016,"Capehorn_Cr","Snake Sp-Su","Snake_R_sp/su","Snake",5022,18,8,NA
+5017,"Catherine_Cr","Snake Sp-Su","Snake_R_sp/su","Snake",5022,18,8,NA
+5018,"Cedar_R_SuFa","South Puget Sound Fall","S_Puget_Sound","Puget Sound",5020,11,5,NA
+5019,"Chamberlain_Cr","Snake Sp-Su","Snake_R_sp/su","Snake",5022,18,8,NA
+5020,"Chetco_R","Oregon Coastal North Migrating","N_California/S_Oregon_Coast","Oregon/California",5012,19,9,NA
+5021,"Chickamin_H","Alaska South SE","SSE_Alaska","Alaska South SE",5023,21,10,NA
+5022,"Chickamin_R","Alaska South SE","SSE_Alaska","Alaska South SE",5023,21,10,NA
+5023,"Clear_Cr","Alaska South SE","SSE_Alaska","Alaska South SE",5023,21,10,NA
+5024,"Clear_Cr_H","South Puget Sound Fall","S_Puget_Sound","Puget Sound",5020,11,5,NA
+5025,"ClearwaterRFa","Snake Fall","Snake_R_fa","Snake",5021,17,8,NA
+5026,"Cole_Rivers_H","Oregon Coastal North Migrating","Rogue_R","Oregon/California",5019,19,9,NA
+5027,"Columbia_Rogue","Oregon Coastal North Migrating","Rogue_R","Oregon/California",5019,19,9,NA
+5028,"Coos_H","Oregon Coastal North Migrating","Mid_Oregon_Coast","Oregon/California",5011,19,9,NA
+5029,"Coquille_R","Oregon Coastal North Migrating","Mid_Oregon_Coast","Oregon/California",5011,19,9,NA
+5030,"Coweeman_R_Fa","Fall Cowlitz/Willamette","L_Columbia_R_fa","Columbia",5008,13,7,NA
+5031,"Cowlitz_H_fa","Fall Cowlitz/Willamette","L_Columbia_R_fa","Columbia",5008,13,7,NA
+5032,"Cowlitz_H_sp","Spring Cowlitz","L_Columbia_R_sp","Columbia",5009,14,7,NA
+5033,"Cripple_Cr","Alaska South SE","SSE_Alaska","Alaska South SE",5023,21,10,NA
+5034,"Crooked_Fk_Cr","Snake Sp-Su","Snake_R_sp/su","Snake",5022,18,8,NA
+5035,"Deer_Cr_sp","Califormia","Central_Valley_sp","Oregon/California",5002,20,9,NA
+5036,"Dungeness_R","Washington Coast/Juan de Fuca","Juan_de_Fuca","Coastal Washington",5006,12,6,NA
+5037,"Dworshak_H","Snake Sp-Su","Snake_R_sp/su","Snake",5022,18,8,NA
+5038,"Eel_R","Califormia","California_Coast","Oregon/California",5000,20,9,NA
+5039,"Elk_H","Oregon Coastal North Migrating","Mid_Oregon_Coast","Oregon/California",5011,19,9,NA
+5040,"Elochoman_R_Fa","Fall Cowlitz/Willamette","L_Columbia_R_fa","Columbia",5008,13,7,NA
+5041,"Entiat_H","Mid-Columbia Brights/Upriver Brights","Mid_and_Upper_Columbia_R_sp","Columbia",5010,15,7,NA
+5042,"Feather_H_fa","Califormia","Central_Valley_fa","Oregon/California",5001,20,9,NA
+5043,"Feather_H_sp","Califormia","Central_Valley_sp","Oregon/California",5002,20,9,NA
+5044,"Forks_Cr_H","Washington Coast/Juan de Fuca","Washington_Coast","Coastal Washington",5028,12,6,NA
+5045,"George_Adams_H","Hood Canal","Hood_Canal","Puget Sound",5005,8,5,NA
+5046,"Granite_Cr","Mid-Columbia Brights/Upriver Brights","Mid_and_Upper_Columbia_R_sp","Columbia",5010,15,7,NA
+5047,"Green_R_Fa","Fall Cowlitz/Willamette","L_Columbia_R_fa","Columbia",5008,13,7,NA
+5048,"Grovers_Cr_H","South Puget Sound Fall","S_Puget_Sound","Puget Sound",5020,11,5,NA
+5049,"Hamma_Hamma_R","Hood Canal","Hood_Canal","Puget Sound",5005,8,5,NA
+5050,"Hanford_Reach","Up-Columbia S-F","U_Columbia_R_su/fa","Columbia",5026,22,7,NA
+5051,"Hoh_R","Washington Coast/Juan de Fuca","Washington_Coast","Coastal Washington",5028,12,6,NA
+5052,"Hoko_H_Fa","Washington Coast/Juan de Fuca","Washington_Coast","Coastal Washington",5028,12,6,NA
+5053,"Humptulips_H","Washington Coast/Juan de Fuca","Washington_Coast","Coastal Washington",5028,12,6,NA
+5054,"Hupp_Sp_H","South Puget Sound Fall","S_Puget_Sound","Puget Sound",5020,11,5,NA
+5055,"Imnaha_R","Snake Sp-Su","Snake_R_sp/su","Snake",5022,18,8,NA
+5056,"John_Day_R","Mid-Columbia Brights/Upriver Brights","Mid_and_Upper_Columbia_R_sp","Columbia",5010,15,7,NA
+5057,"JohnDay_R","Mid-Columbia Brights/Upriver Brights","Mid_and_Upper_Columbia_R_sp","Columbia",5010,15,7,NA
+5058,"Johnson_Cr","Snake Sp-Su","Snake_R_sp/su","Snake",5022,18,8,NA
+5059,"Johnson_H","Snake Sp-Su","Snake_R_sp/su","Snake",5022,18,8,NA
+5060,"Kalama_H_sp","Spring Cowlitz","L_Columbia_R_sp","Columbia",5009,14,7,NA
+5061,"Keta_R","Alaska South SE","SSE_Alaska","Alaska South SE",5023,21,10,NA
+5062,"Kilchis_R","Oregon Coastal North Migrating","N_Oregon_Coast","Oregon/California",5015,19,9,NA
+5063,"King_Cr","Alaska South SE","SSE_Alaska","Alaska South SE",5023,21,10,NA
+5064,"King_Salmon_R","Alaska South SE","NSE_Alaska_King_Salmon_R","Alaska South SE",5018,21,10,NA
+5065,"Klamath_R_fa","Califormia","Klamath_R","Oregon/California",5007,20,9,NA
+5066,"Klickitat_H","Mid-Columbia Brights/Upriver Brights","Mid_and_Upper_Columbia_R_sp","Columbia",5010,15,7,NA
+5067,"Klickitat_R_sp","Mid-Columbia Brights/Upriver Brights","Mid_and_Upper_Columbia_R_sp","Columbia",5010,15,7,NA
+5068,"Klukshu_R","Alaska South SE","N_Gulf_Coast_Alsek_R","Alaska South SE",5013,21,10,NA
+5069,"Kowatua_Cr","Alaska South SE","Taku_R","Alaska South SE",5025,21,10,NA
+5070,"L_Deschutes_R","Mid-Columbia Brights/Upriver Brights","Deschutes_R_fa","Columbia",5004,15,7,NA
+5071,"L_Sauk_R","North Puget Sound Fall","N_Puget_Sound","Puget Sound",5016,10,5,NA
+5072,"L_Skagit_R_Fa","North Puget Sound Fall","N_Puget_Sound","Puget Sound",5016,10,5,NA
+5073,"L_Tahltan_R","Alaska South SE","U_Stikine_R","Alaska South SE",5027,21,10,NA
+5074,"L_Wh_Sal_H_SF","Up-Columbia S-F","U_Columbia_R_su/fa","Columbia",5026,22,7,NA
+5075,"L_Wh_Sal_H_sp","Mid-Columbia Brights/Upriver Brights","Mid_and_Upper_Columbia_R_sp","Columbia",5010,15,7,NA
+5076,"Lewis_H_sp","Spring Cowlitz","L_Columbia_R_sp","Columbia",5009,14,7,NA
+5077,"Lewis_R_f","Fall Cowlitz/Willamette","L_Columbia_R_fa","Columbia",5008,13,7,NA
+5078,"Lewis_R_LSu","Fall Cowlitz/Willamette","L_Columbia_R_fa","Columbia",5008,13,7,NA
+5079,"Lewis_R_Su","Fall Cowlitz/Willamette","L_Columbia_R_fa","Columbia",5008,13,7,NA
+5080,"LittleNaches_Sp","Mid-Columbia Brights/Upriver Brights","Mid_and_Upper_Columbia_R_sp","Columbia",5010,15,7,NA
+5081,"Lochsa_R","Snake Sp-Su","Snake_R_sp/su","Snake",5022,18,8,NA
+5082,"Lolo_Cr","Snake Sp-Su","Snake_R_sp/su","Snake",5022,18,8,NA
+5083,"LookingGlass_H","Snake Sp-Su","Snake_R_sp/su","Snake",5022,18,8,NA
+5084,"Lyons_Ferry_H","Snake Fall","Snake_R_fa","Snake",5021,17,8,NA
+5085,"Makah_H","Washington Coast/Juan de Fuca","Washington_Coast","Coastal Washington",5028,12,6,NA
+5086,"Marblemount_HSp","North Puget Sound Fall","N_Puget_Sound","Puget Sound",5016,10,5,NA
+5087,"Marblemount_Hsu","North Puget Sound Fall","N_Puget_Sound","Puget Sound",5016,10,5,NA
+5088,"Marion_Drain_Fa","Up-Columbia S-F","U_Columbia_R_su/fa","Columbia",5026,22,7,NA
+5089,"McKenzie_H","Fall Cowlitz/Willamette","Willamette_R","Columbia",5029,13,7,NA
+5090,"Methow_R","Up-Columbia S-F","U_Columbia_R_su/fa","Columbia",5026,22,7,NA
+5091,"Methow_R_sp","Mid-Columbia Brights/Upriver Brights","Mid_and_Upper_Columbia_R_sp","Columbia",5010,15,7,NA
+5092,"MF_JohnDay_R","Mid-Columbia Brights/Upriver Brights","Mid_and_Upper_Columbia_R_sp","Columbia",5010,15,7,NA
+5093,"Mill_Cr_sp","Califormia","Central_Valley_sp","Oregon/California",5002,20,9,NA
+5094,"Millicoma_R","Oregon Coastal North Migrating","Mid_Oregon_Coast","Oregon/California",5011,19,9,NA
+5095,"Minam_R","Snake Sp-Su","Snake_R_sp/su","Snake",5022,18,8,NA
+5096,"N_Santiam_H","Fall Cowlitz/Willamette","Willamette_R","Columbia",5029,13,7,NA
+5097,"Naches_Sp","Mid-Columbia Brights/Upriver Brights","Mid_and_Upper_Columbia_R_sp","Columbia",5010,15,7,NA
+5098,"Nahlin_R_U","Alaska South SE","Taku_R","Alaska South SE",5025,21,10,NA
+5099,"Nakina_R","Alaska South SE","Taku_R","Alaska South SE",5025,21,10,NA
+5100,"Necanicum_H","Oregon Coastal North Migrating","N_Oregon_Coast","Oregon/California",5015,19,9,NA
+5101,"Nehalem_R","Oregon Coastal North Migrating","N_Oregon_Coast","Oregon/California",5015,19,9,NA
+5102,"Nestucca_H","Oregon Coastal North Migrating","N_Oregon_Coast","Oregon/California",5015,19,9,NA
+5103,"Newsome_Cr","Snake Sp-Su","Snake_R_sp/su","Snake",5022,18,8,NA
+5104,"Nez_PerceT_H","Snake Fall","Snake_R_fa","Snake",5021,17,8,NA
+5105,"NF_JohnDay_R","Mid-Columbia Brights/Upriver Brights","Mid_and_Upper_Columbia_R_sp","Columbia",5010,15,7,NA
+5106,"NF_Nooksack_H","Puget Sound Spring","N_Puget_Sound","Puget Sound",5016,9,5,NA
+5107,"NF_Skokomish_F","Hood Canal","Hood_Canal","Puget Sound",5005,8,5,NA
+5108,"Pahsimeroi_R","Snake Sp-Su","Snake_R_sp/su","Snake",5022,18,8,NA
+5109,"Priest_Rapid_H","Up-Columbia S-F","U_Columbia_R_su/fa","Columbia",5026,22,7,NA
+5110,"Priest_Rapids_H","Up-Columbia S-F","U_Columbia_R_su/fa","Columbia",5026,22,7,NA
+5111,"Queets_R","Washington Coast/Juan de Fuca","Washington_Coast","Coastal Washington",5028,12,6,NA
+5112,"Quilayute_R","Washington Coast/Juan de Fuca","Washington_Coast","Coastal Washington",5028,12,6,NA
+5114,"Rapid_R_H","Snake Sp-Su","Snake_R_sp/su","Snake",5022,18,8,NA
+5115,"Red_R","Snake Sp-Su","Snake_R_sp/su","Snake",5022,18,8,NA
+5116,"Russian_R","Califormia","California_Coast","Oregon/California",5000,20,9,NA
+5117,"S_Coos_R","Oregon Coastal North Migrating","Mid_Oregon_Coast","Oregon/California",5011,19,9,NA
+5118,"S_Prairie_Cr","South Puget Sound Fall","S_Puget_Sound","Puget Sound",5020,11,5,NA
+5119,"S_Umpqua_H","Oregon Coastal North Migrating","Mid_Oregon_Coast","Oregon/California",5011,19,9,NA
+5120,"Sacramento_H","Califormia","Central_Valley_wi","Oregon/California",5003,20,9,NA
+5121,"Salmon_R_f","Oregon Coastal North Migrating","N_Oregon_Coast","Oregon/California",5015,19,9,NA
+5122,"Samish_H","North Puget Sound Fall","N_Puget_Sound","Puget Sound",5016,10,5,NA
+5123,"Sandy_R","Fall Cowlitz/Willamette","L_Columbia_R_fa","Columbia",5008,13,7,NA
+5124,"Sawtooth_H","Snake Sp-Su","Snake_R_sp/su","Snake",5022,18,8,NA
+5125,"Secesh_R","Snake Sp-Su","Snake_R_sp/su","Snake",5022,18,8,NA
+5126,"Shitike_H","Mid-Columbia Brights/Upriver Brights","Mid_and_Upper_Columbia_R_sp","Columbia",5010,15,7,NA
+5127,"Situk_R","Alaska South SE","N_Gulf_Coast_Situk_R","Alaska South SE",5014,21,10,NA
+5128,"Sixes_R","Oregon Coastal North Migrating","Mid_Oregon_Coast","Oregon/California",5011,19,9,NA
+5129,"Skagit_R","Puget Sound Spring","N_Puget_Sound","Puget Sound",5016,9,5,NA
+5130,"Skykomish_R","North Puget Sound Fall","N_Puget_Sound","Puget Sound",5016,10,5,NA
+5131,"Snoqualmie_R","North Puget Sound Fall","N_Puget_Sound","Puget Sound",5016,10,5,NA
+5132,"Sol_Duc_H","Washington Coast/Juan de Fuca","Washington_Coast","Coastal Washington",5028,12,6,NA
+5133,"Soos_H","South Puget Sound Fall","S_Puget_Sound","Puget Sound",5020,11,5,NA
+5134,"Stanislaus_R","Califormia","Central_Valley_fa","Oregon/California",5001,20,9,NA
+5135,"Tahini_R","Alaska South SE","NSE_Alaska_Chilkat_R","Alaska South SE",5017,21,10,NA
+5136,"Tatsatua_Cr","Alaska South SE","Taku_R","Alaska South SE",5025,21,10,NA
+5137,"Trask_R","Oregon Coastal North Migrating","N_Oregon_Coast","Oregon/California",5015,19,9,NA
+5138,"Trinity_H_sp","Califormia","Klamath_R","Oregon/California",5007,20,9,NA
+5139,"Tucannon_H","Snake Sp-Su","Snake_R_sp/su","Snake",5022,18,8,NA
+5140,"Tucannon_R","Snake Sp-Su","Snake_R_sp/su","Snake",5022,18,8,NA
+5141,"Twisp_R_Sp","Mid-Columbia Brights/Upriver Brights","Mid_and_Upper_Columbia_R_sp","Columbia",5010,15,7,NA
+5142,"U_Deschutes_R","Mid-Columbia Brights/Upriver Brights","Deschutes_R_fa","Columbia",5004,15,7,NA
+5143,"U_Nahlin_R","Alaska South SE","Taku_R","Alaska South SE",5025,21,10,NA
+5144,"U_Sauk_R","North Puget Sound Fall","N_Puget_Sound","Puget Sound",5016,10,5,NA
+5145,"U_Sauk_R_SpSu","North Puget Sound Fall","N_Puget_Sound","Puget Sound",5016,10,5,NA
+5146,"U_Skagit_R","North Puget Sound Fall","N_Puget_Sound","Puget Sound",5016,10,5,NA
+5148,"U_Yakima_H","Mid-Columbia Brights/Upriver Brights","Mid_and_Upper_Columbia_R_sp","Columbia",5010,15,7,NA
+5149,"Umatilla_H","Up-Columbia S-F","U_Columbia_R_su/fa","Columbia",5026,22,7,NA
+5150,"Umatilla_H_Fa","Up-Columbia S-F","U_Columbia_R_su/fa","Columbia",5026,22,7,NA
+5151,"Umpqua_H","Oregon Coastal North Migrating","Mid_Oregon_Coast","Oregon/California",5011,19,9,NA
+5152,"UW_H_SuFa","South Puget Sound Fall","S_Puget_Sound","Puget Sound",5020,11,5,NA
+5153,"Voights_H","South Puget Sound Fall","S_Puget_Sound","Puget Sound",5020,11,5,NA
+5154,"Warm_Springs_H","Mid-Columbia Brights/Upriver Brights","Mid_and_Upper_Columbia_R_sp","Columbia",5010,15,7,NA
+5155,"Washougal_R_Fa","Fall Cowlitz/Willamette","L_Columbia_R_fa","Columbia",5008,13,7,NA
+5156,"Wells_H","Up-Columbia S-F","U_Columbia_R_su/fa","Columbia",5026,22,7,NA
+5157,"Wenaha_R","Snake Sp-Su","Snake_R_sp/su","Snake",5022,18,8,NA
+5158,"Wenatchee_H_sp","Mid-Columbia Brights/Upriver Brights","Mid_and_Upper_Columbia_R_sp","Columbia",5010,15,7,NA
+5159,"Wenatchee_R_SF","Up-Columbia S-F","U_Columbia_R_su/fa","Columbia",5026,22,7,NA
+5160,"Wenatchee_R_sp","Mid-Columbia Brights/Upriver Brights","Mid_and_Upper_Columbia_R_sp","Columbia",5010,15,7,NA
+5161,"White_H","Puget Sound Spring","S_Puget_Sound","Puget Sound",5020,9,5,NA
+5162,"Wilson_R","Oregon Coastal North Migrating","N_Oregon_Coast","Oregon/California",5015,19,9,NA
+5163,"Yaquina_R","Oregon Coastal North Migrating","N_Oregon_Coast","Oregon/California",5015,19,9,NA
+5283,"Big_Cr_H_Col","Mid-Columbia Brights/Upriver Brights","Mid_Columbia_R_tule","Columbia",5030,15,7,NA
+5284,"Elochoman_H","Mid-Columbia Brights/Upriver Brights","Mid_Columbia_R_tule","Columbia",5030,15,7,NA
+5285,"Spring_Cr_col","Mid-Columbia Brights/Upriver Brights","Mid_Columbia_R_tule","Columbia",5030,15,7,NA

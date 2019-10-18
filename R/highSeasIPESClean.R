@@ -250,7 +250,7 @@ newID <- chinIPES$UNIVERSAL_FISH_LABEL %>%
 
 # Join genetics data to new identification numbers, then to associated bridge
 # data
-dnaIPESTrim2 <- chinIPES %>% 
+dnaIPESOut <- chinIPES %>% 
   left_join(., newID, by = c("SPECIMEN_ID", "UNIVERSAL_FISH_LABEL")) %>% 
   mutate(
     #redefine age based on length (misentered by genetics lab)
@@ -276,17 +276,9 @@ dnaIPESTrim2 <- chinIPES %>%
          dataset = "IPES") %>% 
   select(fish_number = BCSI_FISH_NUMBER, dataset, year, month, jday, 
          start_lat = START_LATITUDE, start_long = START_LONGITUDE, age, 
-         ship_fl = LENGTH, BATCH_DNA_NUMBER:PROB_5) %>% 
+         ship_fl = LENGTH, BATCH_DNA_NUMBER,  
+         STOCK_1:REGION_5, PROB_1:PROB_5) %>% 
   rename_all(., tolower)
-
-# Capitalize stock names to match high seas
-ups <- lapply(dnaIPESTrim2 %>% 
-         select(stock_1:region_5),  
-       toupper) %>% 
-  data.frame() 
-dnaIPESOut <- dnaIPESTrim2 %>%
-  select(-(stock_1:region_5)) %>% 
-  cbind(., ups)
 
 # Check whether there are fish with genetics data that are missing bridge data
 # missed <- dnaIPESOut %>%
@@ -295,9 +287,80 @@ dnaIPESOut <- dnaIPESTrim2 %>%
 #   as.vector()
 
 # Merge high seas and genetics data
-gsiOut <- dnaHSOut %>% 
-  rbind(., dnaIPESOut)
+gsiBind <- dnaHSOut %>% 
+  rbind(., dnaIPESOut) 
+
+# Convert lat/long to utm
+coords <- gsiBind %>% 
+  select(fish_number, yUTM_start = start_lat, xUTM_start = start_long)
+sp::coordinates(coords) <- c("xUTM_start", "yUTM_start")
+sp::proj4string(coords) <- sp::CRS("+proj=longlat +datum=WGS84")
+#SE Van Island extends into zone 10; not sure if that's an issue or not
+coords2 <- sp::spTransform(coords, sp::CRS("+proj=utm +zone=9 ellps=WGS84")) %>%
+  as(., "SpatialPoints")
+
+# Convert all stocks to upper case
+ups <- lapply(gsiBind %>% 
+                select(stock_1:region_5),  
+              toupper) %>% 
+  data.frame() 
+
+gsiOut <- gsiBind %>%
+  select(-(stock_1:region_5)) %>% 
+  cbind(., ups) %>% 
+  cbind(., coords2@coords) %>% 
+  select(fish_number:start_long, xUTM_start, yUTM_start, age:region_5)
 # saveRDS(gsiOut, here::here("data", "mergedGSI_highRes.rds"))
 
 
-unique(gsiOut$stock_5)
+# Add in regional roll ups that approximate what's used by CTC
+stockKey <- read.csv(here::here("data", "southCoastStockKey.csv")) %>% 
+  mutate(stock = toupper(Stock)) %>% 
+  select(stock, Region1Name, Region2Name, Region3Name)
+
+gReg <- gsiOut %>% 
+  select(fish_number, region_1:region_5) %>% 
+  gather(key = "region_rank", value = "region", -fish_number) %>% 
+  arrange(fish_number)
+gStocks <- gsiOut %>% 
+  select(fish_number, stock_1:stock_5) %>% 
+  gather(key = "stock_rank", value = "stock", -fish_number) %>% 
+  arrange(fish_number)
+
+gsiLong <- gsiOut %>% 
+  select(-(stock_1:region_5)) %>% 
+  gather(key = "prob_rank", value = "prob", prob_1:prob_5) %>%
+  arrange(fish_number) %>% 
+  cbind(., gStocks[, -1], gReg[, -1]) %>% 
+  filter(!is.na(stock)) %>% #removes low probability rows that had no assignments
+  left_join(., stockKey, by = "stock")
+
+# export distinct stocks to make key in makeStockKey.R
+stockList <- gsiLong %>% 
+  select(stock, region:Region3Name) %>% 
+  distinct()
+saveRDS(stockList, here::here("data", "tempStockList.rds"))
+
+
+a <- structure(list(ID = 1L, 
+                    DateRange1Start = structure(7305, class = "Date"), 
+                    DateRange1End = structure(7307, class = "Date"), 
+                    Value1 = 4.4, 
+                    DateRange2Start = structure(7793, class = "Date"),
+                    DateRange2End = structure(7856, class = "Date"), 
+                    Value2 = 6.2, 
+                    DateRange3Start = structure(9255, class = "Date"), 
+                    DateRange3End = structure(9653, class = "Date"), 
+                    Value3 = 3.3),
+               row.names = c(NA, -1L), class = c("tbl_df", "tbl", "data.frame"))
+(names(a) <- sub("(\\d)(\\w*)", "\\2_\\1", names(a)))
+
+tidyr::pivot_longer(a, 
+             cols = -ID, 
+             names_to = c(".value", "group"),
+             # names_prefix = "DateRange",
+             names_sep = "_")
+
+gsiOut %>% 
+  pivot_longer(.,
+               cols = prob_1:)
