@@ -12,6 +12,9 @@ conHS <- odbcConnectAccess2007(pathHighSeas)
 pathIPES <- "R:/SCIENCE/IPES/DB/chinookIndex/IPES_TrawlDB_v19.07f_2017_18_19_wGSI.mdb"
 conIPES <- odbcConnectAccess2007(pathIPES)
 
+
+##### MERGE CATCH DATA #####
+
 # High seas bridge data - includes catch totals
 bridgeQry <- "SELECT BRIDGE.STATION_ID, BRIDGE.EVENT, STATION_INFO.REGION, 
   BRIDGE.STATION, BRIDGE.YEAR, BRIDGE.MONTH, BRIDGE.DAY, BRIDGE.DATE, 
@@ -59,7 +62,6 @@ trimChinIPES <- sqlQuery(conIPES, chinIPESQuery) %>%
   select(BRIDGE_LOG_ID, ADULT_CATCH = CATCH_COUNT, 
          JUV_CATCH = JUVENILE_CATCH_COUNT)
 
-
 ## Clean IPES data 
 # add catches to bridge; trim to match high seas
 trimBridgeIPES <- bridgeIPES %>% 
@@ -92,10 +94,11 @@ ggplot(bridgeHS) +
 
 
 ## Clean High Seas data 
-# retain only regions that overlap
+# retain only regions that overlap (subjective)
 keepRegions <- c("INSIDE VANCOUVER ISLAND", "JOHNSTONE STRAIT", "QUEEN 
                  CHARLOTTE SOUND", "QUEEN CHARLOTTE STRAIT", "VANCOUVER ISLAND")
-# exclude tows based on information in comments of access database
+# exclude tows based on information in comments of access database (see bridge 
+# table comments for details)
 excludeTows <- read.csv(here::here("data", "excludeTows.csv")) %>% 
   filter(EXCLUDE == "Y") 
 
@@ -107,7 +110,6 @@ trimBridgeHS <- bridgeHS %>%
          DATASET = "HighSeas") %>%
   replace_na(list(CK_ADULT = 0, CK_JUV = 0)) %>% 
   select(STATION_ID, DATASET, DATE, START_TIME, START_LAT, START_LONG, 
-         # END_LAT, END_LONG,
          DUR, AVG_BOTTOM_DEPTH, HEAD_DEPTH, CK_JUV, CK_ADULT)
 
 ## Merge both bridge datasets
@@ -134,9 +136,8 @@ bridgeOut <- dum %>%
        ck_juv, ck_adult)
 # saveRDS(bridgeOut, here::here("data", "mergedCatch.rds"))
 
-## Clean genetics data ##
 
-## NEED TO MATCH TO STATION NUMBER ##
+##### MERGE GENETICS DATA #####
 
 # High seas Chinook GSI data
 chinDNAQry <- "SELECT BIOLOGICAL.FISH_NUMBER, STATION_INFO.REGION, BRIDGE.Year, 
@@ -160,14 +161,21 @@ INNER JOIN ((BRIDGE INNER JOIN BIOLOGICAL_JUNCTION ON BRIDGE.STATION_ID =
   (STATION_INFO.STATION_ID = BIOLOGICAL_JUNCTION.STATION_ID)
 WHERE (((BIOLOGICAL.SPECIES)='chinook'));
 "
-chinHS <- sqlQuery(conHS, chinDNAQry) %>% 
-  mutate(age = case_when(
-    SHIP_FL <= 300 ~ "J",
-    SHIP_FL > 300 ~ "A",
-    TRUE ~ "NA"),
-    MONTH = lubridate::month(DATE),
-    YEAR = lubridate::year(DATE),
-    jDay = lubridate::yday(DATE))
+dnaHS <- sqlQuery(conHS, chinDNAQry) 
+dnaHSOut <- dnaHS %>% 
+  mutate(
+    age = case_when(
+      SHIP_FL <= 300 ~ "J",
+      SHIP_FL > 300 ~ "A",
+      TRUE ~ "NA"),
+    jDay = lubridate::yday(DATE),
+    month2 = lubridate::month(DATE),
+    dataset = "HighSeas"
+  ) %>% 
+  rename_all(., tolower) %>% 
+  select(fish_number, dataset, year, month = month2, jday, start_lat, 
+         start_long, age, ship_fl, batch_dna_number = `batch-dna_number`, 
+         stock_1:prob_5) 
 
 # IPES Chinook GSI
 dnaIPESQuery <- "SELECT DNA_STOCK_INDIVIDUAL_FISH_ID, BCSI_FISH_NUMBER, 
@@ -178,8 +186,8 @@ FROM DNA_STOCK_INDIVIDUAL_FISH;
 "
 dnaIPES <- sqlQuery(conIPES, dnaIPESQuery)
 
-#Samples from specimen table have differently formatted fish identifier and 
-#include other species
+#Samples from IPES specimen table have differently formatted fish identifier and 
+#include non-Chinook species
 dnaIPES_ck <- dnaIPES$BCSI_FISH_NUMBER %>% 
   as.vector() %>% 
   strsplit(., split = "-") %>% 
@@ -206,7 +214,8 @@ FROM TRIP INNER JOIN ((BRIDGE_LOG INNER JOIN CATCH ON BRIDGE_LOG.BRIDGE_LOG_ID
 WHERE (((SPECIMEN.SPECIES_CODE)='124'));"
 chinIPES <- sqlQuery(conIPES, chinIPESQuery) 
   
-# Join stock identification data, new survey ID and individual sampling data 
+# Create new identification number that can be used to join genetics data to 
+# bridge data (bug in the database identification table)
 newID <- chinIPES$UNIVERSAL_FISH_LABEL %>% 
   as.vector() %>% 
   strsplit(., split = "-") %>% 
@@ -231,14 +240,17 @@ newID <- chinIPES$UNIVERSAL_FISH_LABEL %>%
   ) %>%
   group_by(survey, event, year) %>%
   mutate(conFish = case_when(
-    # 2017 data are not consecutive but 2018/2019 are; adjust accordingly
+    # 2017 data are not consecutive but 2018/2019 are; for 2017 make consecutive
+    # for both pad with 0s
     as.character(year) == "2017" ~ row_number() %>%
            formatC(., width = 3, format = "d", flag = "0"),
     TRUE ~ formatC(conFish, width = 3, format = "d", flag = "0"))
   ) %>%
   ungroup()
 
-dnaIPESOut <- chinIPES %>% 
+# Join genetics data to new identification numbers, then to associated bridge
+# data
+dnaIPESTrim2 <- chinIPES %>% 
   left_join(., newID, by = c("SPECIMEN_ID", "UNIVERSAL_FISH_LABEL")) %>% 
   mutate(
     #redefine age based on length (misentered by genetics lab)
@@ -260,23 +272,32 @@ dnaIPESOut <- chinIPES %>%
             by = "BRIDGE_LOG_ID") %>% 
   mutate(month = lubridate::month(EVENT_DATE),
          year = lubridate::year(EVENT_DATE),
-         jday = lubridate::yday(EVENT_DATE)) %>% 
-  select(fish_number = BCSI_FISH_NUMBER, year, month, jday, 
+         jday = lubridate::yday(EVENT_DATE), 
+         dataset = "IPES") %>% 
+  select(fish_number = BCSI_FISH_NUMBER, dataset, year, month, jday, 
          start_lat = START_LATITUDE, start_long = START_LONGITUDE, age, 
          ship_fl = LENGTH, BATCH_DNA_NUMBER:PROB_5) %>% 
   rename_all(., tolower)
 
-geneticsOut <- chinHS %>% 
-  
+# Capitalize stock names to match high seas
+ups <- lapply(dnaIPESTrim2 %>% 
+         select(stock_1:region_5),  
+       toupper) %>% 
+  data.frame() 
+dnaIPESOut <- dnaIPESTrim2 %>%
+  select(-(stock_1:region_5)) %>% 
+  cbind(., ups)
 
-missed <- dnaIPESOut %>%
-  filter(is.na(BRIDGE_LOG_ID)) %>%
-  select(BCSI_FISH_NUMBER) %>%
-  as.vector()
+# Check whether there are fish with genetics data that are missing bridge data
+# missed <- dnaIPESOut %>%
+#   filter(is.na(BRIDGE_LOG_ID)) %>%
+#   select(BCSI_FISH_NUMBER) %>%
+#   as.vector()
 
-bridgeIPES %>% 
-  select(BRIDGE_LOG_ID, START_LATITUDE, START_LONGITUDE) %>% 
-  right_join(., dnaIPESOut, by = "BRIDGE_LOG_ID") %>% 
-  filter(is.na(START_LATITUDE))
-glimpse() 
+# Merge high seas and genetics data
+gsiOut <- dnaHSOut %>% 
+  rbind(., dnaIPESOut)
+# saveRDS(gsiOut, here::here("data", "mergedGSI_highRes.rds"))
 
+
+unique(gsiOut$stock_5)
