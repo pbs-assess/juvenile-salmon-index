@@ -1,16 +1,21 @@
 ## Short script to build a more complete stock key
 # October 18, 2019
 
+library(tidyverse)
+
 scStocks <- read.csv(here::here("data", "southCoastStockKey.csv"))
-stockKey <- readRDS(here::here("data", "tempStockList.rds"))
+stockKey1 <- readRDS(here::here("data", "tempStockList.rds"))
 
 # Associate misspelled and unknown stocks with higher level regions
-stockKey <- stockKey %>% 
+stockKeyOut <- stockKey1 %>% 
+  select(stock:Region1Name) %>% 
   mutate(
+    # add misspelled stocks
     stock = case_when(
-      stock == "BIGQUL@LANG" ~ "BIG_QUALICUM",
+      stock %in% c("BIG", "BIGQUL@LANG") ~ "BIG_QUALICUM",
       TRUE ~ as.character(stock)
     ),
+    #add unknown stocks
     Region1Name = case_when(
       stock == "SOLDUC_F" ~ "Washington_Coast",
       stock == "WALKER" ~ "UPFR",
@@ -67,27 +72,104 @@ stockKey <- stockKey %>%
       grepl("SHAK", stock) ~ "Stikine",
       grepl("LEMI", stock) ~ "NOTH",
       grepl("SIUS", stock) ~ "Mid_Oregon_Coast",
-      
-      
+      grepl("TOUL", stock) ~ "Central_Valley_fa",
+      grepl("ENTI", stock) ~ "Mid_and_Upper_Columbia_R_sp",
+      grepl("STAN", stock) ~ "Central_Valley_fa",
+      grepl("TAKIA", stock) ~ "NOMN",
+      grepl("PORTE", stock) ~ "SOMN",
+      grepl("BULK", stock) ~ "Skeena Bulkley",
+      grepl("ELWHA", stock) ~ "Washington_Coast",
+      grepl("NANA", stock) ~ "ECVI",
+      stock == "LITTLE" ~ "SOTH",
+      grepl("TRASK", stock) ~ "N_Oregon_Coast",
+      grepl("CHEHA", stock) ~ "UPFR",
+      grepl("EAGL", stock) ~ "SOTH",
+      grepl("NEST", stock) ~ "N_Oregon_Coast",
+      grepl("COWEE", stock) ~ "L_Columbia_R_fa",
+      grepl("LOBST", stock) ~ "N_California/S_Oregon_Coast",
+      grepl("PIST", stock) ~ "N_California/S_Oregon_Coast",
+      grepl("HUNTER", stock) ~ "N_California/S_Oregon_Coast",
+      grepl("THOMP", stock) ~ "SOTH",
+      grepl("SANDY", stock) ~ "L_Columbia_R_fa",
+      grepl("KENNET", stock) ~ "UPFR",
+      grepl("WILLOW", stock) ~ "UPFR",
+      grepl("SLIM", stock) ~ "UPFR",
+      grepl("YUBA", stock) ~ "Central_Valley_fa",
+      grepl("NEHA", stock) ~ "N_Oregon_Coast",
+      grepl("WINCHUK", stock) ~ "N_California/S_Oregon_Coast",
+      grepl("CLEEL", stock) ~ "Mid_Oregon_Coast",
+      grepl("TRAPP", stock) ~ "Taku_R",
+      stock == "EEL_F" ~ "California_Coast",
+      grepl("SQUIN", stock) ~ "Skeena Upper",
+      grepl("ATN", stock) ~ "NOMN",
+      grepl("CHEWU", stock) ~ "Mid_and_Upper_Columbia_R_sp",
+      grepl("CHIW", stock) ~ "Mid_and_Upper_Columbia_R_sp",
+      grepl("NEVI", stock) ~ "UPFR",
+      grepl("PTARM", stock) ~ "UPFR",
+      grepl("NAHAT", stock) ~ "LWFR-F",
+      grepl("TUY", stock) ~ "Stikine",
       region == "WCVI" ~ "WCVI",
       region == "SKEENA MID" ~ "Skeena Mid",
+      region == "SKEENA LOWER" ~ "Skeena Lower",
+      region == "MUFR" ~ "MUFR",
       grepl("COLUMBIA-SP", region) ~ "Mid_and_Upper_Columbia_R_sp",
+      grepl("UPPER COLUMBIA-SU", region) ~ "U_Columbia_R_su/fa",
+      grepl("TRINITY", region) ~ "Klamath_R",
       region == "SNAKE-SP/SU" ~ "Snake_R_sp/su",
+      region == "MID COL-SP" ~ "Mid_and_Upper_Columbia_R_sp",
       region == "UPPER WILLAMETTE" ~ "L_Columbia_R_fa",
+      region == "UP WILLAMETTE" ~ "L_Columbia_R_fa",
       region == "CENTRAL VALLEY-F" ~ "Central_Valley_fa",
+      region == "CENT VAL-F" ~ "Central_Valley_fa",
       region == "CENTRAL VALLEY-SP" ~ "Central_Valley_sp",
       TRUE ~ as.character(Region1Name)
     )
-  )
+  ) %>% 
+  left_join(., 
+            stockKey1 %>% 
+              select(Region1Name:Region3Name), 
+            by = "Region1Name") %>% 
+  # add higher level regional aggregates
+  mutate(Region2Name =
+           case_when(
+             stock %in% c("SKAGIT_SU", "SKYKOMISH_SU") ~ "Puget Sound Summer",
+             stock == "NOOKSACK_SP@KE" ~ "Puget Sound Spring",
+             Region1Name == "N_Puget_Sound" ~ "North Puget Sound Fall",
+             Region1Name == "S_Puget_Sound" ~ "South Puget Sound Fall",
+             Region1Name %in% c("Mid_Oregon_Coast", 
+                                "N_California/S_Oregon_Coast",
+                                "N_Oregon_Coast") ~ 
+               "Oregon Coastal North Migrating",
+             Region1Name == "Washington_Coast" ~ "Washington Coast/Juan de Fuca",
+             Region1Name == "Snake_R_fa" ~ "Snake Fall",
+             Region1Name == "L_Columbia_R_fa" ~ "Fall Cowlitz/Willamette",
+             Region1Name %in% c("Central_Valley_sp",
+                                "Klamath_R",
+                                "California_Coast") ~ "California",
+             Region1Name == "Taku_R" ~ "Alaska South SE",
+             TRUE ~ as.character(Region2Name)
+           ),
+         Region3Name = 
+           case_when(
+             grepl("Puget", Region1Name) ~ "Puget Sound",
+             grepl("Oregon", Region1Name) ~ "Oregon/California",
+             Region1Name == "Washington_Coast" ~ "Washington Coast",
+             grepl("Snake", Region1Name) ~ "Snake",
+             grepl("Columbia", Region1Name) ~ "Columbia",
+             grepl("California", Region2Name) ~ "Oregon/California",
+             Region2Name == "Alaska South SE" ~ "Alaska South SE",
+             TRUE ~ as.character(Region3Name)
+           ))
 
-stockKey %>% 
-  # filter(is.na(region)) %>% 
-  select(stock, region, Region1Name) %>% 
-  filter(is.na(Region1Name)) %>% 
-  distinct() %>% 
-  head()
+# check for gaps
+# stockKeyOut %>% 
+#   select(stock, Region1Name, Region3Name) %>% 
+#   filter(is.na(Region3Name)) %>% 
+#   distinct()
+# stockKeyOut %>%
+#   select(stock, Region1Name:Region3Name) %>% 
+#   filter(is.na(stock) | is.na(Region1Name) | is.na(Region2Name) | 
+#            is.na(Region3Name))
 
-stockKey %>% 
-  select(stock, region, Region1Name) %>% 
-  filter(grepl("SIUS", stock)) %>% 
-  distinct()
+saveRDS(stockKeyOut, here::here("data", "finalStockList.rds"))
+         
