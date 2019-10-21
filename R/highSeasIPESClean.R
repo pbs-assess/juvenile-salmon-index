@@ -323,13 +323,12 @@ gStocks <- gsiOut %>%
   gather(key = "stock_rank", value = "stock", -fish_number) %>% 
   arrange(fish_number)
 
-
 gsiLong <- gsiOut %>% 
   select(-(stock_1:region_5)) %>% 
   gather(key = "prob_rank", value = "prob", prob_1:prob_5) %>%
   arrange(fish_number) %>% 
   cbind(., gStocks[, -1], gReg[, -1]) %>% 
-  filter(!is.na(stock)) 
+  filter(!is.na(stock))
 
 # export distinct stocks to make key in makeStockKey.R
 # change this to a sourced function?
@@ -341,17 +340,11 @@ gsiLong <- gsiOut %>%
 #   distinct()
 # saveRDS(stockList, here::here("data", "tempStockList.rds"))
 
-# source function to clean up stock assignments
+# Import corrected stock list to calculate aggregate probabilities
+cleanStockKey <- readRDS(here::here("data", "finalStockList.rds"))
+
 source(here::here("R", "makeFullStockKey.R"))
 gsiLongFull <- gsiLong %>% 
   select(-region_rank, - region) %>% 
   full_join(., cleanStockKey, by = "stock") %>% 
   glimpse()
-
-
-
-# Import corrected stock list to calculate aggregate probabilities
-cleanStockKey <- readRDS(here::here("data", "finalStockList.rds"))
-
-length(unique(cleanStockKey$stock))
-length(unique(gsiLong$stock))
