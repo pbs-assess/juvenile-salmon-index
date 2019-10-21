@@ -28,26 +28,6 @@ FROM STATION_INFO INNER JOIN BRIDGE ON STATION_INFO.STATION_ID =
   BRIDGE.STATION_ID;"
 bridgeHS <- sqlQuery(conHS, bridgeQry) 
 
-# IPES bridge data (no catch); separate from Chin catches to keep sets with 0s
-bridgeIPESQuery <- "SELECT BRIDGE_LOG_ID,
-  BRIDGE_LOG_FIELD_ID, TRIP_ID, 
-  EVENT_DATE, EVENT_NUMBER, TOW_NUMBER, 
-  EVENT_TYPE, EVENT_SUB_TYPE, GEAR_CODE, 
-  BEGIN_DEPLOYMENT_TIME, END_DEPLOYMENT_TIME, 
-  BEGIN_RETRIEVAL_TIME, END_RETRIEVAL_TIME, 
-  TOW_DURATION, 
-  START_LATITUDE, START_LONGITUDE, 
-  END_LATITUDE, END_LONGITUDE, 
-  START_BOTTOM_DEPTH, END_BOTTOM_DEPTH, 
-  AVG_GEAR_DEPTH, AVG_TOW_DEPTH, 
-  DISTANCE_TRAVELLED, USABILITY_CODE, COMMENTS
-FROM BRIDGE_LOG
-WHERE (((BRIDGE_LOG.EVENT_TYPE)='midwater tow'));
-"
-sqlQuery(conIPES, bridgeIPESQuery) %>% 
-  glimpse()
-bridgeIPES <- sqlQuery(conIPES, bridgeIPESQuery)
-
 # IPES Chinook catches (only non-zero tows)
 chinIPESQuery <- "SELECT CATCH_ID, CATCH_FIELD_ID, 
   BRIDGE_LOG_ID, SPECIES_CODE, CATCH_COUNT, 
@@ -62,15 +42,35 @@ trimChinIPES <- sqlQuery(conIPES, chinIPESQuery) %>%
   select(BRIDGE_LOG_ID, ADULT_CATCH = CATCH_COUNT, 
          JUV_CATCH = JUVENILE_CATCH_COUNT)
 
-## Clean IPES data 
-# add catches to bridge; trim to match high seas
-trimBridgeIPES <- bridgeIPES %>% 
+# IPES bridge data (no catch); separate from Chin catches to keep sets with 0s
+bridgeIPESQuery <- "SELECT BRIDGE_LOG_ID,
+  BRIDGE_LOG_FIELD_ID, BRIDGE_LOG.TRIP_ID, 
+  EVENT_DATE, EVENT_NUMBER, TOW_NUMBER, 
+  EVENT_TYPE, EVENT_SUB_TYPE, GEAR_CODE, 
+  BEGIN_DEPLOYMENT_TIME, END_DEPLOYMENT_TIME, 
+  BEGIN_RETRIEVAL_TIME, END_RETRIEVAL_TIME, 
+  TOW_DURATION, 
+  START_LATITUDE, START_LONGITUDE, 
+  END_LATITUDE, END_LONGITUDE, 
+  START_BOTTOM_DEPTH, END_BOTTOM_DEPTH, 
+  AVG_GEAR_DEPTH, AVG_TOW_DEPTH, 
+  DISTANCE_TRAVELLED, USABILITY_CODE
+FROM BRIDGE_LOG
+WHERE (((BRIDGE_LOG.EVENT_TYPE)='midwater tow'));
+"
+sqlQuery(conIPES, bridgeIPESQuery) %>% 
+  glimpse()
+bridgeIPES <- sqlQuery(conIPES, bridgeIPESQuery) %>% 
   left_join(., trimChinIPES, by = "BRIDGE_LOG_ID") %>% 
   replace_na(list(ADULT_CATCH = 0, JUV_CATCH = 0)) %>% 
   mutate(STATION_ID = paste("IPES", TRIP_ID, BRIDGE_LOG_ID, sep = "-"),
          AVG_BOTTOM_DEPTH = (START_BOTTOM_DEPTH + END_BOTTOM_DEPTH) / 2,
-         DATASET = "IPES") %>% 
-  select(STATION_ID, DATASET, DATE = EVENT_DATE, 
+         DATASET = "IPES")
+
+## Clean IPES data 
+# add catches to bridge; trim to match high seas
+trimBridgeIPES <- bridgeIPES %>% 
+  select(STATION_ID, BRIDGE_LOG_ID, DATASET, DATE = EVENT_DATE, 
          START_TIME = BEGIN_DEPLOYMENT_TIME,
          START_LAT = START_LATITUDE, START_LONG = START_LONGITUDE,
          # END_LAT = END_LATITUDE, END_LONG = END_LONGITUDE, 
@@ -106,11 +106,13 @@ trimBridgeHS <- bridgeHS %>%
   filter(REGION %in% keepRegions,
          !STATION_ID %in% excludeTows$STATION_ID,
          !is.na(START_LAT)) %>% 
-  mutate(AVG_BOTTOM_DEPTH = (START_BOT_DEPTH + END_BOT_DEPTH) / 2, 
+  mutate(BRIDGE_LOG_ID = NA,
+         AVG_BOTTOM_DEPTH = (START_BOT_DEPTH + END_BOT_DEPTH) / 2, 
          DATASET = "HighSeas") %>%
   replace_na(list(CK_ADULT = 0, CK_JUV = 0)) %>% 
-  select(STATION_ID, DATASET, DATE, START_TIME, START_LAT, START_LONG, 
+  select(STATION_ID, BRIDGE_LOG_ID, DATASET, DATE, START_TIME, START_LAT, START_LONG, 
          DUR, AVG_BOTTOM_DEPTH, HEAD_DEPTH, CK_JUV, CK_ADULT)
+
 
 ## Merge both bridge datasets
 dum <- rbind(trimBridgeHS, trimBridgeIPES) %>% 
@@ -131,16 +133,17 @@ coords2 <- sp::spTransform(coords, sp::CRS("+proj=utm +zone=9 ellps=WGS84")) %>%
 
 bridgeOut <- dum %>% 
   cbind(., coords2@coords) %>% 
-  select(station_id, dataset, date, jday, month, year, start_time, start_lat, 
+  select(station_id, bridge_log_id, dataset, date, jday, month, year, start_time, start_lat, 
        start_long, xUTM_start, yUTM_start, dur, avg_bottom_depth, head_depth,
        ck_juv, ck_adult)
 # saveRDS(bridgeOut, here::here("data", "mergedCatch.rds"))
-
+bridgeOut <- readRDS(here::here("data", "mergedCatch.rds"))
 
 ##### MERGE GENETICS DATA #####
 
 # High seas Chinook GSI data
-chinDNAQry <- "SELECT BIOLOGICAL.FISH_NUMBER, STATION_INFO.REGION, BRIDGE.Year, 
+chinDNAQry <- "SELECT BIOLOGICAL.FISH_NUMBER, STATION_INFO.STATION_ID,
+  STATION_INFO.REGION, BRIDGE.Year, 
   BRIDGE.Month, BRIDGE.Day, BRIDGE.DATE, BRIDGE.START_LAT, BRIDGE.START_LONG, 
   SPECIES, SHIP_FL, SHIP_TL, SHIP_WT, 
   [BATCH-DNA_NUMBER], STOCK_1, 
@@ -173,7 +176,7 @@ dnaHSOut <- dnaHS %>%
     dataset = "HighSeas"
   ) %>% 
   rename_all(., tolower) %>% 
-  select(fish_number, dataset, year, month = month2, jday, start_lat, 
+  select(fish_number, station_id, dataset, year, month = month2, jday, start_lat, 
          start_long, age, ship_fl, batch_dna_number = `batch-dna_number`, 
          stock_1:prob_5) 
 
@@ -266,24 +269,20 @@ dnaIPESOut <- chinIPES %>%
   left_join(dnaIPESTrim, ., by = "BCSI_FISH_NUMBER") %>% 
   #add lat longs and dates from ipes bridge data
   left_join(., 
-            bridgeIPES %>% 
-              select(BRIDGE_LOG_ID, EVENT_DATE, START_LATITUDE, 
-                     START_LONGITUDE),
-            by = "BRIDGE_LOG_ID") %>% 
-  mutate(month = lubridate::month(EVENT_DATE),
-         year = lubridate::year(EVENT_DATE),
-         jday = lubridate::yday(EVENT_DATE), 
-         dataset = "IPES") %>% 
-  select(fish_number = BCSI_FISH_NUMBER, dataset, year, month, jday, 
-         start_lat = START_LATITUDE, start_long = START_LONGITUDE, age, 
+            bridgeOut %>% 
+              filter(dataset == "IPES") %>% 
+              rename(BRIDGE_LOG_ID = bridge_log_id),
+            by = c("BRIDGE_LOG_ID", "year")) %>% 
+  select(fish_number = BCSI_FISH_NUMBER, station_id, dataset, year, month, jday, 
+         start_lat, start_long, age, 
          ship_fl = LENGTH, BATCH_DNA_NUMBER,  
          STOCK_1:REGION_5, PROB_1:PROB_5) %>% 
-  rename_all(., tolower)
+  rename_all(., tolower) 
 
 # Check whether there are fish with genetics data that are missing bridge data
 # missed <- dnaIPESOut %>%
-#   filter(is.na(BRIDGE_LOG_ID)) %>%
-#   select(BCSI_FISH_NUMBER) %>%
+#   filter(is.na(station_id)) %>%
+#   select(fish_number) %>%
 #   as.vector()
 
 # Merge high seas and genetics data
@@ -368,6 +367,10 @@ uncertStocks <- gsiLongAgg %>%
 # length(unique(uncertStocks$fish_number))
 # hist(uncertStocks$maxProb)
 
+# Roll 
+gsiLongAggTrim <- readRDS(here::here("data", 
+                   "mergedGSI_lowResLong_highCertainty.rds"))
 gsiLongAggTrim <- gsiLongAgg %>% 
   filter(!fish_number %in% uncertStocks$fish_number)
-saveRDS(gsiLongAggTrim, here::here("data", "mergedGSI_lowResLong_highCertainty.rds"))
+saveRDS(gsiLongAggTrim, here::here("data", 
+                                   "mergedGSI_lowResLong_highCertainty.rds"))
