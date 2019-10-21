@@ -391,8 +391,17 @@ stockComp <- gsiLongAgg %>%
     ) %>% 
   select(station_id, total_catch = ck_juv, samp_ppn, samp_catch, SalSea:SEAK)
 
-bridgeHS %>% 
-  filter(STATION_ID %in% fck[1:5])
+tt <- bridgeOut %>% 
+  select(station_id, year, ck_juv) %>% 
+  left_join(., 
+            stockComp %>% 
+              select(station_id:samp_catch), 
+            by = "station_id") %>% 
+  filter(ck_juv > 0,
+         is.na(samp_catch)) 
+
+dnaHSOut %>% 
+  filter(station_id %in% tt$station_id)
 
 saveRDS(gsiLongAggTrim, here::here("data", 
                                    "mergedGSI_lowResLong_highCertainty.rds"))
