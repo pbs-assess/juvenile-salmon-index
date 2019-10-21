@@ -3,22 +3,23 @@
 
 library(tidyverse)
 
-# scStocks <- read.csv(here::here("data", "southCoastStockKey.csv"))
+scStockKey <- read.csv(here::here("data", "southCoastStockKey.csv")) %>%
+    mutate(stock = toupper(Stock)) %>%
+    select(stock, Region1Name, Region2Name, Region3Name)
 stockKey1 <- readRDS(here::here("data", "tempStockList.rds")) %>%
+  left_join(., scStockKey, by = "stock") %>% 
   mutate(Region1Name = as.character(Region1Name),
          Region2Name = as.character(Region2Name),
          Region3Name = as.character(Region3Name)) %>% 
   distinct()
 
+stockKey1 %>% 
+  filter(grepl("BIG", stock))
+
 # Associate misspelled and unknown stocks with higher level regions
 stockKeyOut <- stockKey1 %>% 
     select(stock:Region1Name) %>%
     mutate(
-      # add misspelled stocks
-      stock = case_when(
-        stock %in% c("BIG", "BIGQUL@LANG") ~ "BIG_QUALICUM",
-        TRUE ~ as.character(stock)
-      ),
       #add unknown stocks
       Region1Name = case_when(
         stock == "SOLDUC_F" ~ "Washington_Coast",
@@ -201,6 +202,5 @@ stockKeyOut <- stockKey1 %>%
 #   filter(is.na(stock) | is.na(Region1Name) | is.na(Region2Name) |
 #            is.na(Region3Name))
 
-#Defunct now that this is a function 
 saveRDS(stockKeyOut, here::here("data", "finalStockList.rds"))
          

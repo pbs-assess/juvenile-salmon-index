@@ -310,8 +310,6 @@ gsiOut <- gsiBind %>%
   cbind(., ups) %>% 
   cbind(., coords2@coords) %>% 
   select(fish_number:start_long, xUTM_start, yUTM_start, age:region_5)
-# saveRDS(gsiOut, here::here("data", "mergedGSI_highRes.rds"))
-gsiOut <- readRDS(here::here("data", "mergedGSI_highRes.rds"))
 
 # Add in regional roll ups that approximate what's used by CTC
 gReg <- gsiOut %>% 
@@ -322,29 +320,54 @@ gStocks <- gsiOut %>%
   select(fish_number, stock_1:stock_5) %>% 
   gather(key = "stock_rank", value = "stock", -fish_number) %>% 
   arrange(fish_number)
-
 gsiLong <- gsiOut %>% 
   select(-(stock_1:region_5)) %>% 
   gather(key = "prob_rank", value = "prob", prob_1:prob_5) %>%
   arrange(fish_number) %>% 
   cbind(., gStocks[, -1], gReg[, -1]) %>% 
+  # correct most ambiguous misspelled stocks
+  mutate(
+    stock = case_when(
+      stock %in% c("BIG", "BIGQUL@LANG") ~ "BIG_QUALICUM",
+      TRUE ~ as.character(stock)
+  )) %>% 
   filter(!is.na(stock))
 
 # export distinct stocks to make key in makeStockKey.R
 # change this to a sourced function?
-# stockKey <- read.csv(here::here("data", "southCoastStockKey.csv")) %>% 
-#   mutate(stock = toupper(Stock)) %>% 
-#   select(stock, Region1Name, Region2Name, Region3Name)
-# stockList <- gsiLong %>% 
-#   select(stock, region:Region3Name) %>% 
+# stockList <- gsiLong %>%
+#   select(stock, region) %>%
 #   distinct()
 # saveRDS(stockList, here::here("data", "tempStockList.rds"))
 
 # Import corrected stock list to calculate aggregate probabilities
 cleanStockKey <- readRDS(here::here("data", "finalStockList.rds"))
 
-source(here::here("R", "makeFullStockKey.R"))
 gsiLongFull <- gsiLong %>% 
   select(-region_rank, - region) %>% 
-  full_join(., cleanStockKey, by = "stock") %>% 
-  glimpse()
+  full_join(., cleanStockKey, by = "stock") 
+saveRDS(gsiLongFull, here::here("data", "mergedGSI_highResLong.rds"))
+
+# Use summed probabilities to focus on region 2 assignment (approximately 
+# analogous to CTC regions with 22 stocks)
+gsiLongAgg <- gsiLongFull %>% 
+  group_by(fish_number, Region2Name) %>% 
+  mutate(aggProb = sum(prob)) %>%
+  select(-c(prob_rank:stock)) %>% 
+  ungroup() %>% 
+  arrange(year, month, jday, dataset, fish_number) %>% 
+  distinct()
+saveRDS(gsiLongAgg, here::here("data", "mergedGSI_lowResLong.rds"))
+
+# For now, drop stocks where regional probability is less than 50%
+# (377 individuals)
+uncertStocks <- gsiLongAgg %>% 
+  group_by(fish_number) %>% 
+  summarize(maxProb = max(aggProb)) %>% 
+  filter(maxProb < 0.50)
+# length(unique(uncertStocks$fish_number))
+# hist(uncertStocks$maxProb)
+
+gsiLongAggTrim <- gsiLongAgg %>% 
+  filter(!fish_number %in% uncertStocks$fish_number)
+saveRDS(gsiLongAggTrim, here::here("data", "mergedGSI_lowResLong_highCertainty.rds"))
