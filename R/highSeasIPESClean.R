@@ -94,16 +94,13 @@ ggplot(bridgeHS) +
 
 
 ## Clean High Seas data 
-# retain only regions that overlap (subjective)
-keepRegions <- c("INSIDE VANCOUVER ISLAND", "JOHNSTONE STRAIT", "QUEEN 
-                 CHARLOTTE SOUND", "QUEEN CHARLOTTE STRAIT", "VANCOUVER ISLAND")
 # exclude tows based on information in comments of access database (see bridge 
 # table comments for details)
-excludeTows <- read.csv(here::here("data", "excludeTows.csv")) %>% 
+excludeTowsComments <- read.csv(here::here("data", "excludeTows.csv")) %>% 
   filter(EXCLUDE == "Y") 
 
 trimBridgeHS <- bridgeHS %>% 
-  filter(REGION %in% keepRegions,
+  filter(#REGION %in% keepRegions,
          !STATION_ID %in% excludeTows$STATION_ID,
          !is.na(START_LAT)) %>% 
   mutate(BRIDGE_LOG_ID = NA,
@@ -136,8 +133,10 @@ bridgeOut <- dum %>%
   select(station_id, bridge_log_id, dataset, date, jday, month, year, start_time, start_lat, 
        start_long, xUTM_start, yUTM_start, dur, avg_bottom_depth, head_depth,
        ck_juv, ck_adult)
-# saveRDS(bridgeOut, here::here("data", "mergedCatch.rds"))
-bridgeOut <- readRDS(here::here("data", "mergedCatch.rds"))
+
+### NOTE - CATCH ESTIMATES FROM BRIDGEOUT ARE SUSPECT 
+## I.e. fish sampled from sets with catch recorded as 0. For now assume that 
+# sampled fish is minimum catch estimate and do not use bridgeout independently.
 
 ##### MERGE GENETICS DATA #####
 
@@ -330,7 +329,9 @@ gsiLong <- gsiOut %>%
       stock %in% c("BIG", "BIGQUL@LANG") ~ "BIG_QUALICUM",
       TRUE ~ as.character(stock)
   )) %>% 
-  filter(!is.na(stock))
+  filter(!is.na(stock),
+         #exclude individuals from bad sets based on comments
+         !station_id %in% excludeTowsComments$STATION_ID)
 
 # export distinct stocks to make key in makeStockKey.R
 # change this to a sourced function?
@@ -347,30 +348,60 @@ gsiLongFull <- gsiLong %>%
   full_join(., cleanStockKey, by = "stock") 
 saveRDS(gsiLongFull, here::here("data", "mergedGSI_highResLong.rds"))
 
-# Use summed probabilities to focus on region 2 assignment (approximately 
-# analogous to CTC regions with 22 stocks)
+# Use summed probabilities to focus on coarsest region 4 and assign individuals
+# to single most likely region (as long as it exceeds 50%)
 gsiLongAgg <- gsiLongFull %>% 
-  group_by(fish_number, Region2Name) %>% 
+  group_by(fish_number, Region4Name) %>% 
   mutate(aggProb = sum(prob)) %>%
-  select(-c(prob_rank:stock)) %>% 
-  ungroup() %>% 
-  arrange(year, month, jday, dataset, fish_number) %>% 
-  distinct()
-saveRDS(gsiLongAgg, here::here("data", "mergedGSI_lowResLong.rds"))
-
-# For now, drop stocks where regional probability is less than 50%
-# (377 individuals)
-uncertStocks <- gsiLongAgg %>% 
   group_by(fish_number) %>% 
-  summarize(maxProb = max(aggProb)) %>% 
-  filter(maxProb < 0.50)
-# length(unique(uncertStocks$fish_number))
-# hist(uncertStocks$maxProb)
+  mutate(maxProb = max(aggProb)) %>% 
+  select(-c(batch_dna_number:Region3Name)) %>%
+  arrange(fish_number) %>% 
+  ungroup() %>% 
+  # arrange(year, month, jday, dataset, fish_number) %>% 
+  distinct() %>%
+  #remove probabilities that are not the max and individuals where max doesn't
+  #exceed threshold (50%)
+  filter(maxProb > 0.5,
+         !aggProb < maxProb) 
 
-# Roll 
-gsiLongAggTrim <- readRDS(here::here("data", 
-                   "mergedGSI_lowResLong_highCertainty.rds"))
-gsiLongAggTrim <- gsiLongAgg %>% 
-  filter(!fish_number %in% uncertStocks$fish_number)
+# Calculate JUVENILE catch proportions
+stockComp <- gsiLongAgg %>% 
+  filter(age == "J") %>% 
+  select(-c(age:ship_fl), -c(aggProb:maxProb)) %>% 
+  group_by(station_id, Region4Name) %>% 
+  tally(name = "regCatch") %>% 
+  group_by(station_id) %>% 
+  mutate(samp_catch = sum(regCatch),
+         regPpn = regCatch / samp_catch) %>% 
+  pivot_wider(., names_from = Region4Name, values_from = regPpn) %>%
+  mutate_if(is.numeric, ~replace_na(., 0)) %>% 
+  left_join(., 
+            bridgeOut %>% 
+              select(station_id, ck_juv),
+            by = "station_id") %>% 
+  mutate(
+    ck_juv = case_when(
+      samp_catch > ck_juv ~ samp_catch,
+      TRUE ~ ck_juv
+    ),
+    samp_ppn = case_when(
+      samp_catch > "0" ~ samp_catch / ck_juv,
+      samp_catch == "0" ~ 0)
+    ) %>% 
+  select(station_id, total_catch = ck_juv, samp_ppn, samp_catch, SalSea:SEAK)
+
+bridgeHS %>% 
+  filter(STATION_ID %in% fck[1:5])
+
 saveRDS(gsiLongAggTrim, here::here("data", 
                                    "mergedGSI_lowResLong_highCertainty.rds"))
+
+
+
+# retain only regions that overlap (subjective)
+excludeTowsRegion <- bridgeHS %>% 
+  filter(!REGION %in% c("INSIDE VANCOUVER ISLAND", "JOHNSTONE STRAIT", 
+                        "CHARLOTTE SOUND", "QUEEN CHARLOTTE STRAIT", 
+                        "VANCOUVER ISLAND")) %>% 
+  select(STATION_ID, REGION)
