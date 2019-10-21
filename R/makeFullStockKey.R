@@ -14,7 +14,7 @@ stockKey1 <- readRDS(here::here("data", "tempStockList.rds")) %>%
   distinct()
 
 stockKey1 %>% 
-  filter(grepl("BIG", stock))
+  glimpse()
 
 # Associate misspelled and unknown stocks with higher level regions
 stockKeyOut <- stockKey1 %>% 
@@ -189,8 +189,23 @@ stockKeyOut <- stockKey1 %>%
              grepl("California", Region2Name) ~ "Oregon/California",
              Region2Name == "Alaska South SE" ~ "Alaska South SE",
              TRUE ~ as.character(Region3Name)
+           ),
+         #even higher level aggreagtes for preliminary modeling
+         Region4Name =
+           case_when(
+             Region3Name %in% c("Washington Coast", "Oregon/California") ~ 
+               "CoastUS",
+             Region3Name %in% c("SOG", "Puget Sound", "Fraser River") ~ 
+               "SalSea",
+             Region3Name %in% c("Columbia", "Snake") ~ "ColR",
+             Region3Name == "North/Central BC" ~ "NBC",
+             Region3Name == "Alaska South SE" ~ "SEAK",
+             TRUE ~ Region3Name
            )) %>% 
   distinct()
+
+stockKeyOut %>% 
+  glimpse()
 
 # check for gaps
 # stockKeyOut %>% 
