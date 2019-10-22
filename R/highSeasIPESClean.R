@@ -107,8 +107,8 @@ trimBridgeHS <- bridgeHS %>%
          AVG_BOTTOM_DEPTH = (START_BOT_DEPTH + END_BOT_DEPTH) / 2, 
          DATASET = "HighSeas") %>%
   replace_na(list(CK_ADULT = 0, CK_JUV = 0)) %>% 
-  select(STATION_ID, BRIDGE_LOG_ID, DATASET, DATE, START_TIME, START_LAT, START_LONG, 
-         DUR, AVG_BOTTOM_DEPTH, HEAD_DEPTH, CK_JUV, CK_ADULT)
+  select(STATION_ID, BRIDGE_LOG_ID, DATASET, DATE, START_TIME, START_LAT, 
+         START_LONG, DUR, AVG_BOTTOM_DEPTH, HEAD_DEPTH, CK_JUV, CK_ADULT)
 
 
 ## Merge both bridge datasets
@@ -363,24 +363,49 @@ gsiLongAgg <- gsiLongFull %>%
   #remove probabilities that are not the max and individuals where max doesn't
   #exceed threshold (50%)
   filter(maxProb > 0.5,
-         !aggProb < maxProb) 
+         !aggProb < maxProb)
 
-# Calculate JUVENILE catch proportions
+
+##### MERGE PROPORTIONS DATA #####
+
+# Calculate catch proportions
 stockComp <- gsiLongAgg %>% 
-  filter(age == "J") %>% 
-  select(-c(age:ship_fl), -c(aggProb:maxProb)) %>% 
-  group_by(station_id, Region4Name) %>% 
+  select(-ship_fl, -c(aggProb:maxProb)) %>% 
+  group_by(station_id, Region4Name, age) %>% 
   tally(name = "regCatch") %>% 
-  group_by(station_id) %>% 
+  group_by(station_id, age) %>% 
   mutate(samp_catch = sum(regCatch),
          regPpn = regCatch / samp_catch) %>% 
   pivot_wider(., names_from = Region4Name, values_from = regPpn) %>%
   mutate_if(is.numeric, ~replace_na(., 0)) %>% 
-  left_join(., 
-            bridgeOut %>% 
-              select(station_id, ck_juv),
-            by = "station_id") %>% 
+  select(station_id, age, samp_catch:SEAK) 
+
+# Add bridge data (which contains 0 catches) to juv and adult dataset separately
+adultsOut <- stockComp %>% 
+  filter(age == "A") %>%
+  left_join(bridgeOut %>% 
+              select(station_id, dataset:head_depth, ck_adult),
+            ., 
+            by = "station_id") %>%
   mutate(
+    #replace erroneous 0 catches (i.e. when bridge = 0 but fish were GSId)
+    ck_adult = case_when(
+      samp_catch > ck_adult ~ samp_catch,
+      TRUE ~ ck_adult
+    ),
+    samp_ppn = case_when(
+      samp_catch > "0" ~ samp_catch / ck_adult,
+      samp_catch == "0" ~ 0)
+  ) %>% 
+  select(station_id:year, start_lat:ck_adult, samp_catch, samp_ppn, SalSea:SEAK)
+juvOut <- stockComp %>% 
+  filter(age == "J") %>% 
+  left_join(bridgeOut %>% 
+              select(station_id, dataset:head_depth, ck_juv),
+            ., 
+            by = "station_id") %>%
+  mutate(
+    #replace erroneous 0 catches (i.e. when bridge = 0 but fish were GSId)
     ck_juv = case_when(
       samp_catch > ck_juv ~ samp_catch,
       TRUE ~ ck_juv
@@ -388,27 +413,14 @@ stockComp <- gsiLongAgg %>%
     samp_ppn = case_when(
       samp_catch > "0" ~ samp_catch / ck_juv,
       samp_catch == "0" ~ 0)
-    ) %>% 
-  select(station_id, total_catch = ck_juv, samp_ppn, samp_catch, SalSea:SEAK)
-
-tt <- bridgeOut %>% 
-  select(station_id, year, ck_juv) %>% 
-  left_join(., 
-            stockComp %>% 
-              select(station_id:samp_catch), 
-            by = "station_id") %>% 
-  filter(ck_juv > 0,
-         is.na(samp_catch)) 
-
-dnaHSOut %>% 
-  filter(station_id %in% tt$station_id)
-
-saveRDS(gsiLongAggTrim, here::here("data", 
-                                   "mergedGSI_lowResLong_highCertainty.rds"))
+  ) %>% 
+  select(station_id:year, start_lat:ck_juv, samp_catch, samp_ppn, SalSea:SEAK)
 
 
+saveRDS(adultsOut, here::here("data", "adultCatchGSI_reg4.rds"))
+saveRDS(juvOut, here::here("data", "juvCatchGSI_reg4.rds"))
 
-# retain only regions that overlap (subjective)
+# retain only regions that overlap (MOVE TO ANALYSIS SCRIPT)
 excludeTowsRegion <- bridgeHS %>% 
   filter(!REGION %in% c("INSIDE VANCOUVER ISLAND", "JOHNSTONE STRAIT", 
                         "CHARLOTTE SOUND", "QUEEN CHARLOTTE STRAIT", 
