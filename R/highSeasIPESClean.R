@@ -61,23 +61,27 @@ WHERE (((BRIDGE_LOG.EVENT_TYPE)='midwater tow'));
 sqlQuery(conIPES, bridgeIPESQuery) %>% 
   glimpse()
 bridgeIPES <- sqlQuery(conIPES, bridgeIPESQuery) %>% 
+  #add catches to bridge
   left_join(., trimChinIPES, by = "BRIDGE_LOG_ID") %>% 
+  #remove unuseable tows
+  filter(!USABILITY_CODE == "5") %>% 
   replace_na(list(ADULT_CATCH = 0, JUV_CATCH = 0)) %>% 
   mutate(STATION_ID = paste("IPES", TRIP_ID, BRIDGE_LOG_ID, sep = "-"),
          AVG_BOTTOM_DEPTH = (START_BOTTOM_DEPTH + END_BOTTOM_DEPTH) / 2,
+         #convert to fractions of an hour to match HS database
+         DUR = TOW_DURATION / 60, 
          DATASET = "IPES")
 
 ## Clean IPES data 
-# add catches to bridge; trim to match high seas
+# Trime to match high seas
 trimBridgeIPES <- bridgeIPES %>% 
   select(STATION_ID, BRIDGE_LOG_ID, DATASET, DATE = EVENT_DATE, 
          START_TIME = BEGIN_DEPLOYMENT_TIME,
-         START_LAT = START_LATITUDE, START_LONG = START_LONGITUDE,
-         # END_LAT = END_LATITUDE, END_LONG = END_LONGITUDE, 
-         DUR = TOW_DURATION,
+         START_LAT = START_LATITUDE, START_LONG = START_LONGITUDE, DUR,
          AVG_BOTTOM_DEPTH, HEAD_DEPTH = AVG_GEAR_DEPTH, CK_JUV = JUV_CATCH,
          CK_ADULT = ADULT_CATCH)
 
+longtows <- bridgeOut %>% filter(dur>0.75)
 
 ## Plot overlap between IPES and high seas
 library(ggmap)
@@ -92,6 +96,11 @@ ggplot(bridgeHS) +
            color = "black", fill = "gray80") + 
   coord_fixed(xlim = c(-129.5, -123), ylim = c(48, 52), ratio = 1.3)
 
+# ggplot(juvOut %>% filter(stableStation == "Y")) +
+#   geom_point(aes(x = start_long, y = start_lat, color = dataset)) +
+#   geom_map(data = nAm, map = nAm, aes(long, lat, map_id = region), 
+#            color = "black", fill = "gray80") + 
+#   coord_fixed(xlim = c(-129.5, -123), ylim = c(48, 52), ratio = 1.3)
 
 ## Clean High Seas data 
 # exclude tows based on information in comments of access database (see bridge 
@@ -100,8 +109,7 @@ excludeTowsComments <- read.csv(here::here("data", "excludeTows.csv")) %>%
   filter(EXCLUDE == "Y") 
 
 trimBridgeHS <- bridgeHS %>% 
-  filter(#REGION %in% keepRegions,
-         !STATION_ID %in% excludeTowsComments$STATION_ID,
+  filter(!STATION_ID %in% excludeTowsComments$STATION_ID,
          !is.na(START_LAT)) %>% 
   mutate(BRIDGE_LOG_ID = NA,
          AVG_BOTTOM_DEPTH = (START_BOT_DEPTH + END_BOT_DEPTH) / 2, 
@@ -130,7 +138,7 @@ coords2 <- sp::spTransform(coords, sp::CRS("+proj=utm +zone=9 ellps=WGS84")) %>%
 
 excludeTowsRegion <- bridgeHS %>% 
   filter(!REGION %in% c("INSIDE VANCOUVER ISLAND", "JOHNSTONE STRAIT", 
-                        "CHARLOTTE SOUND", "QUEEN CHARLOTTE STRAIT", 
+                        "QUEEN CHARLOTTE SOUND", "QUEEN CHARLOTTE STRAIT", 
                         "VANCOUVER ISLAND")) %>% 
   select(STATION_ID, REGION)
 
@@ -139,8 +147,8 @@ bridgeOut <- dum %>%
   mutate(
     #is station present in both IPES and HS datasets
     stableStation = case_when(
-      station_id %in% excludeTowsRegion$STATION_ID ~ "Y",
-      TRUE ~ "N"
+      station_id %in% excludeTowsRegion$STATION_ID ~ "N",
+      TRUE ~ "Y"
     )) %>% 
   select(station_id, bridge_log_id, stableStation, dataset, date, jday, month, year, start_time, start_lat, 
        start_long, xUTM_start, yUTM_start, dur, avg_bottom_depth, head_depth,
@@ -379,13 +387,6 @@ gsiLongAgg <- gsiLongFull %>%
 
 
 ##### MERGE PROPORTIONS DATA #####
-
-# retain only regions that overlap
-excludeTowsRegion <- bridgeHS %>% 
-  filter(!REGION %in% c("INSIDE VANCOUVER ISLAND", "JOHNSTONE STRAIT", 
-                        "CHARLOTTE SOUND", "QUEEN CHARLOTTE STRAIT", 
-                        "VANCOUVER ISLAND")) %>% 
-  select(STATION_ID, REGION)
 
 # Calculate catch proportions
 stockComp <- gsiLongAgg %>% 
