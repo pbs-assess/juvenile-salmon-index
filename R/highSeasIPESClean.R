@@ -101,7 +101,7 @@ excludeTowsComments <- read.csv(here::here("data", "excludeTows.csv")) %>%
 
 trimBridgeHS <- bridgeHS %>% 
   filter(#REGION %in% keepRegions,
-         !STATION_ID %in% excludeTows$STATION_ID,
+         !STATION_ID %in% excludeTowsComments$STATION_ID,
          !is.na(START_LAT)) %>% 
   mutate(BRIDGE_LOG_ID = NA,
          AVG_BOTTOM_DEPTH = (START_BOT_DEPTH + END_BOT_DEPTH) / 2, 
@@ -128,9 +128,21 @@ sp::proj4string(coords) <- sp::CRS("+proj=longlat +datum=WGS84")
 coords2 <- sp::spTransform(coords, sp::CRS("+proj=utm +zone=9 ellps=WGS84")) %>%
   as(., "SpatialPoints")
 
+excludeTowsRegion <- bridgeHS %>% 
+  filter(!REGION %in% c("INSIDE VANCOUVER ISLAND", "JOHNSTONE STRAIT", 
+                        "CHARLOTTE SOUND", "QUEEN CHARLOTTE STRAIT", 
+                        "VANCOUVER ISLAND")) %>% 
+  select(STATION_ID, REGION)
+
 bridgeOut <- dum %>% 
   cbind(., coords2@coords) %>% 
-  select(station_id, bridge_log_id, dataset, date, jday, month, year, start_time, start_lat, 
+  mutate(
+    #is station present in both IPES and HS datasets
+    stableStation = case_when(
+      station_id %in% excludeTowsRegion$STATION_ID ~ "Y",
+      TRUE ~ "N"
+    )) %>% 
+  select(station_id, bridge_log_id, stableStation, dataset, date, jday, month, year, start_time, start_lat, 
        start_long, xUTM_start, yUTM_start, dur, avg_bottom_depth, head_depth,
        ck_juv, ck_adult)
 
@@ -368,6 +380,13 @@ gsiLongAgg <- gsiLongFull %>%
 
 ##### MERGE PROPORTIONS DATA #####
 
+# retain only regions that overlap
+excludeTowsRegion <- bridgeHS %>% 
+  filter(!REGION %in% c("INSIDE VANCOUVER ISLAND", "JOHNSTONE STRAIT", 
+                        "CHARLOTTE SOUND", "QUEEN CHARLOTTE STRAIT", 
+                        "VANCOUVER ISLAND")) %>% 
+  select(STATION_ID, REGION)
+
 # Calculate catch proportions
 stockComp <- gsiLongAgg %>% 
   select(-ship_fl, -c(aggProb:maxProb)) %>% 
@@ -384,7 +403,7 @@ stockComp <- gsiLongAgg %>%
 adultsOut <- stockComp %>% 
   filter(age == "A") %>%
   left_join(bridgeOut %>% 
-              select(station_id, dataset:head_depth, ck_adult),
+              select(station_id, stableStation:head_depth, ck_adult),
             ., 
             by = "station_id") %>%
   mutate(
@@ -397,11 +416,12 @@ adultsOut <- stockComp %>%
       samp_catch > "0" ~ samp_catch / ck_adult,
       samp_catch == "0" ~ 0)
   ) %>% 
-  select(station_id:year, start_lat:ck_adult, samp_catch, samp_ppn, SalSea:SEAK)
+  select(station_id:year, stableStation, start_lat:ck_adult, samp_catch, 
+         samp_ppn, SalSea:SEAK)
 juvOut <- stockComp %>% 
   filter(age == "J") %>% 
   left_join(bridgeOut %>% 
-              select(station_id, dataset:head_depth, ck_juv),
+              select(station_id, stableStation:head_depth, ck_juv),
             ., 
             by = "station_id") %>%
   mutate(
@@ -414,15 +434,9 @@ juvOut <- stockComp %>%
       samp_catch > "0" ~ samp_catch / ck_juv,
       samp_catch == "0" ~ 0)
   ) %>% 
-  select(station_id:year, start_lat:ck_juv, samp_catch, samp_ppn, SalSea:SEAK)
+  select(station_id:year, stableStation, start_lat:ck_juv, samp_catch,
+         samp_ppn, SalSea:SEAK)
 
 
 saveRDS(adultsOut, here::here("data", "adultCatchGSI_reg4.rds"))
 saveRDS(juvOut, here::here("data", "juvCatchGSI_reg4.rds"))
-
-# retain only regions that overlap (MOVE TO ANALYSIS SCRIPT)
-excludeTowsRegion <- bridgeHS %>% 
-  filter(!REGION %in% c("INSIDE VANCOUVER ISLAND", "JOHNSTONE STRAIT", 
-                        "CHARLOTTE SOUND", "QUEEN CHARLOTTE STRAIT", 
-                        "VANCOUVER ISLAND")) %>% 
-  select(STATION_ID, REGION)
