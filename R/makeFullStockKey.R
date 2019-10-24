@@ -172,6 +172,7 @@ stockKeyOut <- stockKey1 %>%
                                 "Klamath_R",
                                 "California_Coast") ~ "California",
              Region1Name == "Taku_R" ~ "Alaska South SE",
+             Region2Name == "Califormia" ~ "California",
              TRUE ~ as.character(Region2Name)
            ),
          Region3Name = 
@@ -202,9 +203,10 @@ stockKeyOut <- stockKey1 %>%
              Region3Name == "Alaska South SE" ~ "SEAK",
              TRUE ~ Region3Name
            )) %>% 
-  distinct()
+  distinct() %>% 
+  arrange(Region4Name, Region3Name, Region2Name, Region1Name, stock)
 
-stockKeyOut %>% 
+stockKeyOut %>%
   glimpse()
 
 # check for gaps
@@ -218,4 +220,6 @@ stockKeyOut %>%
 #            is.na(Region3Name))
 
 saveRDS(stockKeyOut, here::here("data", "finalStockList.rds"))
-         
+write.csv(stockKeyOut, here::here("data", "finalStockList.csv"),
+          row.names = FALSE)
+
