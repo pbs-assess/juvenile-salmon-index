@@ -10,3 +10,4 @@ prediction-grids/*
 !data/*.rds
 *.pdf
 .DS_Store
+R/hidden/

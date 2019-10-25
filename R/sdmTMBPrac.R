@@ -5,24 +5,36 @@ library(tidyverse)
 library(sdmTMB)
 library(ggplot2)
 
-# browseVignettes("sdmTMB")
+browseVignettes("sdmTMB")
 
 jchin <- readRDS(here::here("data", "juvCatchGSI_reg4.rds")) %>% 
   #remove stations that aren't present in both dataset
   filter(stableStation == "Y",
          #focus on summer for now
          # month %in% c(6, 7),
-         #remove largest values
-         !ck_juv > 100) %>%
+         #remove largest values so it converges
+         !ck_juv > 100
+         ) %>%
   #scale UTM coords
   mutate(xUTM_start = xUTM_start / 10000,
-         yUTM_start = yUTM_start / 10000) %>% 
+         yUTM_start = yUTM_start / 10000,
+         jdayZ = scale(jday),
+         bottomZ = scale(avg_bottom_depth)) %>% 
   #remove extra vars and stock ppn data
   select(-c(date, stableStation, samp_catch:SEAK))
 
 jchin_spde <- make_spde(jchin$xUTM_start, jchin$yUTM_start, n_knots = 150)
 plot_spde(jchin_spde)
 
+
+qcs_grid %>% 
+  nrow()
+
+jchin %>% 
+  filter(is.na(jdayZ))
+
+ggplot(jchin, aes(x = jdayZ, y = ck_juv)) +
+  geom_point()
 
 ## Develop index 
 # Fit GLMM without covariates
@@ -35,7 +47,15 @@ m1 <- sdmTMB(ck_juv ~ 0 + as.factor(year),
   include_spatial = TRUE,
   ar1_fields = FALSE,
   family = nbinom2(link = "log"))
-m1
+m2 <- sdmTMB(ck_juv ~ 0 + as.factor(year) + jdayZ, 
+             data = jchin,
+             time = "year", 
+             spde = jchin_spde, 
+             silent = FALSE,
+             anisotropy = TRUE, 
+             include_spatial = TRUE,
+             ar1_fields = FALSE,
+             family = nbinom2(link = "log"))
 
 dum <- jchin %>% 
   mutate(resid = residuals(m1))
@@ -43,6 +63,7 @@ dum <- jchin %>%
 # Generate prediction grid 
 surv_grid <- expand.grid(
   year = unique(jchin$year),
+  jdayZ = seq(-2, 1.75, length.out = 100),
   X = seq(from = min(jchin$xUTM_start),
           to = max(jchin$xUTM_start),
           by = 2),
@@ -51,7 +72,7 @@ surv_grid <- expand.grid(
           by = 2)
 )
 
-predictions <- predict(m1, newdata = surv_grid, return_tmb_object = TRUE)
+predictions <- predict(m2, newdata = surv_grid, return_tmb_object = TRUE)
 
 # Stolen from vignette...
 plot_map <- function(dat, column) {

@@ -81,8 +81,6 @@ trimBridgeIPES <- bridgeIPES %>%
          AVG_BOTTOM_DEPTH, HEAD_DEPTH = AVG_GEAR_DEPTH, CK_JUV = JUV_CATCH,
          CK_ADULT = ADULT_CATCH)
 
-longtows <- bridgeOut %>% filter(dur>0.75)
-
 ## Plot overlap between IPES and high seas
 library(ggmap)
 nAm <- map_data("world") %>% 
