@@ -14,7 +14,7 @@ stockKey1 <- readRDS(here::here("data", "tempStockList.rds")) %>%
   distinct()
 
 stockKey1 %>% 
-  glimpse()
+  filter(grepl("PIT", stock))
 
 # Associate misspelled and unknown stocks with higher level regions
 stockKeyOut <- stockKey1 %>% 
@@ -22,6 +22,7 @@ stockKeyOut <- stockKey1 %>%
     mutate(
       #add unknown stocks
       Region1Name = case_when(
+        grepl("PIT", stock) ~ "LWFR-Su",
         stock == "SOLDUC_F" ~ "Washington_Coast",
         stock == "WALKER" ~ "UPFR",
         stock == "HOMATHKO" ~ "SOMN",
@@ -36,7 +37,7 @@ stockKeyOut <- stockKey1 %>%
         grepl("SOOS_CR", stock) ~ "S_Puget_Sound",
         grepl("GREEN", stock) ~ "S_Puget_Sound",
         grepl("WILLA", stock) ~ "Washington_Coast",
-        grepl("SKYKOMISH", stock) ~ "N_Puget_Sound",
+        grepl("SKYKOMISH", stock) ~ "C_Puget_Sound",
         stock == "BUTE" ~ "SOMN",
         grepl("SILMIL", stock) ~ "U_Columbia_R_su/fa",
         grepl("HOH_RI", stock) ~ "Washington_Coast",
@@ -45,7 +46,8 @@ stockKeyOut <- stockKey1 %>%
         grepl("ABERN", stock) ~ "L_Columbia_R_fa",
         grepl("WOSS", stock) ~ "ECVI",
         grepl("QUATSE", stock) ~ "ECVI",
-        grepl("HORSE", stock) ~ "MUFR",
+        grepl("HORSEY", stock) ~ "UPFR",
+        grepl("HORSEF", stock) ~ "MUFR",
         grepl("OKANAG", stock) ~ "U_Columbia_R_su/fa",
         grepl("WENATCH", stock) ~ "U_Columbia_R_su/fa",
         grepl("COLE", stock) ~ "N_California/S_Oregon_Coast",
@@ -61,7 +63,7 @@ stockKeyOut <- stockKey1 %>%
         grepl("L_KAL", stock) ~ "Skeena Lower",
         grepl("DESC", stock) ~ "U_Columbia_R_su/fa",
         grepl("LITTLEC", stock) ~ "N_Puget_Sound",
-        grepl("STILLAG", stock) ~ "N_Puget_Sound",
+        grepl("STILLAG", stock) ~ "C_Puget_Sound",
         grepl("TYNE", stock) ~ "N_Puget_Sound",
         grepl("SERP", stock) ~ "LWFR-F",
         grepl("ELK", stock) ~ "MUFR",
@@ -146,13 +148,14 @@ stockKeyOut <- stockKey1 %>%
              stock %in% c("SKAGIT_SU", "SKYKOMISH_SU") ~ "Puget Sound Summer",
              stock == "NOOKSACK_SP@KE" ~ "Puget Sound Spring",
              Region1Name == "N_Puget_Sound" ~ "North Puget Sound Fall",
+             Region1Name == "C_Puget_Sound" ~ "Central Puget Sound Fall",
              Region1Name == "S_Puget_Sound" ~ "South Puget Sound Fall",
              grepl("GOLD", stock) ~ "West Coast Hatchery",
              grepl("TOQUA", stock) ~ "West Coast Hatchery",
              Region1Name %in% c("CONUMA", "ROBERTSON", "NITINAT", "THORNTON") ~ 
                "West Coast Hatchery",
              Region1Name == "WCVI" ~ "West Coast Wild",
-             grepl("QUIN", stock) ~ "Upper Strait of Georgia",
+             grepl("QUINS", stock) ~ "Upper Strait of Georgia",
              grepl("NIMP", stock) ~ "North/Central BC",
              Region1Name == "ECVI" ~ 
                "Lower Strait of Georgia/Lower GS Hatchery",
