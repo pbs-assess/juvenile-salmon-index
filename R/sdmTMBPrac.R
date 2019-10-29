@@ -5,7 +5,7 @@ library(tidyverse)
 library(sdmTMB)
 library(ggplot2)
 
-browseVignettes("sdmTMB")
+# browseVignettes("sdmTMB")
 
 jchin <- readRDS(here::here("data", "juvCatchGSI_reg4.rds")) %>% 
   #remove stations that aren't present in both dataset
@@ -13,28 +13,25 @@ jchin <- readRDS(here::here("data", "juvCatchGSI_reg4.rds")) %>%
          #focus on summer for now
          # month %in% c(6, 7),
          #remove largest values so it converges
-         !ck_juv > 100
+         !ck_juv > 100,
+         !is.na(avg_bottom_depth)
          ) %>%
   #scale UTM coords
   mutate(xUTM_start = xUTM_start / 10000,
          yUTM_start = yUTM_start / 10000,
-         jdayZ = scale(jday),
-         bottomZ = scale(avg_bottom_depth)) %>% 
+         jdayZ = as.vector(scale(jday)[,1]),
+         bottomZ = as.vector(scale(avg_bottom_depth)[,1])) %>% 
   #remove extra vars and stock ppn data
   select(-c(date, stableStation, samp_catch:SEAK))
 
 jchin_spde <- make_spde(jchin$xUTM_start, jchin$yUTM_start, n_knots = 150)
 plot_spde(jchin_spde)
 
-
-qcs_grid %>% 
-  nrow()
-
-jchin %>% 
-  filter(is.na(jdayZ))
-
-ggplot(jchin, aes(x = jdayZ, y = ck_juv)) +
+ggplot(jchin, aes(x = bottomZ, y = ck_juv)) +
   geom_point()
+ggplot(pcod, aes(x = depth_scaled^2, y = density)) +
+  geom_point()
+
 
 ## Develop index 
 # Fit GLMM without covariates
@@ -47,7 +44,7 @@ m1 <- sdmTMB(ck_juv ~ 0 + as.factor(year),
   include_spatial = TRUE,
   ar1_fields = FALSE,
   family = nbinom2(link = "log"))
-m2 <- sdmTMB(ck_juv ~ 0 + as.factor(year) + jdayZ, 
+m2 <- sdmTMB(ck_juv ~ 0 + as.factor(year) + bottomZ, 
              data = jchin,
              time = "year", 
              spde = jchin_spde, 
@@ -56,23 +53,30 @@ m2 <- sdmTMB(ck_juv ~ 0 + as.factor(year) + jdayZ,
              include_spatial = TRUE,
              ar1_fields = FALSE,
              family = nbinom2(link = "log"))
+# saveRDS(m2, here::here("data", "modelFits", "depthModel.rds"))
 
 dum <- jchin %>% 
   mutate(resid = residuals(m1))
+# waiting on patch for neg
 
 # Generate prediction grid 
-surv_grid <- expand.grid(
-  year = unique(jchin$year),
-  jdayZ = seq(-2, 1.75, length.out = 100),
-  X = seq(from = min(jchin$xUTM_start),
-          to = max(jchin$xUTM_start),
-          by = 2),
-  Y = seq(from = min(jchin$yUTM_start),
-          to = max(jchin$yUTM_start),
-          by = 2)
-)
+surv_grid <- jchin %>%
+  expand(nesting(xUTM_start, yUTM_start, bottomZ), year) %>% 
+  rename(X = xUTM_start, Y = yUTM_start)
 
-predictions <- predict(m2, newdata = surv_grid, return_tmb_object = TRUE)
+## Below is Julian day version, but way way too many elements
+# surv_grid <- expand.grid(
+#   year = unique(jchin$year),
+#   jdayZ = seq(-2, 1.75, length.out = 100),
+#   X = seq(from = min(jchin$xUTM_start),
+#           to = max(jchin$xUTM_start),
+#           by = 2),
+#   Y = seq(from = min(jchin$yUTM_start),
+#           to = max(jchin$yUTM_start),
+#           by = 2)
+# )
+
+pred_m2 <- predict(m2, newdata = surv_grid, return_tmb_object = TRUE)
 
 # Stolen from vignette...
 plot_map <- function(dat, column) {
@@ -83,26 +87,26 @@ plot_map <- function(dat, column) {
 }
 
 # Predictions incorporating all fixed and random effects
-plot_map(predictions$data, "exp(est)") +
+plot_map(pred_m2$data, "exp(est)") +
   scale_fill_viridis_c(trans = "sqrt") +
   ggtitle("Prediction (fixed effects + all random effects)")
 
 # Just fixed effects (not very meaningful here...)
-plot_map(predictions$data, "exp(est_non_rf)") +
+plot_map(pred_m2$data, "exp(est_non_rf)") +
   ggtitle("Prediction (fixed effects only)") +
   scale_fill_viridis_c(trans = "sqrt")
 
 # Spatial random effects (temporally stable factors driving changes in abundance)
-plot_map(predictions$data, "omega_s") +
+plot_map(pred_m2$data, "omega_s") +
   ggtitle("Spatial random effects only") +
   scale_fill_gradient2()
 
 # Spatiotemporal random effects (dynamic drivers)
-plot_map(predictions$data, "epsilon_st") +
+plot_map(pred_m2$data, "epsilon_st") +
   ggtitle("Spatiotemporal random effects only") +
   scale_fill_gradient2()
 
-ind <- get_index(predictions, bias_correct = FALSE)
+ind <- get_index(pred_m2, bias_correct = FALSE)
 
 scale <- 2 * 2  # 2 x 2 km grid 
 ggplot(ind, aes(year, est*scale)) + 
