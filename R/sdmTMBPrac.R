@@ -5,13 +5,13 @@ library(tidyverse)
 library(sdmTMB)
 library(ggplot2)
 
-# browseVignettes("sdmTMB")
+browseVignettes("sdmTMB")
 
 jchin <- readRDS(here::here("data", "juvCatchGSI_reg4.rds")) %>% 
   #remove stations that aren't present in both dataset
   filter(stableStation == "Y",
          #focus on summer for now
-         # month %in% c(6, 7),
+         month %in% c(6, 7),
          #remove largest values so it converges
          !ck_juv > 100,
          !is.na(avg_bottom_depth)
@@ -29,22 +29,21 @@ plot_spde(jchin_spde)
 
 ggplot(jchin, aes(x = bottomZ, y = ck_juv)) +
   geom_point()
-ggplot(pcod, aes(x = depth_scaled^2, y = density)) +
-  geom_point()
-
 
 ## Develop index 
 # Fit GLMM without covariates
-m1 <- sdmTMB(ck_juv ~ 0 + as.factor(year), 
-  data = jchin,
-  time = "year", 
-  spde = jchin_spde, 
-  silent = FALSE,
-  anisotropy = TRUE, 
-  include_spatial = TRUE,
-  ar1_fields = FALSE,
-  family = nbinom2(link = "log"))
-m2 <- sdmTMB(ck_juv ~ 0 + as.factor(year) + bottomZ, 
+# m1 <- sdmTMB(ck_juv ~ 0 + as.factor(year), 
+#   data = jchin,
+#   time = "year", 
+#   spde = jchin_spde, 
+#   silent = FALSE,
+#   anisotropy = TRUE, 
+#   include_spatial = TRUE,
+#   ar1_fields = FALSE,
+#   family = nbinom2(link = "log"))
+
+
+mDepth <- sdmTMB(ck_juv ~ 0 + as.factor(year) + bottomZ, 
              data = jchin,
              time = "year", 
              spde = jchin_spde, 
@@ -53,30 +52,19 @@ m2 <- sdmTMB(ck_juv ~ 0 + as.factor(year) + bottomZ,
              include_spatial = TRUE,
              ar1_fields = FALSE,
              family = nbinom2(link = "log"))
-# saveRDS(m2, here::here("data", "modelFits", "depthModel.rds"))
+# saveRDS(mDepth, here::here("data", "modelFits", "depthModel.rds"))
+mDepth <- readRDS(here::here("data", "modelFits", "depthModel.rds"))
 
 dum <- jchin %>% 
   mutate(resid = residuals(m1))
-# waiting on patch for neg
+# waiting on patch for neg binomial residuals
 
 # Generate prediction grid 
 surv_grid <- jchin %>%
   expand(nesting(xUTM_start, yUTM_start, bottomZ), year) %>% 
   rename(X = xUTM_start, Y = yUTM_start)
 
-## Below is Julian day version, but way way too many elements
-# surv_grid <- expand.grid(
-#   year = unique(jchin$year),
-#   jdayZ = seq(-2, 1.75, length.out = 100),
-#   X = seq(from = min(jchin$xUTM_start),
-#           to = max(jchin$xUTM_start),
-#           by = 2),
-#   Y = seq(from = min(jchin$yUTM_start),
-#           to = max(jchin$yUTM_start),
-#           by = 2)
-# )
-
-pred_m2 <- predict(m2, newdata = surv_grid, return_tmb_object = TRUE)
+pred_m <- predict(mDepth, newdata = surv_grid, return_tmb_object = TRUE)
 
 # Stolen from vignette...
 plot_map <- function(dat, column) {
@@ -87,22 +75,22 @@ plot_map <- function(dat, column) {
 }
 
 # Predictions incorporating all fixed and random effects
-plot_map(pred_m2$data, "exp(est)") +
+plot_map(pred_m$data, "exp(est)") +
   scale_fill_viridis_c(trans = "sqrt") +
   ggtitle("Prediction (fixed effects + all random effects)")
 
 # Just fixed effects (not very meaningful here...)
-plot_map(pred_m2$data, "exp(est_non_rf)") +
+plot_map(pred_m$data, "exp(est_non_rf)") +
   ggtitle("Prediction (fixed effects only)") +
   scale_fill_viridis_c(trans = "sqrt")
 
 # Spatial random effects (temporally stable factors driving changes in abundance)
-plot_map(pred_m2$data, "omega_s") +
+plot_map(pred_m$data, "omega_s") +
   ggtitle("Spatial random effects only") +
   scale_fill_gradient2()
 
 # Spatiotemporal random effects (dynamic drivers)
-plot_map(pred_m2$data, "epsilon_st") +
+plot_map(pred_m$data, "epsilon_st") +
   ggtitle("Spatiotemporal random effects only") +
   scale_fill_gradient2()
 
@@ -113,3 +101,24 @@ ggplot(ind, aes(year, est*scale)) +
   geom_line() +
   geom_ribbon(aes(ymin = lwr*scale, ymax = upr*scale), alpha = 0.4) +
   xlab('Year') + ylab('Abundance estimate')
+
+
+## Structure of daily model incorrect - likely need to fit separate models
+# by survey
+# mDay <- sdmTMB(ck_juv ~ 0 + as.factor(year) + jdayZ, 
+#                  data = jchin,
+#                  time = "year", 
+#                  spde = jchin_spde, 
+#                  silent = FALSE,
+#                  anisotropy = TRUE, 
+#                  include_spatial = TRUE,
+#                  ar1_fields = FALSE,
+#                  family = nbinom2(link = "log"))
+# saveRDS(mDay, here::here("data", "modelFits", "dayModel.rds"))
+
+# daySeq <- c(-1.5, -0.2, 1.1)
+# surv_grid_days <- jchin %>% 
+#   expand(nesting(xUTM_start, yUTM_start), year, daySeq) %>% 
+#   rename(X = xUTM_start, Y = yUTM_start, jdayZ = daySeq)
+# pred_m <- predict(mDay, newdata = surv_grid_days, return_tmb_object = TRUE)
+
