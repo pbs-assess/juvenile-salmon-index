@@ -6,10 +6,10 @@ library(RODBC); library(tidyverse); library(ggplot2)
 # Access databases saved to regional drive to import bridge (i.e. total
 # catches) and genetics data from historical (high seas) and contemporary (IPES)
 # databases
-pathHighSeas <- "R:/SCIENCE/IPES/DB/chinookIndex/HSSALMON.accdb" 
+pathHighSeas <- "R:/SCIENCE/CFreshwater/chinookIndex/HSSALMON.accdb" 
 conHS <- odbcConnectAccess2007(pathHighSeas)
 # similar DB is saved in parent directory, but doesn't include GSI tables
-pathIPES <- "R:/SCIENCE/IPES/DB/chinookIndex/IPES_TrawlDB_v19.07f_2017_18_19_wGSI.mdb"
+pathIPES <- "R:/SCIENCE/CFreshwater/chinookIndex/IPES_TrawlDB_v19.07f_2017_18_19_wGSI.mdb"
 conIPES <- odbcConnectAccess2007(pathIPES)
 
 
