@@ -11,3 +11,5 @@ prediction-grids/*
 *.pdf
 .DS_Store
 R/hidden/
+data/modelFits/
+data/spatialData/eezShapeFile/
