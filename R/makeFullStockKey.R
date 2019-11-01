@@ -51,7 +51,7 @@ stockKeyOut <- stockKey1 %>%
         grepl("OKANAG", stock) ~ "U_Columbia_R_su/fa",
         grepl("WENATCH", stock) ~ "U_Columbia_R_su/fa",
         grepl("COLE", stock) ~ "N_California/S_Oregon_Coast",
-        grepl("KWIN", stock) ~ "NASS",
+        grepl("KWIN", stock) ~ "Nass",
         grepl("WANN", stock) ~ "NOMN",
         grepl("HIRS", stock) ~ "NOMN",
         grepl("DEAN", stock) ~ "NOMN",
@@ -119,6 +119,7 @@ stockKeyOut <- stockKey1 %>%
         region == "SKEENA MID" ~ "Skeena Mid",
         region == "SKEENA LOWER" ~ "Skeena Lower",
         region == "MUFR" ~ "MUFR",
+        region == "Alaska" ~ "SSE_Alaska",
         grepl("COLUMBIA-SP", region) ~ "Mid_and_Upper_Columbia_R_sp",
         grepl("UPPER COLUMBIA-SU", region) ~ "U_Columbia_R_su/fa",
         grepl("TRINITY", region) ~ "Klamath_R",
@@ -129,6 +130,7 @@ stockKeyOut <- stockKey1 %>%
         region == "CENTRAL VALLEY-F" ~ "Central_Valley_fa",
         region == "CENT VAL-F" ~ "Central_Valley_fa",
         region == "CENTRAL VALLEY-SP" ~ "Central_Valley_sp",
+        
         TRUE ~ as.character(Region1Name)
       )
     ) %>%
@@ -160,9 +162,10 @@ stockKeyOut <- stockKey1 %>%
              Region1Name == "ECVI" ~ 
                "Lower Strait of Georgia/Lower GS Hatchery",
              stock %in% c("CAPILANO") ~ "Fraser Late",
-             grepl("CHEAK", stock) ~  
+             stock %in% c("BUTE", "DEVEREUX", "HOMATHKO", "KLINAKLINI") ~ 
+               "Upper Strait of Georgia",
+             Region1Name == "SOMN" ~ 
                "Lower Strait of Georgia/Lower GS Hatchery",
-             Region1Name == "SOMN" ~ "North/Central BC",
              Region1Name %in% c("Mid_Oregon_Coast", 
                                 "N_California/S_Oregon_Coast",
                                 "N_Oregon_Coast") ~ 
@@ -187,7 +190,7 @@ stockKeyOut <- stockKey1 %>%
              Region1Name == "ECVI" ~ "SOG",
              stock %in% c("CAPILANO") ~ "Fraser River",
              grepl("CHEAK", stock) ~ "SOG",
-             Region1Name == "SOMN" ~ "North/Central BC",
+             Region1Name == "SOMN" ~ "SOG",
              grepl("Snake", Region1Name) ~ "Snake",
              grepl("Columbia", Region1Name) ~ "Columbia",
              grepl("California", Region2Name) ~ "Oregon/California",
@@ -210,7 +213,7 @@ stockKeyOut <- stockKey1 %>%
   arrange(Region4Name, Region3Name, Region2Name, Region1Name, stock)
 
 stockKeyOut %>%
-  glimpse()
+  filter(grepl("Alaska", Region2Name)) 
 
 # check for gaps
 # stockKeyOut %>% 
