@@ -56,32 +56,16 @@ mDay <- sdmTMB(ck_juv ~ 0 + as.factor(year) + jdayZ + jdayZ2,
 saveRDS(mDay, here::here("data", "modelFits", "dayModel.rds"))
 
 # Prediction grid (removing subannual daily effect)
-# Inappropriate because generating predictions for land masses but fine for now
-# surv_grid_days <- expand.grid(
-#   X = seq(from = round(min(jchin$xUTM_start)),
-#           to = round(max(jchin$xUTM_start)),
-#           by = 1),
-#   Y = seq(from = round(min(jchin$yUTM_start)),
-#           to = round(max(jchin$yUTM_start)),
-#           by = 1),
-#   year = unique(jchin$year)
-# ) %>%
-#   mutate(jdayZ = 0,
-#          jdayZ2 = 0)
-
-surv_grid_days <- readRDS(here::here("data", "spatialData", 
+surv_grid <- readRDS(here::here("data", "spatialData", 
                                      "trimmedSurveyGrid.rds")) %>% 
+  #scale down
+  mutate(X = X / 10000,
+         Y = Y / 10000) %>% 
   expand(nesting(X, Y), year = unique(jchin$year)) %>%
   mutate(jdayZ = 0,
          jdayZ2 = 0)
 
 # Too many gaps in space
-# surv_grid_days <- jchin %>%
-#   expand(nesting(xUTM_start, yUTM_start), year) %>%
-#   mutate(jdayZ = 0,
-#          jdayZ2 = 0) %>%
-#   rename(X = xUTM_start, Y = yUTM_start)
-
 pred_m <- predict(mDay, newdata = surv_grid_days, return_tmb_object = TRUE)
 glimpse(pred_m$data)
 
