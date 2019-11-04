@@ -5,7 +5,7 @@ library(tidyverse)
 library(sdmTMB)
 library(ggplot2)
 
-# browseVignettes("sdmTMB")
+browseVignettes("sdmTMB")
 
 jchin <- readRDS(here::here("data", "juvCatchGSI_reg4.rds")) %>% 
   #remove stations that aren't present in both dataset
@@ -22,7 +22,7 @@ jchin <- readRDS(here::here("data", "juvCatchGSI_reg4.rds")) %>%
          jdayZ2 = jdayZ^2,
          bottomZ = as.vector(scale(avg_bottom_depth)[,1])) %>% 
   #remove extra vars and stock ppn data
-  select(-c(date, stableStation, samp_catch:SEAK))
+  dplyr::select(-c(date, stableStation, samp_catch:SEAK))
 
 jchin_spde <- make_spde(jchin$xUTM_start, jchin$yUTM_start, n_knots = 150)
 plot_spde(jchin_spde)
@@ -66,7 +66,7 @@ surv_grid <- readRDS(here::here("data", "spatialData",
          jdayZ2 = 0)
 
 # Too many gaps in space
-pred_m <- predict(mDay, newdata = surv_grid_days, return_tmb_object = TRUE)
+pred_m <- predict(mDay, newdata = surv_grid, return_tmb_object = TRUE)
 glimpse(pred_m$data)
 
 ## Ignore depth for now
@@ -92,7 +92,8 @@ dum <- jchin %>%
 # Stolen from vignette...
 plot_map <- function(dat, column) {
   ggplot(dat, aes_string("X", "Y", fill = column)) +
-    geom_tile(width = 1, height = 1) +
+    # geom_tile(width = 1, height = 1) +
+    geom_raster() +
     facet_wrap(~year) +
     coord_fixed()
 }

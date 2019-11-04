@@ -41,13 +41,12 @@ plot(subset(p, !layer)$geometry)
 plot(coastUTM$geometry, add = TRUE)
 
 dum <- subset(p, !layer)$geometry %>% 
-  st_transform(., crs = "+proj=utm +zone=9 +datum=WGS84") %>% 
+  # st_transform(., crs = "+proj=utm +zone=9 +datum=WGS84") %>% 
   st_coordinates(.)
 gridOut <- data.frame(X = dum[, "X"],
                       Y = dum[, "Y"])
 
 saveRDS(gridOut, here::here("data", "spatialData", "trimmedSurveyGrid.rds"))
-
 
   
 ### TRASHY CODE ###
