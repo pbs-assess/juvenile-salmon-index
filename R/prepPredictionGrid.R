@@ -46,7 +46,7 @@ dum <- subset(p, !layer)$geometry %>%
 gridOut <- data.frame(X = dum[, "X"],
                       Y = dum[, "Y"])
 
-saveRDS(gridOut, here::here("data", "spatialData", "trimmedSurveyGrid.rds"))
+saveRDS(gridOut, here::here("data", "trimmedSurveyGrid.rds"))
 
   
 ### TRASHY CODE ###

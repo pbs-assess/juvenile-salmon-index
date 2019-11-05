@@ -5,7 +5,7 @@ library(tidyverse)
 library(sdmTMB)
 library(ggplot2)
 
-browseVignettes("sdmTMB")
+# browseVignettes("sdmTMB")
 
 jchin <- readRDS(here::here("data", "juvCatchGSI_reg4.rds")) %>% 
   #remove stations that aren't present in both dataset
@@ -56,8 +56,7 @@ mDay <- sdmTMB(ck_juv ~ 0 + as.factor(year) + jdayZ + jdayZ2,
 saveRDS(mDay, here::here("data", "modelFits", "dayModel.rds"))
 
 # Prediction grid (removing subannual daily effect)
-surv_grid <- readRDS(here::here("data", "spatialData", 
-                                     "trimmedSurveyGrid.rds")) %>% 
+surv_grid <- readRDS(here::here("data", "trimmedSurveyGrid.rds")) %>% 
   #scale down
   mutate(X = X / 10000,
          Y = Y / 10000) %>% 
