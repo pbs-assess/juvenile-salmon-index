@@ -1,10 +1,8 @@
-library(ggplot2)
-library(ggmap)
-library(sp)
-library(sf)
-library(raster)
-library(dplyr)
-library(spData)
+## Make predictive grid for sdmTMB models
+# Goal is to constrain the grid to cells with a lot of data in a relatively 
+# constrained space. Begin focusing on WCVI, QCS and JS, excluding grid cells
+# that are a) on land or b) infrequently surveyed 
+# Nov. 6 2019
 
 library(tidyverse)
 library(sf)
@@ -23,8 +21,7 @@ maxLat2 <- max(floor(jchin$yUTM_start))
 minLong2 <- min(floor(jchin$xUTM_start))
 maxLong2 <- max(floor(jchin$xUTM_start))
 
-
-# coast <- rnaturalearth::ne_coastline(110, returnclass = "sf")
+# First generate grid for entire area that just excludes landmass
 projCRS <- "+proj=utm +zone=9 +datum=WGS84"
 coast <- rbind(rnaturalearth::ne_states( "United States of America", 
                                          returnclass = "sf"), 
@@ -39,22 +36,24 @@ p <- spex::polygonize(!is.na(g))
 ## layer is whether we are on land or not
 plot(subset(p, !layer)$geometry)
 plot(coastUTM$geometry, add = TRUE)
-plot(jchin)
 
+
+# Now subset grid based on whether the cells have contained a set in recent years
 fullGrid <- subset(p, !layer)$geometry %>% 
   st_sf(ID = seq(1, length(.), by = 1))
 sets <- jchin %>% 
-  #remove early years that include a relatively large number of offshore and N
-  # sets
+  #remove early years that include a large number of offshore and northern sets
   filter(!year < 2013) %>%
   dplyr::select(year, xUTM_start, yUTM_start) %>% 
   st_as_sf(., coords = c("xUTM_start", "yUTM_start"), crs = projCRS)
 
+# Subset spatially
 subGrid <- fullGrid %>%
   st_join(., sets, join = st_intersects) %>% 
   filter(!is.na(year)) 
 plot(st_geometry(subGrid))
 
+# Extract just the coordinates and export
 subGridCoords <- subGrid %>%
   st_coordinates(.)
 gridOut <- data.frame(X = subGridCoords[, "X"],
