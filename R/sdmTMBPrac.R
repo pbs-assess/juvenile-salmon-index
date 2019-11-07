@@ -9,25 +9,28 @@ library(ggplot2)
 
 jchin <- readRDS(here::here("data", "juvCatchGSI_reg4.rds")) %>% 
   #remove stations that aren't present in both dataset
-  filter(stableStation == "Y",
-         #focus on summer for now
-         # month %in% c(6, 7),
-         #remove largest values so it converges
-         !ck_juv > 100
-         ) %>%
+  filter(stableStation == "Y") %>%
   #scale UTM coords
   mutate(xUTM_start = xUTM_start / 10000,
          yUTM_start = yUTM_start / 10000,
          jdayZ = as.vector(scale(jday)[,1]),
-         jdayZ2 = jdayZ^2) %>% 
+         jdayZ2 = jdayZ^2,
+         season = as.factor(
+           case_when(
+            month %in% c("2", "3") ~ "winter",
+            month %in% c("5", "6", "7", "8") ~ "summer",
+            month %in% c("9", "10", "11" , "12") ~ "fall")
+           )
+         ) %>% 
   #remove extra vars and stock ppn data
   dplyr::select(-c(date, stableStation, samp_catch:SEAK))
 
 jchin_spde <- make_spde(jchin$xUTM_start, jchin$yUTM_start, n_knots = 150)
 plot_spde(jchin_spde)
 
-ggplot(jchin, aes(x = jdayZ, y = ck_juv)) +
+ggplot(jchin, aes(x = jday, y = ck_juv, colour = as.factor(month))) +
   geom_point()
+
 
 ## Develop index 
 # Fit GLMM without covariates
@@ -73,7 +76,6 @@ dum <- jchin %>%
 # Stolen from vignette...
 plot_map <- function(dat, column) {
   ggplot(dat, aes_string("X", "Y", fill = column)) +
-    # geom_tile(width = 1, height = 1) +
     geom_raster() +
     facet_wrap(~year) +
     coord_fixed()
@@ -107,3 +109,8 @@ ggplot(ind, aes(year, est*scale)) +
   geom_ribbon(aes(ymin = lwr*scale, ymax = upr*scale), alpha = 0.4) +
   xlab('Year') + ylab('Abundance estimate')
  
+
+## Map of set locations as reference to prediction grid
+ggplot(jchin) +
+  geom_point(aes(x = xUTM_start, y = yUTM_start)) +
+  coord_fixed(xlim = c(37, 82), ylim = c(530, 588), ratio = 1.3)
