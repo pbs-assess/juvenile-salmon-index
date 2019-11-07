@@ -19,15 +19,14 @@ jchin <- readRDS(here::here("data", "juvCatchGSI_reg4.rds")) %>%
   mutate(xUTM_start = xUTM_start / 10000,
          yUTM_start = yUTM_start / 10000,
          jdayZ = as.vector(scale(jday)[,1]),
-         jdayZ2 = jdayZ^2,
-         bottomZ = as.vector(scale(avg_bottom_depth)[,1])) %>% 
+         jdayZ2 = jdayZ^2) %>% 
   #remove extra vars and stock ppn data
   dplyr::select(-c(date, stableStation, samp_catch:SEAK))
 
 jchin_spde <- make_spde(jchin$xUTM_start, jchin$yUTM_start, n_knots = 150)
 plot_spde(jchin_spde)
 
-ggplot(jchin, aes(x = jdayZ2, y = ck_juv)) +
+ggplot(jchin, aes(x = jdayZ, y = ck_juv)) +
   geom_point()
 
 ## Develop index 
@@ -64,25 +63,8 @@ surv_grid <- readRDS(here::here("data", "trimmedSurveyGrid.rds")) %>%
   mutate(jdayZ = 0,
          jdayZ2 = 0)
 
-# Too many gaps in space
 pred_m <- predict(mDay, newdata = surv_grid, return_tmb_object = TRUE)
 glimpse(pred_m$data)
-
-## Ignore depth for now
-# mDepth <- sdmTMB(ck_juv ~ 0 + as.factor(year) + bottomZ, 
-#              data = jchin,
-#              time = "year", 
-#              spde = jchin_spde, 
-#              silent = FALSE,
-#              anisotropy = TRUE, 
-#              include_spatial = TRUE,
-#              ar1_fields = FALSE,
-#              family = nbinom2(link = "log"))
-# saveRDS(mDepth, here::here("data", "modelFits", "depthModel.rds"))
-# mDepth <- readRDS(here::here("data", "modelFits", "depthModel.rds"))
-# surv_grid <- jchin %>%
-#   expand(nesting(xUTM_start, yUTM_start, bottomZ), year) %>% 
-#   rename(X = xUTM_start, Y = yUTM_start)
 
 # waiting on patch for neg binomial residuals
 dum <- jchin %>% 
