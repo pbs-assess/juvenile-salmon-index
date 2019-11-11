@@ -53,26 +53,15 @@ probs <- matrix(NA, nrow = N, ncol = k)
 for (i in 1:k) {
   if (i < k) {
     probs[ , i] <- exp_log_odds[ , i] / denominator
-    i} else if (i == k) {
-      for (h in 1:N) {
-        probs[h, i] <- 1 - sum(probs[h, 1:(k-1)]) 
-      }
+  } 
+  else if (i == k) {
+    for (h in 1:N) {
+      #not sure if we can vectorize this without apply...
+      probs[h, i] <- 1 - sum(probs[h, 1:(k-1)]) 
     }
-}
-
-
-#probability of each category
-probs <- matrix(NA, nrow = N, ncol = k)
-colnames(probs) <- unique(effects$cat)
-for (i in 1:k) {
-  if (i < k) {
-    dum <- effects %>% 
-      filter(cat == i)
-    probs[ , i] <- dum$exp_log_odds / denominator
-  i} else if (i == k) {
-    probs[ , i] <- apply(probs[ , 1:(k-1)], 1, function(x) 1 - sum(x))
   }
 }
+
 
 #generate observations
 y <- numeric(length = N)
@@ -92,43 +81,86 @@ for (i in seq_along(y)) {
 
 ### Generic function 2 - estimate probabilities from input matrix
 #Gen function 2 inputs 
-X <- runif(N) #predictor
 ints <- c(0.3, -1.4)
 betas <- c(-3, 4)
-k <- 3
+k <- 3 #number of groups
 
+# pars <- c(0.3, -1.4, -3, 4, 1, 1, 2, 2)
+pars <- c(0.3, -1.4, -3, 4)
+X <- matrix(data = runif(N), nrow = N, ncol = 1) #predictor
 
-nll2 <- function(ints, betas, k, X) {
-  # .log_odds_1_3 <- par[1] + par[2] * X$x
-  # .log_odds_2_3 <- par[3] + par[4] * X$x
-  cat <- seq(1, k, by = 1) %>% 
-    rep(., each = length(X))
-  int <- c(ints, NaN) %>% 
-    rep(., each = length(X))
-  beta <- c(betas, NaN) %>% 
-    rep(., each = length(X))
-  effects <- data.frame(cat,
-                        int,
-                        beta,
-                        x = rep(X, times = k)) %>% 
-    mutate(log_odds = case_when(
-      cat != refCat ~ int + beta * x,
-      cat == refCat ~ NaN),
-      exp_log_odds = exp(log_odds))
+nll2 <- function(pars) {
+  # ideally k and the covariate matrix should be arguments within the function,
+  # but not sure how to pass that to nlminb 
+  k = 3
+  cov = X
   
-  .p1 <- exp(.log_odds_1_3) /
-    (1 + exp(.log_odds_1_3) + exp(.log_odds_2_3))
-  .p2 <- exp(.log_odds_2_3) /
-    (1 + exp(.log_odds_1_3) + exp(.log_odds_2_3))
-  .p3 <- 1 - (.p1 + .p2)
+  # define intercepts and betas based on pars vector and add third reference 
+  # category to vector of parameters
+  numBetas <- (length(pars) / (k-1)) - 1
+  int <- c(pars[1:(k-1)], NA)
+  betasVec <- pars[k:length(pars)]
+  beta <- matrix(NA, nrow = numBetas, ncol = k) 
+  for (j in 1:numBetas) {
+    beta[j , ] <- c(betasVec[(j * 2 - 1):(j * 2)], NA)
+  }
+  N <- nrow(cov)
   
+  ### adjusted to allow for multiple covariate effects, but not very elegant...
+  # calculate log-odds for each category 
+  log_odds <- matrix(NA, nrow = N, ncol = k)
+  for (h in 1:k) {
+    if (h < k) {
+      #calculate cumulative covariate effects
+      covEffects <- matrix(NA, nrow = N, ncol = numBetas)
+      for (j in 1:numBetas) {
+        covEffects[ , j] <- beta[j, h] * cov[ , j]
+      }
+      for (i in 1:N) {
+        log_odds[i , h] <- int[h] + sum(covEffects[i, ])
+      }
+    } else if (h == k) {
+      log_odds[ , h] <- NA
+    }
+  }
+  exp_log_odds <- exp(log_odds)
+  
+  denominator <- rep(NA, length.out = N)
+  for (i in 1:N) {
+    denominator[i] <- 1 + sum(exp_log_odds[i, 1:(k-1)])
+  }  
+  
+  probs <- matrix(NA, nrow = N, ncol = k)
+  for (i in 1:k) {
+    if (i < k) {
+      probs[ , i] <- exp_log_odds[ , i] / denominator
+    } 
+    else if (i == k) {
+      for (i in 1:N) {
+        #not sure if we can vectorize this without apply...
+        probs[i, h] <- 1 - sum(probs[i, 1:(k-1)]) 
+      }
+    }
+  }
+  
+  #generate matrix of observations
+  y <- numeric(length = N)
+  for (i in 1:N) {
+    temp <- rmultinom(1, 1, probs[i, ])
+    y[i] <- which(temp == 1)
+  }
+  Y <- matrix(ncol = k, nrow = N, data = 0)
+  for (i in 1:N) {
+    Y[i, y[i]] <- 1
+  }
+  
+  #log-likelihood
   nll <- vector(length = length(y))
   for (i in seq_along(y)) { # not vectorized
-    nll[i] <- -dmultinom(Y[i,], size = 1,
-                         prob = c(.p1[i], .p2[i], .p3[i]), log = TRUE)
+    nll[i] <- -dmultinom(Y[i, ], size = 1, prob = probs[i, ], log = TRUE)
   }
   sum(nll)
 }
-# This should be the same but is slightly different(!?).
+# Fit with initial values
 m2 <- nlminb(rep(0, 4), nll2)
 m2
