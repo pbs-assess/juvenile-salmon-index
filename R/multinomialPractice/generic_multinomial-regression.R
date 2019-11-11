@@ -9,10 +9,7 @@ N <- 100 # number of observations
 k <- 3 #number of groups
 
 ### Gen function 1 - simulate data from variable number of groups 
-# This is really just a tester to make sure my loops produced the same plot as
-# Sean's
 
-#Gen function 1 inputs 
 X <- runif(N) #predictor
 ints <- c(0.3, -1.4)
 betas <- c(-3, 4)
