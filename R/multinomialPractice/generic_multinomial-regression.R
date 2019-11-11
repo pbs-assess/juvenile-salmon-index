@@ -1,18 +1,6 @@
 ## Simulate and fit unordered multinomial response models with k categories
 # Based on multinomial-regression.R
 
-set.seed(42)
-N <- 100 # number of observations
-X <- data.frame(x = runif(N)) # our predictor
-# for the following, category 3 will be our reference category
-b0 <- 0.3 # intercept describing log odds of category 1 vs. 3
-b1 <- -3 # effect on log odds of category 1 vs. 3 for one unit change in `x`
-b2 <- -1.4 # intercept describing log odds of category 2 vs. 3
-b3 <- 4 # effect on log odds of category 2 vs. 3 for one unit change in `x`
-
-k <- 3 #number of groups
-refCat <- "3"
-
 library(tidyverse)
 
 # structure inputs
@@ -20,7 +8,9 @@ set.seed(42)
 N <- 100 # number of observations
 k <- 3 #number of groups
 
-### Gen function 1 - simulate data from variable number of groups
+### Gen function 1 - simulate data from variable number of groups 
+# This is really just a tester to make sure my loops produced the same plot as
+# Sean's
 
 #Gen function 1 inputs 
 X <- runif(N) #predictor
@@ -41,7 +31,6 @@ for (i in 1:k) {
     log_odds[ , i] <- NA
   }
 }
-
 exp_log_odds <- exp(log_odds)
 
 denominator <- rep(NA, length.out = N)
@@ -62,7 +51,6 @@ for (i in 1:k) {
   }
 }
 
-
 #generate observations
 y <- numeric(length = N)
 for (i in seq_along(y)) {
@@ -79,23 +67,24 @@ for (i in seq_along(y)) {
 }
 
 
-### Generic function 2 - estimate probabilities from input matrix
+### Generic function 2 - estimate probabilities from input matrix (i.e. main
+# function)
 #Gen function 2 inputs 
-ints <- c(0.3, -1.4)
-betas <- c(-3, 4)
+set.seed(42)
 k <- 3 #number of groups
+N <- 100
 
 # pars <- c(0.3, -1.4, -3, 4, 1, 1, 2, 2)
-pars <- c(0.3, -1.4, -3, 4)
-X <- matrix(data = runif(N), nrow = N, ncol = 1) #predictor
+cov <- matrix(data = runif(N), nrow = N, ncol = 1) #predictor
 
-nll2 <- function(pars) {
+nll <- function(pars) {
   # ideally k and the covariate matrix should be arguments within the function,
   # but not sure how to pass that to nlminb 
-  k = 3
-  cov = X
+  # k = 3
+  # cov = X
+  # pars <- c(0.3, -1.4, -3, 4)
   
-  # define intercepts and betas based on pars vector and add third reference 
+  # define intercepts and betas based on pars vector and add  reference 
   # category to vector of parameters
   numBetas <- (length(pars) / (k-1)) - 1
   int <- c(pars[1:(k-1)], NA)
@@ -131,27 +120,16 @@ nll2 <- function(pars) {
   }  
   
   probs <- matrix(NA, nrow = N, ncol = k)
-  for (i in 1:k) {
-    if (i < k) {
-      probs[ , i] <- exp_log_odds[ , i] / denominator
+  for (h in 1:k) {
+    if (h < k) {
+      probs[ , h] <- exp_log_odds[ , h] / denominator
     } 
-    else if (i == k) {
+    else if (h == k) {
       for (i in 1:N) {
         #not sure if we can vectorize this without apply...
         probs[i, h] <- 1 - sum(probs[i, 1:(k-1)]) 
       }
     }
-  }
-  
-  #generate matrix of observations
-  y <- numeric(length = N)
-  for (i in 1:N) {
-    temp <- rmultinom(1, 1, probs[i, ])
-    y[i] <- which(temp == 1)
-  }
-  Y <- matrix(ncol = k, nrow = N, data = 0)
-  for (i in 1:N) {
-    Y[i, y[i]] <- 1
   }
   
   #log-likelihood
@@ -162,5 +140,6 @@ nll2 <- function(pars) {
   sum(nll)
 }
 # Fit with initial values
-m2 <- nlminb(rep(0, 4), nll2)
+m2 <- nlminb(rep(0, 4), nll)
 m2
+
