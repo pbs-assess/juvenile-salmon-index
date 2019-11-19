@@ -33,20 +33,9 @@ ggplot(jchin, aes(x = jday, y = ck_juv, colour = as.factor(month))) +
 
 
 ## Develop index 
-# Fit GLMM without covariates
-# m1 <- sdmTMB(ck_juv ~ 0 + as.factor(year), 
-#   data = jchin,
-#   time = "year", 
-#   spde = jchin_spde, 
-#   silent = FALSE,
-#   anisotropy = TRUE, 
-#   include_spatial = TRUE,
-#   ar1_fields = FALSE,
-#   family = nbinom2(link = "log"))
-
 ## Daily model
-mDay <- readRDS(here::here("data", "modelFits", "dayModel.rds"))
-mDay <- sdmTMB(ck_juv ~ 0 + as.factor(year) + jdayZ + jdayZ2,
+# mDay <- readRDS(here::here("data", "modelFits", "dayModel.rds"))
+m1 <- sdmTMB(ck_juv ~ 0 + as.factor(year) + jdayZ + jdayZ2,
                  data = jchin,
                  time = "year",
                  spde = jchin_spde,
@@ -55,23 +44,38 @@ mDay <- sdmTMB(ck_juv ~ 0 + as.factor(year) + jdayZ + jdayZ2,
                  include_spatial = TRUE,
                  ar1_fields = FALSE,
                  family = nbinom2(link = "log"))
-saveRDS(mDay, here::here("data", "modelFits", "dayModel.rds"))
+saveRDS(m1, here::here("data", "modelFits", "dayModel.rds"))
+
+## Daily model incorporating seasonal effects and quadratics
+m2 <- sdmTMB(ck_juv ~ 0 + as.factor(year) + season:jdayZ + season:jdayZ2,
+               data = jchin,
+               time = "year",
+               spde = jchin_spde,
+               silent = FALSE,
+               anisotropy = TRUE,
+               include_spatial = TRUE,
+               ar1_fields = FALSE,
+               family = nbinom2(link = "log"))
+dir.create(file.path(here::here("data", "modelFits")))
+saveRDS(m2, here::here("data", "modelFits", "dayModel.rds"))
+
 
 # Prediction grid (removing subannual daily effect)
 surv_grid <- readRDS(here::here("data", "trimmedSurveyGrid.rds")) %>% 
   #scale down
   mutate(X = X / 10000,
          Y = Y / 10000) %>% 
-  expand(nesting(X, Y), year = unique(jchin$year)) %>%
+  expand(nesting(X, Y), year = unique(jchin$year), 
+         season = unique(jchin$season)) %>%
   mutate(jdayZ = 0,
          jdayZ2 = 0)
 
-pred_m <- predict(mDay, newdata = surv_grid, return_tmb_object = TRUE)
+pred_m <- predict(m2, newdata = surv_grid, return_tmb_object = TRUE)
 glimpse(pred_m$data)
 
 # waiting on patch for neg binomial residuals
 dum <- jchin %>% 
-  mutate(resid = residuals(m1))
+  mutate(resid = residuals(m2))
 
 # Stolen from vignette...
 plot_map <- function(dat, column) {
