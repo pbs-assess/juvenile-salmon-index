@@ -3,9 +3,8 @@
 
 library(tidyverse)
 
-seed <- 42
 # structure inputs
-set.seed(seed)
+set.seed(42)
 N <- 100 # number of observations
 k <- 3 #number of groups
 X <- runif(N) #predictor
@@ -54,22 +53,23 @@ plot(X, jitter(y, 0.3))
 head(cbind(x = X, y))
 
 #matrix of observations
-Y <- matrix(ncol = k, nrow = N, data = 0)
+Yobs <- matrix(ncol = k, nrow = N, data = 0)
 for (i in seq_along(y)) {
   Yobs[i, y[i]] <- 1
 }
 
+saveRDS(Yobs, here::here("R", "multinomialPractice", "exDat.RDS"))
 
 ### Generic function 2 - estimate probabilities from input matrix (i.e. main
 # function)
 #Gen function 2 inputs 
-N <- nrow(Y)
-k <- ncol(Y)
 # swap out ints and betas for pure vector if necessary
 pars <- c(ints, betas)  
 # pars <- c(0.3, -1.4, -3, 4, 1, 1, 2, 2)
 
+set.seed(42)
 covMatrix <- matrix(data = runif(N), nrow = N, ncol = 1) #predictor
+
 
 nll <- function(pars, Y, k, covMatrix) {
   N <- nrow(Y) # number of rows in observation matrix
