@@ -29,6 +29,8 @@ library(Rcpp)
 pars <- c(0.3, -1.4, -3, 4, 1, 1, 2, 2)
 ints <- c(0.3, -1.4)
 betas <- matrix(c(-3, 4), nrow = 1, ncol = 2)
+N <- nrow(Yobs) # number of observations
+k <- ncol(Yobs) # number of groups
 
 logOdds <- function(ints, betas, covMatrix, N, k) {
   log_odds <- matrix(NA, nrow = N, ncol = (k-1))
@@ -43,52 +45,87 @@ logOdds <- function(ints, betas, covMatrix, N, k) {
       log_odds[i , h] <- ints[h] + sum(covEffects[i, ])
     }
   }
-  return(log_odds)
-}
-
-logOdds(ints, betas, covMatrix, N, k)
-
-cppFunction('NumericMatrix logOddsC(NumericVector ints, NumericMatrix betas,
-int k) {
-  NumericMatrix mat(k, k);
   
-  for(int i = 0, )
+  exp_log_odds <- exp(log_odds)
   
-  return(mat);
-}')
-
-cppFunction('NumericMatrix matrixC(int k) {
-            NumericMatrix mat(k, k);
-            return(mat);
-}')
-
-
-
-
-
-
-
-
-
-exp_log_odds <- exp(log_odds)
-
-denominator <- rep(NA, length.out = N)
-for (i in 1:N) {
-  denominator[i] <- 1 + sum(exp_log_odds[i, 1:(k-1)])
-}  
-
-probs <- matrix(NA, nrow = N, ncol = k)
-for (h in 1:k) {
-  if (h < k) {
-    probs[ , h] <- exp_log_odds[ , h] / denominator
-  } 
-  else if (h == k) {
-    for (i in 1:N) {
-      #not sure if we can vectorize this without apply...
-      probs[i, h] <- 1 - sum(probs[i, 1:(k-1)]) 
+  denominator <- rep(NA, length.out = N)
+  for (i in 1:N) {
+    denominator[i] <- 1 + sum(exp_log_odds[i, 1:(k-1)])
+  }
+  
+  
+  probs <- matrix(NA, nrow = N, ncol = k)
+  for (h in 1:k) {
+    if (h < k) {
+      probs[ , h] <- exp_log_odds[ , h] / denominator
+    } 
+    else if (h == k) {
+      for (i in 1:N) {
+        #not sure if we can vectorize this without apply...
+        probs[i, h] <- 1 - sum(probs[i, 1:(k-1)]) 
+      }
     }
   }
+  
+  return(probs)
 }
+
+## Example off cpp function that calculates probabilities but not NLL
+cppFunction('NumericMatrix logOddsC(NumericVector ints, NumericMatrix betas,
+NumericMatrix cov, int N, int k, int m) {
+  NumericMatrix exp_log_odds(N, (k - 1));
+  NumericVector denom(N);
+  NumericMatrix probs(N, k);
+  
+  for(int h = 0; h < (k - 1); ++h) {
+    NumericMatrix covEffects(N, m);
+
+    for(int j = 0; j < m; ++j) {
+      for(int i = 0; i < N; ++i) {
+        covEffects(i, j) = betas(j, h) * cov(i, j);
+      }
+    }
+    
+    for(int i = 0; i < N; ++i) {
+      double sumCovEff = 0;
+      for(int j = 0; j < m; ++j) {
+        sumCovEff += covEffects(i, j); 
+      }
+      exp_log_odds(i, h) = exp(ints[h] + sumCovEff);
+    }
+  }
+  
+  for(int i = 0; i < N; ++i) {
+    double sumExpLogOdds = 0;
+    for(int h = 0; h < (k - 1); ++h) {
+      sumExpLogOdds += exp_log_odds(i, h);
+    }
+    denom[i] = 1 + sumExpLogOdds;
+  }
+  
+  for(int g = 0; g < k; ++g) {
+    if (g < (k - 1)) {
+      for(int i = 0; i < N; ++i) {
+        probs(i, g) = exp_log_odds(i, g) / denom[i];
+      }
+    } else if (g == (k - 1)) {
+      for(int i = 0; i < N; ++i) {
+        double summedProbs = 0;
+        for (int h = 0; h < (k - 1); ++h) {
+          summedProbs += probs(i, h);
+        }
+        probs(i, g) = 1 - summedProbs;
+      } 
+    }
+  }
+  
+  return probs;
+}')
+
+dum2 <- logOddsC(ints, betas, cov = covMatrix, N = N,  k = k, m = 1)
+dum <- logOdds(ints, betas, covMatrix, N, k)
+
+
 
 #log-likelihood
 nll <- vector(length = length(y))
@@ -96,3 +133,8 @@ for (i in seq_along(y)) { # not vectorized
   nll[i] <- -dmultinom(Y[i, ], size = 1, prob = probs[i, ], log = TRUE)
 }
 sum(nll)
+
+
+
+
+
