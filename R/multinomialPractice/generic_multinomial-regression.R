@@ -59,15 +59,18 @@ for (i in seq_along(y)) {
 }
 
 saveRDS(Yobs, here::here("R", "multinomialPractice", "exDat.RDS"))
+Yobs <- readRDS(here::here("R", "multinomialPractice", "exDat.RDS"))
 
 ### Generic function 2 - estimate probabilities from input matrix (i.e. main
 # function)
 #Gen function 2 inputs 
 # swap out ints and betas for pure vector if necessary
 pars <- c(ints, betas)  
-# pars <- c(0.3, -1.4, -3, 4, 1, 1, 2, 2)
+pars <- c(0.3, -1.4, -3, 4, 1, 1, 2, 2)
 
 set.seed(42)
+N <- nrow(Yobs) # number of observations
+k <- ncol(Yobs) # number of groups
 covMatrix <- matrix(data = runif(N), nrow = N, ncol = 1) #predictor
 
 
