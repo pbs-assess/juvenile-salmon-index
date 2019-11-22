@@ -22,8 +22,8 @@ Type objective_function<Type>::operator()()
   for (int h = 0; h < (k - 1); ++h) {
     for (int j = 0; j < m; ++j) {
       for (int i = 0; i < N; ++i) {
-        log_odds(i, j) = betas(j, h) * cov(i, j);
-        exp_log_odds(i, j) = exp(log_odds(i, j));
+        log_odds(i, h) = betas(j, h) * cov(i, j);
+        exp_log_odds(i, h) = exp(log_odds(i, h));
       }
     }
   }
