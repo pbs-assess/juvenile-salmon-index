@@ -9,7 +9,7 @@ Type objective_function<Type>::operator()()
 
   int N = Yobs.rows();
   int k = Yobs.cols();
-  int m = k;
+  int m = cov.cols();
 
   Type jnll = 0.;
 
