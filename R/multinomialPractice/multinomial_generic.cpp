@@ -6,15 +6,15 @@ Type objective_function<Type>::operator()()
   DATA_MATRIX(cov);
 
   PARAMETER_MATRIX(betas);
-  PARAMETER_VECTOR(ints);
 
   int N = Yobs.rows();
   int k = Yobs.cols();
   int m = k;
 
-  Type jnll = 0.0;
+  Type jnll = 0.;
 
   matrix<Type> exp_log_odds(N, (k - 1));
+  matrix<Type> log_odds(N, (k - 1));
   matrix<Type> covEffects(N, m);
   matrix<Type> probs(N, k);
   vector<Type> denom(N);
@@ -22,21 +22,14 @@ Type objective_function<Type>::operator()()
   for (int h = 0; h < (k - 1); ++h) {
     for (int j = 0; j < m; ++j) {
       for (int i = 0; i < N; ++i) {
-        covEffects(i, j) = betas(j, h) * cov(i, j);
+        log_odds(i, j) = betas(j, h) * cov(i, j);
+        exp_log_odds(i, j) = exp(log_odds(i, j));
       }
-    }
-
-    for (int i = 0; i < N; ++i) {
-      Type sumCovEff = 0;
-      for (int j = 0; j < m; ++j) {
-        sumCovEff += covEffects(i, j);
-      }
-      exp_log_odds(i, h) = exp(ints[h] + sumCovEff);
     }
   }
 
   for (int i = 0; i < N; ++i) {
-    Type sumExpLogOdds = 0;
+    Type sumExpLogOdds = 0.;
     for (int h = 0; h < (k - 1); ++h) {
       sumExpLogOdds += exp_log_odds(i, h);
     }
@@ -46,7 +39,7 @@ Type objective_function<Type>::operator()()
   for (int g = 0; g < k; ++g) {
     if (g < (k - 1)) {
       for (int i = 0; i < N; ++i) {
-        probs(i, g) = exp_log_odds(i, g) / denom[i];
+        probs(i, g) = exp_log_odds(i, g) / denom(i);
       }
     } else if (g == (k - 1)) {
       for (int i = 0; i < N; ++i) {
@@ -65,6 +58,7 @@ Type objective_function<Type>::operator()()
   }
 
   REPORT(probs);
-  ADREPORT(probs);
+  REPORT(log_odds);
+  ADREPORT(log_odds);
   return jnll;
 }
