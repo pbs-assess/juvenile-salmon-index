@@ -6,7 +6,6 @@ Type objective_function<Type>::operator()()
   DATA_MATRIX(cov);
 
   PARAMETER_MATRIX(betas);
-  PARAMETER_VECTOR(ints);
 
   int N = Yobs.rows();
   int k = Yobs.cols();
@@ -31,7 +30,7 @@ Type objective_function<Type>::operator()()
       for (int j = 0; j < m; ++j) {
         sumCovEff += covEffects(i, j);
       }
-      log_odds(i, h) = ints(h) + sumCovEff;
+      log_odds(i, h) = sumCovEff;
       exp_log_odds(i, h) = exp(log_odds(i, h));
     }
   }
@@ -66,6 +65,7 @@ Type objective_function<Type>::operator()()
   }
 
   REPORT(probs);
+  ADREPORT(probs);
   REPORT(log_odds);
   ADREPORT(log_odds);
   return jnll;
