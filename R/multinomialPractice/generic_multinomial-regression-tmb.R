@@ -198,9 +198,9 @@ compile("R/multinomialPractice/multinomial_generic.cpp")
 dyn.load(dynlib("R/multinomialPractice/multinomial_generic"))
 
 ## Data and parameters
-.X <- cbind(1, X) #predictor
+.X <- cbind(X) #predictor
 data <- list(cov=.X, Yobs = Yobs)
-parameters <- list(betas=matrix(data = 0, nrow = ncol(.X), ncol = ncol(Yobs) - 1))
+parameters <- list(betas=matrix(data = 0, nrow = ncol(.X), ncol = ncol(Yobs) - 1), ints = rep(0, ncol(Yobs) - 1))
 
 ## Make a function object
 obj <- MakeADFun(data, parameters, DLL="multinomial_generic")
