@@ -13,7 +13,7 @@ pathIPES <- "R:/SCIENCE/CFreshwater/chinookIndex/IPES_TrawlDB_v19.07f_2017_18_19
 conIPES <- odbcConnectAccess2007(pathIPES)
 
 
-##### MERGE CATCH DATA #####
+##### MERGE CATCH DATA  --------------------------------------------------------
 
 # High seas bridge data - includes catch totals
 bridgeQry <- "SELECT BRIDGE.STATION_ID, BRIDGE.EVENT, STATION_INFO.REGION, 
@@ -156,7 +156,8 @@ bridgeOut <- dum %>%
 ## I.e. fish sampled from sets with catch recorded as 0. For now assume that 
 # sampled fish is minimum catch estimate and do not use bridgeout independently.
 
-##### MERGE GENETICS DATA #####
+
+##### MERGE GENETICS DATA ------------------------------------------------------
 
 # High seas Chinook GSI data
 chinDNAQry <- "SELECT BIOLOGICAL.FISH_NUMBER, STATION_INFO.STATION_ID,
@@ -384,7 +385,7 @@ gsiLongAgg <- gsiLongFull %>%
          !aggProb < maxProb)
 
 
-##### MERGE PROPORTIONS DATA #####
+##### MERGE PROPORTIONS DATA  --------------------------------------------------
 
 # Calculate catch proportions
 stockComp <- gsiLongAgg %>% 
