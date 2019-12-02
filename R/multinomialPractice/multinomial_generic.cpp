@@ -17,6 +17,7 @@ Type objective_function<Type>::operator()()
   matrix<Type> log_odds(N, (k - 1));
   matrix<Type> covEffects(N, m);
   matrix<Type> probs(N, k);
+  matrix<Type> logitProbs(N, k);
   vector<Type> denom(N);
 
   for (int h = 0; h < (k - 1); ++h) {
@@ -57,6 +58,9 @@ Type objective_function<Type>::operator()()
         probs(i, g) = 1. - summedProbs;
       }
     }
+    for (int i = 0; i < N; ++i) {
+      logitProbs(i, g) = logit(probs(i, g));
+    }
   }
 
   for (int i = 0; i < N; i++) {
@@ -66,6 +70,8 @@ Type objective_function<Type>::operator()()
 
   REPORT(probs);
   ADREPORT(probs);
+  REPORT(logitProbs);
+  ADREPORT(logitProbs);
   REPORT(log_odds);
   ADREPORT(log_odds);
   return jnll;
