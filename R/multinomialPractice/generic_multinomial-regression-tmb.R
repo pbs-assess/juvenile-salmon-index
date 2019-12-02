@@ -80,3 +80,19 @@ r <- obj$report()
 r$probs
 r$log_odds
 r$logit_probs
+
+
+library(tidyverse)
+
+# Visualize
+trim_ssdr <- ssdr[rownames(ssdr) %in% "logit_probs", ] 
+pred_ci <- data.frame(cat = rep(1:k, each = N),
+                      est = trim_ssdr$Estimate,
+                      se =  trim_ssdr$`Std. Error`) %>% 
+  mutate(pred_est = plogis(est),
+         pred_low = plogis(est - (2 * se)),
+         pred_up = plogis(est + (2 * se)))
+
+pred_ci %>% 
+  group_by(cat) %>% 
+  summarize(meanProb = mean(pred_est))
