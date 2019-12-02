@@ -48,9 +48,9 @@ plot(X, jitter(y, 0.3))
 head(cbind(x = X, y))
 
 #matrix of observations
-Yobs <- matrix(ncol = k, nrow = N, data = 0)
+y_obs <- matrix(ncol = k, nrow = N, data = 0)
 for (i in seq_along(y)) {
-  Yobs[i, y[i]] <- 1
+  y_obs[i, y[i]] <- 1
 }
 
 library(TMB)
@@ -59,9 +59,9 @@ dyn.load(dynlib("R/multinomialPractice/multinomial_generic"))
 
 ## Data and parameters
 .X <- cbind(1, X) #predictor with intercept
-data <- list(cov=.X, Yobs = Yobs)
+data <- list(cov=.X, y_obs = y_obs)
 parameters <- list(betas = matrix(data = 0, nrow = ncol(.X), 
-                                  ncol = ncol(Yobs) - 1))
+                                  ncol = ncol(y_obs) - 1))
 
 ## Make a function object
 obj <- MakeADFun(data, parameters, DLL="multinomial_generic")
@@ -79,7 +79,4 @@ ssdr
 r <- obj$report()
 r$probs
 r$log_odds
-r$logitProbs
-
-r$log_odds[1,]
-r$logitProbs[1,]
+r$logit_probs
