@@ -87,12 +87,17 @@ library(tidyverse)
 # Visualize
 trim_ssdr <- ssdr[rownames(ssdr) %in% "logit_probs", ] 
 pred_ci <- data.frame(cat = rep(1:k, each = N),
-                      est = trim_ssdr$Estimate,
-                      se =  trim_ssdr$`Std. Error`) %>% 
+                      X = rep(X, times = 4),
+                      prob = as.vector(probs),
+                      est = trim_ssdr[ , "Estimate"],
+                      se =  trim_ssdr[ , "Std. Error"]) %>% 
   mutate(pred_est = plogis(est),
          pred_low = plogis(est - (2 * se)),
          pred_up = plogis(est + (2 * se)))
 
-pred_ci %>% 
-  group_by(cat) %>% 
-  summarize(meanProb = mean(pred_est))
+ggplot(pred_ci) +
+  geom_ribbon(aes(x = X, ymin = pred_low, ymax = pred_up), fill = "#bfd3e6") +
+  geom_line(aes(x = X, y = pred_est), col = "#810f7c") +
+  geom_line(aes(x = X, y = prob)) +
+  facet_wrap(~cat) +
+  samSim::theme_sleekX()
