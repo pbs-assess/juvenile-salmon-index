@@ -162,7 +162,12 @@ ggplot(pred_ci_dat) +
   
 # Coverage calculations --------------------------------------------------------
 
-coef_dat %>% 
-  # group_by(pars) %>% 
-  mutate(covered = low < true_val & up > true_val) %>% 
+coef_dat %>%
+  group_by(pars) %>%
+  mutate(covered = low < true_val & up > true_val) %>%
   summarize(coverage = mean(covered))
+
+coef_dat %>%
+  group_by(pars) %>%
+  mutate(relative_error = (est - true_val) / true_val) %>%
+  summarize(mean_relative_error = mean(relative_error))
