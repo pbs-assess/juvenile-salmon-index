@@ -61,7 +61,7 @@ fitModel <- function(X, N, k, ints, betas) {
                                     ncol = ncol(y_obs) - 1))
   
   ## Make a function object
-  obj <- MakeADFun(data, parameters, DLL="multinomial_generic")
+  obj <- MakeADFun(data, parameters, DLL="multinomial_generic", silent = TRUE)
   
   ## Call function minimizer
   opt <- nlminb(obj$par, obj$fn, obj$gr)
@@ -80,17 +80,19 @@ fitModel <- function(X, N, k, ints, betas) {
 
 # Run Model --------------------------------------------------------------------
 
-N <- 1000 # number of observations
+N <- 300 # number of observations
 k <- 4 #number of groups
 ints <- c(0.3, -1.4, 0.3) #intercepts
 betas <- c(-3, 4, -1) #slopes
-trials <- 12 #number of times to run function
+trials <- 25 #number of times to run function
 
 # keep predictor as separate list so it can be used when making DF
-pred_list <- lapply(seq_along(1:trials), function(k) {
+pred_list <- lapply(seq_len(trials), function(k) {
   runif(N)
 })
-sim_list <- lapply(seq_along(1:trials), function(j) {
+
+sim_list <- lapply(seq_len(trials), function(j) {
+  message(j)
   fitModel(X = pred_list[[j]], N = N, k = 4, ints = ints, betas = betas) 
 })
 
@@ -108,8 +110,8 @@ coef_list <- lapply(seq_along(sim_list), function(x) {
                       est = coef_mat[ , "Estimate"],
                       se = coef_mat[ , "Std. Error"]) %>% 
     arrange(pars) %>% 
-    mutate(low = est - (2 * se),
-           up = est + (2 * se),
+    mutate(low = est + (qnorm(0.025) * se),
+           up = est + (qnorm(0.975) * se),
            true_val = c(ints, betas))
   
   # predicted vs. true probabilities
@@ -122,8 +124,8 @@ coef_list <- lapply(seq_along(sim_list), function(x) {
                         logit_prob_est = logit_probs_mat[ , "Estimate"],
                         logit_prob_se =  logit_probs_mat[ , "Std. Error"]) %>% 
     mutate(pred_prob = plogis(logit_prob_est),
-           pred_prob_low = plogis(logit_prob_est - (2 * logit_prob_se)),
-           pred_prob_up = plogis(logit_prob_est + (2 * logit_prob_se)))
+           pred_prob_low = plogis(logit_prob_est + (qnorm(0.025) * logit_prob_se)),
+           pred_prob_up = plogis(logit_prob_est + (qnorm(0.975) * logit_prob_se)))
   
   #pred list
   fit_list <- list(coefs, pred_ci)
@@ -131,10 +133,8 @@ coef_list <- lapply(seq_along(sim_list), function(x) {
   return(fit_list)
 })
 
-coef_dat <- lapply(coef_list, function(x) x$coefs) %>% 
-  do.call(rbind, .)
-pred_ci_dat <- lapply(coef_list, function(x) x$pred_ci) %>% 
-  do.call(rbind, .)
+coef_dat <- map(coef_list, "coefs") %>% bind_rows()
+pred_ci_dat <- map(coef_list, "pred_ci") %>% bind_rows()
 
 # Plot
 ggplot(coef_dat %>%
@@ -152,14 +152,17 @@ ggplot(coef_dat %>%
   labs(y = "Slope", x = "Category") +
   facet_wrap(~trial)
 
-#sample 1 of the k categories for plotting
-plotCat <- sample(1:k, 1)
-ggplot(pred_ci_dat %>% 
-         filter(cat == plotCat)) +
+ggplot(pred_ci_dat) +
   geom_ribbon(aes(x = X, ymin = pred_prob_low, ymax = pred_prob_up), 
               fill = "#bfd3e6") +
   geom_line(aes(x = X, y = pred_prob), col = "#810f7c", size = 1) +
   geom_line(aes(x = X, y = prob), size = 1) +
-  facet_wrap(~trial) +
+  facet_grid(cat~trial) +
   labs(y = "Probability", x = "Random Predictor")
   
+# Coverage calculations --------------------------------------------------------
+
+coef_dat %>% 
+  # group_by(pars) %>% 
+  mutate(covered = low < true_val & up > true_val) %>% 
+  summarize(coverage = mean(covered))
