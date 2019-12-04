@@ -80,25 +80,24 @@ fitModel <- function(X, N, k, ints, betas) {
 
 # Run Model --------------------------------------------------------------------
 
+library(tidyverse)
+
 N <- 300 # number of observations
 k <- 4 #number of groups
 ints <- c(0.3, -1.4, 0.3) #intercepts
 betas <- c(-3, 4, -1) #slopes
-trials <- 25 #number of times to run function
+trials <- 2 #number of times to run function
 
 # keep predictor as separate list so it can be used when making DF
 pred_list <- lapply(seq_len(trials), function(k) {
   runif(N)
 })
+names(pred_list) <- seq_len(trials)
 
-sim_list <- lapply(seq_len(trials), function(j) {
-  message(j)
-  fitModel(X = pred_list[[j]], N = N, k = 4, ints = ints, betas = betas) 
-})
+sim_list <- map(pred_list, fitModel, N = N, k = 4, ints = ints, 
+                                       betas = betas)
 
-# Collapse model runs into dataframe
-library(tidyverse)
-
+# Collapse model runs into dataframe 
 coef_list <- lapply(seq_along(sim_list), function(x) {
   dum <- sim_list[[x]]
   
