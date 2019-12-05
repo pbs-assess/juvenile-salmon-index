@@ -124,8 +124,8 @@ nll <- function(pars, Y, k, covMatrix) {
   }
   
   #log-likelihood
-  nll <- vector(length = length(y))
-  for (i in seq_along(y)) { # not vectorized
+  nll <- vector(length = N)
+  for (i in seq_len(N)) { # not vectorized
     nll[i] <- -dmultinom(Y[i, ], size = 1, prob = probs[i, ], log = TRUE)
   }
   sum(nll)

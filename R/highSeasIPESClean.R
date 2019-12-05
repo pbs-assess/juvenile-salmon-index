@@ -383,6 +383,7 @@ gsiLongAgg <- gsiLongFull %>%
   #exceed threshold (50%)
   filter(maxProb > 0.5,
          !aggProb < maxProb)
+saveRDS(gsiLongAgg, here::here("data", "longGSI_reg4.RDS"))
 
 
 ##### MERGE PROPORTIONS DATA  --------------------------------------------------
