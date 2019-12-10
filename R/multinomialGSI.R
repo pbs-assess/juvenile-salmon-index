@@ -19,12 +19,15 @@ gsi_long_agg <- readRDS(here::here("data", "longGSI_reg4.rds")) %>%
          Region4Name = case_when(
            Region4Name %in% c("NBC", "SEAK") ~ "NBC_SEAK",
            TRUE ~ Region4Name),
-         season = as.factor(
-           case_when(
+         season = as.factor(case_when(
              month %in% c("2", "3") ~ "winter",
              month %in% c("5", "6", "7", "8") ~ "summer",
-             month %in% c("9", "10", "11" , "12") ~ "fall"))
-  )
+             month %in% c("9", "10", "11" , "12") ~ "fall")),
+         year = as.factor(year)
+  ) 
+gsi_long_agg$season <- factor(gsi_long_agg$season, 
+                              levels(gsi_long_agg$season)[c(2,1,3)])
+
 
 ## Filter data as needed 
 gsi_wide <- gsi_long_agg  %>% 
@@ -34,6 +37,7 @@ gsi_wide <- gsi_long_agg  %>%
 glimpse(gsi_wide)
 
 # PRELIMINARY VIS --------------------------------------------------------------
+
 comp <- gsi_long_agg %>% 
   group_by(Region4Name, season, year) %>% 
   tally() %>% 
@@ -48,20 +52,29 @@ ggplot(comp) +
 
 
 # FIT MODEL --------------------------------------------------------------------
+
 library(TMB)
 compile("R/multinomialPractice/multinomial_generic.cpp")
 dyn.load(dynlib("R/multinomialPractice/multinomial_generic"))
 
 ## Data and parameters
-dum <- gsi_wide 
-# %>% 
-  # filter(year %in% ("2015"))
+dum <- gsi_wide %>% 
+  filter(year %in% c("2004", "2005")) %>% 
+  mutate(year = factor(year))
+
+gsi_long_agg %>% 
+  filter(year %in% dum$year) %>% 
+  group_by(year, Region4Name) %>% 
+  tally()
+
 y_obs <- dum  %>% 
   select(SalSea:WCVI) %>% 
   as.matrix()
 
 X <- dum$jdayZ
-.X <- cbind(1, X) #predictor with intercept
+
+.X <- model.matrix(~ year, dum)
+# .X <- cbind(1, X) #predictor with intercept
 # .X <- as.matrix(rep(1, length = nrow(y_obs)), ncol = 1) #int. only predictor
 
 data <- list(cov=.X, y_obs = y_obs)
@@ -93,18 +106,20 @@ N <- nrow(y_obs)
 
 logit_probs_mat <- ssdr[rownames(ssdr) %in% "logit_probs", ] 
 pred_ci <- data.frame(stock = rep(stk_names, each = N),
-                      jday = rep(X, times = k),
+                      year = as.factor(rep(dum$year, times = k)),
                       logit_prob_est = logit_probs_mat[ , "Estimate"],
                       logit_prob_se =  logit_probs_mat[ , "Std. Error"]) %>% 
   mutate(pred_prob = plogis(logit_prob_est),
          pred_prob_low = plogis(logit_prob_est + (qnorm(0.025) * logit_prob_se)),
-         pred_prob_up = plogis(logit_prob_est + (qnorm(0.975) * logit_prob_se))) %>% 
+         pred_prob_up = plogis(logit_prob_est + (qnorm(0.975) * logit_prob_se))) %>%
   distinct()
 
 ggplot(pred_ci) +
-  geom_ribbon(aes(x = jday, ymin = pred_prob_low, ymax = pred_prob_up), 
-              fill = "#bfd3e6") +
-  geom_line(aes(x = jday, y = pred_prob), col = "#810f7c", size = 1) +
+  # geom_point(aes(x = year, y = pred_prob)) +
+  geom_pointrange(aes(x = year, y = pred_prob, ymin = pred_prob_low, ymax = pred_prob_up)) +
+  # geom_ribbon(aes(x = jday, ymin = pred_prob_low, ymax = pred_prob_up), 
+  #             fill = "#bfd3e6") +
+  # geom_line(aes(x = jday, y = pred_prob), col = "#810f7c", size = 1) +
   facet_grid(~stock) +
-  labs(y = "Probability", x = "Julian Day")
+  labs(y = "Probability", x = "Year")
 
