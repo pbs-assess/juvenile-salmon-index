@@ -4,54 +4,107 @@
 
 library(tidyverse)
 
+# CLEAN DATA -------------------------------------------------------------------
+
 # identify focal stations from different dataset (FIX EVENTUALLY)
 juv <- readRDS(here::here("data", "juvCatchGSI_reg4.rds")) %>% 
   filter(stableStation == "Y")
-gsiLongAgg <- readRDS(here::here("data", "longGSI_reg4.rds"))
-gsiLongAgg %>% 
-  filter(station_id %in% unique(juv$station_id)) %>% 
-  group_by(Region4Name) %>% 
-  tally()
+gsi_long_agg <- readRDS(here::here("data", "longGSI_reg4.rds")) %>% 
+  filter(age == "J", 
+         station_id %in% juv$station_id) %>% 
+  select(-ship_fl, -c(xUTM_start:age), -c(aggProb:maxProb)) %>%
+  mutate(jdayZ = as.vector(scale(jday)[,1]),
+         present = 1,
+         #consolidate northern aggregates because rel. rare
+         Region4Name = case_when(
+           Region4Name %in% c("NBC", "SEAK") ~ "NBC_SEAK",
+           TRUE ~ Region4Name),
+         season = as.factor(
+           case_when(
+             month %in% c("2", "3") ~ "winter",
+             month %in% c("5", "6", "7", "8") ~ "summer",
+             month %in% c("9", "10", "11" , "12") ~ "fall"))
+  )
 
-## FILTER AND ADJUST 
-gsiWide <- gsiLongAgg %>% 
-  select(-ship_fl, -c(aggProb:maxProb)) %>%
-  mutate(present = 1) %>% 
+## Filter data as needed 
+gsi_wide <- gsi_long_agg  %>% 
   pivot_wider(., names_from = Region4Name, values_from = present) %>%
-  mutate_if(is.numeric, ~replace_na(., 0)) %>% 
-  glimpse()
+  mutate_if(is.numeric, ~replace_na(., 0)) 
 
-gsi <- gsiWide %>% 
-  filter(station_id %in% unique(juv$station_id),
-         age == "J") %>%
-  #scale UTM coords
-  mutate(
-    season = as.factor(
-      case_when(
-        month %in% c("2", "3") ~ "winter",
-        month %in% c("5", "6", "7", "8") ~ "summer",
-        month %in% c("9", "10", "11" , "12") ~ "fall")
-    )
-  ) %>% 
-  #remove extra vars and stock ppn data
-  select(fish_number, jday, season, year, SalSea:SEAK) %>% 
-  arrange(year)
+glimpse(gsi_wide)
 
-glimpse(gsi)
+# PRELIMINARY VIS --------------------------------------------------------------
+comp <- gsi_long_agg %>% 
+  group_by(Region4Name, season, year) %>% 
+  tally() %>% 
+  group_by(season, year) %>% 
+  mutate(total = sum(n), 
+         prop = n / total)
 
-## Obs
-y_obs <- gsi %>% 
-  filter(year %in% ("2018")) %>% 
-  select(SalSea:SEAK) %>% 
-  as.matrix()
-  
+ggplot(comp) +
+  geom_bar(aes(x = as.factor(year), y = prop, fill = Region4Name), 
+           stat = "identity") +
+  facet_wrap(~season)
+
+
+# FIT MODEL --------------------------------------------------------------------
 library(TMB)
 compile("R/multinomialPractice/multinomial_generic.cpp")
 dyn.load(dynlib("R/multinomialPractice/multinomial_generic"))
 
 ## Data and parameters
-# .X <- cbind(1, X) #predictor with intercept
+dum <- gsi_wide 
+# %>% 
+  # filter(year %in% ("2015"))
+y_obs <- dum  %>% 
+  select(SalSea:WCVI) %>% 
+  as.matrix()
+
+X <- dum$jdayZ
 .X <- cbind(1, X) #predictor with intercept
+# .X <- as.matrix(rep(1, length = nrow(y_obs)), ncol = 1) #int. only predictor
+
 data <- list(cov=.X, y_obs = y_obs)
 parameters <- list(betas = matrix(data = 0, nrow = ncol(.X), 
                                   ncol = ncol(y_obs) - 1))
+
+## Make a function object
+obj <- MakeADFun(data, parameters, DLL="multinomial_generic")
+
+## Call function minimizer
+opt <- nlminb(obj$par, obj$fn, obj$gr)
+
+## Get parameter uncertainties and convergence diagnostics
+sdr <- sdreport(obj)
+sdr
+
+ssdr <- summary(sdr)
+ssdr
+
+r <- obj$report()
+r$probs
+r$log_odds
+r$logit_probs
+
+# PLOT PREDICTIONS -------------------------------------------------------------
+k <- ncol(y_obs) # number of stocks
+stk_names <- colnames(y_obs)
+N <- nrow(y_obs)
+
+logit_probs_mat <- ssdr[rownames(ssdr) %in% "logit_probs", ] 
+pred_ci <- data.frame(stock = rep(stk_names, each = N),
+                      jday = rep(X, times = k),
+                      logit_prob_est = logit_probs_mat[ , "Estimate"],
+                      logit_prob_se =  logit_probs_mat[ , "Std. Error"]) %>% 
+  mutate(pred_prob = plogis(logit_prob_est),
+         pred_prob_low = plogis(logit_prob_est + (qnorm(0.025) * logit_prob_se)),
+         pred_prob_up = plogis(logit_prob_est + (qnorm(0.975) * logit_prob_se))) %>% 
+  distinct()
+
+ggplot(pred_ci) +
+  geom_ribbon(aes(x = jday, ymin = pred_prob_low, ymax = pred_prob_up), 
+              fill = "#bfd3e6") +
+  geom_line(aes(x = jday, y = pred_prob), col = "#810f7c", size = 1) +
+  facet_grid(~stock) +
+  labs(y = "Probability", x = "Julian Day")
+
