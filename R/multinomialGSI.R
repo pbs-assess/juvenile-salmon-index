@@ -8,7 +8,8 @@ library(tidyverse)
 
 # identify focal stations from different dataset (FIX EVENTUALLY)
 juv <- readRDS(here::here("data", "juvCatchGSI_reg4.rds")) %>% 
-  filter(stableStation == "Y")
+  filter(stableStation == "Y") %>% 
+  mutate(week = lubridate::week(date))
 gsi_long_agg <- readRDS(here::here("data", "longGSI_reg4.rds")) %>% 
   filter(age == "J", 
          station_id %in% juv$station_id) %>% 
@@ -17,7 +18,7 @@ gsi_long_agg <- readRDS(here::here("data", "longGSI_reg4.rds")) %>%
          present = 1,
          #consolidate northern aggregates because rel. rare
          Region4Name = case_when(
-           Region4Name %in% c("NBC", "SEAK") ~ "NBC_SEAK",
+           Region4Name %in% c("NBC", "SEAK", "CoastUS") ~ "Other",
            TRUE ~ Region4Name),
          season = as.factor(case_when(
              month %in% c("2", "3") ~ "winter",
@@ -25,7 +26,9 @@ gsi_long_agg <- readRDS(here::here("data", "longGSI_reg4.rds")) %>%
              month %in% c("9", "10", "11" , "12") ~ "fall")),
          year = as.factor(year)
   ) %>% 
-  mutate(season = fct_relevel(season, "fall", after = 1))
+  mutate(season = fct_relevel(season, "fall", after = 1)) %>% 
+  left_join(., juv %>% select(station_id, week), by = "station_id") %>% 
+  distinct()
 
 ## Filter data as needed 
 gsi_wide <- gsi_long_agg  %>% 
@@ -46,8 +49,19 @@ comp <- gsi_long_agg %>%
 ggplot(comp) +
   geom_bar(aes(x = as.factor(year), y = prop, fill = Region4Name), 
            stat = "identity") +
-  facet_wrap(~season)
+  facet_wrap(~season) +
+  ggsidekick::theme_sleek()
 
+comp_week <- gsi_long_agg %>% 
+  group_by(Region4Name, week) %>% 
+  tally() %>% 
+  group_by(week) %>% 
+  mutate(total = sum(n), 
+         prop = n / total)
+
+ggplot(comp_week) +
+  geom_bar(aes(x = as.factor(week), y = prop, fill = Region4Name), 
+           stat = "identity") 
 
 # FIT MODEL --------------------------------------------------------------------
 
@@ -56,26 +70,27 @@ compile("R/multinomialPractice/multinomial_generic.cpp")
 dyn.load(dynlib("R/multinomialPractice/multinomial_generic"))
 
 ## Data and parameters
+year_vec <- seq(from = "2000", to = "2009", by = 1)
 dum <- gsi_wide %>% 
-  filter(year %in% c("2004", "2005", "2006", "2007")) %>% 
+  filter(year %in% year_vec) %>%
   mutate(year = factor(year))
 
-gsi_long_agg %>% 
-  filter(year %in% dum$year) %>% 
-  group_by(year, Region4Name) %>% 
-  tally()
+# gsi_long_agg %>% 
+#   filter(year %in% dum$year) %>% 
+#   group_by(year, Region4Name) %>% 
+#   tally()
 
 y_obs <- dum  %>% 
-  select(SalSea:WCVI) %>% 
+  select(Other:WCVI) %>% 
   as.matrix()
 
-X <- dum$jdayZ
+# X <- dum$jdayZ
 
 .X <- model.matrix(~ year, dum)
 # .X <- cbind(1, X) #predictor with intercept
 # .X <- as.matrix(rep(1, length = nrow(y_obs)), ncol = 1) #int. only predictor
 
-data <- list(cov=.X, y_obs = y_obs)
+data <- list(cov = .X, y_obs = y_obs)
 parameters <- list(betas = matrix(data = 0, nrow = ncol(.X), 
                                   ncol = ncol(y_obs) - 1))
 
@@ -104,6 +119,7 @@ N <- nrow(y_obs)
 
 logit_probs_mat <- ssdr[rownames(ssdr) %in% "logit_probs", ] 
 pred_ci <- data.frame(stock = rep(stk_names, each = N),
+                      season = rep(dum$season, times = k),
                       year = as.factor(rep(dum$year, times = k)),
                       logit_prob_est = logit_probs_mat[ , "Estimate"],
                       logit_prob_se =  logit_probs_mat[ , "Std. Error"]) %>% 
@@ -120,6 +136,6 @@ ggplot(pred_ci) +
   # geom_ribbon(aes(x = jday, ymin = pred_prob_low, ymax = pred_prob_up), 
   #             fill = "#bfd3e6") +
   # geom_line(aes(x = jday, y = pred_prob), col = "#810f7c", size = 1) +
-  facet_grid(~stock) +
+  facet_grid( ~ stock) +
   labs(y = "Probability", x = "Year")
 
