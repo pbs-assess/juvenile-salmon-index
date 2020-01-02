@@ -24,10 +24,8 @@ gsi_long_agg <- readRDS(here::here("data", "longGSI_reg4.rds")) %>%
              month %in% c("5", "6", "7", "8") ~ "summer",
              month %in% c("9", "10", "11" , "12") ~ "fall")),
          year = as.factor(year)
-  ) 
-gsi_long_agg$season <- factor(gsi_long_agg$season, 
-                              levels(gsi_long_agg$season)[c(2,1,3)])
-
+  ) %>% 
+  mutate(season = fct_relevel(season, "fall", after = 1))
 
 ## Filter data as needed 
 gsi_wide <- gsi_long_agg  %>% 
@@ -59,7 +57,7 @@ dyn.load(dynlib("R/multinomialPractice/multinomial_generic"))
 
 ## Data and parameters
 dum <- gsi_wide %>% 
-  filter(year %in% c("2004", "2005")) %>% 
+  filter(year %in% c("2004", "2005", "2006", "2007")) %>% 
   mutate(year = factor(year))
 
 gsi_long_agg %>% 
@@ -111,12 +109,14 @@ pred_ci <- data.frame(stock = rep(stk_names, each = N),
                       logit_prob_se =  logit_probs_mat[ , "Std. Error"]) %>% 
   mutate(pred_prob = plogis(logit_prob_est),
          pred_prob_low = plogis(logit_prob_est + (qnorm(0.025) * logit_prob_se)),
-         pred_prob_up = plogis(logit_prob_est + (qnorm(0.975) * logit_prob_se))) %>%
+         pred_prob_up = plogis(logit_prob_est + (qnorm(0.975) * logit_prob_se))
+         ) %>%
   distinct()
 
 ggplot(pred_ci) +
   # geom_point(aes(x = year, y = pred_prob)) +
-  geom_pointrange(aes(x = year, y = pred_prob, ymin = pred_prob_low, ymax = pred_prob_up)) +
+  geom_pointrange(aes(x = year, y = pred_prob, ymin = pred_prob_low, 
+                      ymax = pred_prob_up)) +
   # geom_ribbon(aes(x = jday, ymin = pred_prob_low, ymax = pred_prob_up), 
   #             fill = "#bfd3e6") +
   # geom_line(aes(x = jday, y = pred_prob), col = "#810f7c", size = 1) +
