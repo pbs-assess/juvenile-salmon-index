@@ -13,11 +13,10 @@ juv <- readRDS(here::here("data", "juvCatchGSI_reg4.rds")) %>%
 gsi_long_agg <- readRDS(here::here("data", "longGSI_reg4.rds")) %>% 
   filter(age == "J", 
          station_id %in% juv$station_id) %>% 
-  select(-ship_fl, -c(xUTM_start:age), -c(aggProb:maxProb)) %>%
   mutate(jdayZ = as.vector(scale(jday)[,1]),
          present = 1,
          #consolidate northern aggregates because rel. rare
-         Region4Name = case_when(
+         agg = case_when(
            Region4Name %in% c("NBC", "SEAK", "CoastUS") ~ "Other",
            TRUE ~ Region4Name),
          season = as.factor(case_when(
@@ -26,13 +25,20 @@ gsi_long_agg <- readRDS(here::here("data", "longGSI_reg4.rds")) %>%
              month %in% c("9", "10", "11" , "12") ~ "fall")),
          year = as.factor(year)
   ) %>% 
+  select(-Region4Name, -ship_fl, -c(xUTM_start:age), -c(aggProb:maxProb)) %>%
   mutate(season = fct_relevel(season, "fall", after = 1)) %>% 
   left_join(., juv %>% select(station_id, week), by = "station_id") %>% 
   distinct()
 
-## Filter data as needed 
-gsi_wide <- gsi_long_agg  %>% 
-  pivot_wider(., names_from = Region4Name, values_from = present) %>%
+year_aggs <- expand.grid(year = unique(gsi_long_agg$year), 
+                         agg = unique(gsi_long_agg$agg), 
+                         present = 1)
+
+## Replace year/aggregate combinations with 0 catches with 1s and spread to wide
+# format
+gsi_wide <- full_join(gsi_long_agg, year_aggs, 
+                      by = c("year", "agg", "present")) %>% 
+  pivot_wider(., names_from = agg, values_from = present) %>%
   mutate_if(is.numeric, ~replace_na(., 0)) 
 
 glimpse(gsi_wide)
@@ -40,27 +46,27 @@ glimpse(gsi_wide)
 # PRELIMINARY VIS --------------------------------------------------------------
 
 comp <- gsi_long_agg %>% 
-  group_by(Region4Name, season, year) %>% 
+  group_by(agg, season, year) %>% 
   tally() %>% 
   group_by(season, year) %>% 
   mutate(total = sum(n), 
          prop = n / total)
 
 ggplot(comp) +
-  geom_bar(aes(x = as.factor(year), y = prop, fill = Region4Name), 
+  geom_bar(aes(x = as.factor(year), y = prop, fill = agg), 
            stat = "identity") +
   facet_wrap(~season) +
   ggsidekick::theme_sleek()
 
 comp_week <- gsi_long_agg %>% 
-  group_by(Region4Name, week) %>% 
+  group_by(agg, week) %>% 
   tally() %>% 
   group_by(week) %>% 
   mutate(total = sum(n), 
          prop = n / total)
 
 ggplot(comp_week) +
-  geom_bar(aes(x = as.factor(week), y = prop, fill = Region4Name), 
+  geom_bar(aes(x = as.factor(week), y = prop, fill = agg), 
            stat = "identity") 
 
 # FIT MODEL --------------------------------------------------------------------
@@ -77,7 +83,7 @@ dum <- gsi_wide %>%
 
 # gsi_long_agg %>% 
 #   filter(year %in% dum$year) %>% 
-#   group_by(year, Region4Name) %>% 
+#   group_by(year, agg) %>% 
 #   tally()
 
 y_obs <- dum  %>% 

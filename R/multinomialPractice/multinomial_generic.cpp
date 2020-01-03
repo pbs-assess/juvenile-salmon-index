@@ -71,7 +71,7 @@ Type objective_function<Type>::operator()()
   REPORT(log_odds);
   REPORT(probs);
   REPORT(logit_probs);
-  ADREPORT(logit_probs);
+  // ADREPORT(logit_probs);
   
   return jnll;
 }

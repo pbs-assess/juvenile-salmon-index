@@ -8,7 +8,8 @@ set.seed(42)
 N <- 1000 # number of observations
 k <- 3 #number of groups
 # X <- runif(N) #cont. predictor
-yrCov <- data.frame(yr = sample(c("yr1", "yr2"), size = N, replace = T)) #fixed predictor representing two cats
+#fixed predictor representing two cats
+yrCov <- data.frame(yr = sample(c("yr1", "yr2"), size = N, replace = T)) 
 .X <- model.matrix(~yr, yrCov)
 
 int <- c(0.3, -1.4)
@@ -72,8 +73,9 @@ Yobs <- readRDS(here::here("R", "multinomialPractice", "exDat.RDS"))
 
 
 set.seed(42)
+#fixed predictor representing two cats
 yrCov <- data.frame(yr = sample(c("yr1", "yr2"), size = nrow(Yobs), 
-                                replace = T)) #fixed predictor representing two cats
+                                replace = T)) 
 .X <- model.matrix(~yr, yrCov)
 
 nll <- function(pars, Y, covMatrix) {
