@@ -9,34 +9,42 @@ library(TMB)
 compile("R/multinomialPractice/multinomial_generic.cpp")
 dyn.load(dynlib("R/multinomialPractice/multinomial_generic"))
 
-fitModel <- function(X, N, k, ints, betas) {
-  # append with reference category
-  int <- c(ints, NaN) 
-  beta <- c(betas, NaN)
+#random fields simulation function
+.rf_sim <- function(model, x, y) {
+  out <- sdmTMB:::rf_sim(model, x, y)
+  out - mean(out)
+}
+
+fitModel <- function(X, N, k, ints, betas, rf_pars = NULL) {
+  # simulate draws from random field 
+  if (!is.null(rf_pars)) {
+    rf_model <- RandomFields::RMmatern(nu = 1, var = rf_pars$sig^2, 
+                                       scale = 1/rf_pars$kappa)
+    
+    rf_dat <- expand.grid(x = seq(0, 1, length.out = 100), 
+                          y = seq(0, 1, length.out = 100)) %>% 
+      mutate(rf_cov = .rf_sim(model = rf_model, .$x, .$y))
+  }
   
-  log_odds <- matrix(NA, nrow = N, ncol = k)
-  for (i in 1:k) {
-    if (i < k) {
-      log_odds[ , i] <- int[i] + beta[i] * X
-    } else if (i == k) {
-      log_odds[ , i] <- NA
-    }
+  log_odds <- matrix(NA, nrow = N, ncol = (k - 1))
+  for (h in 1:(k - 1)) {
+    log_odds[ , h] <- int[h] + beta[h] * X
   }
   exp_log_odds <- exp(log_odds)
-  
+
   denominator <- rep(NA, length.out = N)
   for (i in 1:N) {
-    denominator[i] <- 1 + sum(exp_log_odds[i, 1:(k-1)])
-  }  
+    denominator[i] <- 1 + sum(exp_log_odds[i, ])
+  }
   
   probs <- matrix(NA, nrow = N, ncol = k)
-  for (i in 1:k) {
-    if (i < k) {
-      probs[ , i] <- exp_log_odds[ , i] / denominator
+  for (h in 1:k) {
+    if (h < k) {
+      probs[ , h] <- exp_log_odds[ , h] / denominator
     } 
-    else if (i == k) {
-      for (h in 1:N) {
-        probs[h, i] <- 1 - sum(probs[h, 1:(k-1)]) 
+    else if (h == k) {
+      for (i in 1:N) {
+        probs[i, h] <- 1 - sum(probs[i, 1:(k-1)]) 
       }
     }
   }
