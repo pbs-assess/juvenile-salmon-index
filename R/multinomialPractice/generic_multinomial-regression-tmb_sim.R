@@ -15,11 +15,17 @@ dyn.load(dynlib("R/multinomialPractice/multinomial_generic"))
   out - mean(out)
 }
 
-rf_pars <- list(sig = 0.3, kappa = 1.7)
+# rf_pars <- list(sig = 0.3, kappa = 1.7)
+# coords <- expand.grid(x = seq(0, 1, length.out = round(1.25*sqrt(N), 0)), 
+#                       y = seq(0, 1, length.out = round(1.25*sqrt(N), 0))) %>% 
+#   sample_n(., size = N)
+# betas <- c(0, 0, 0) #slopes
+# ints <- c(0, 0, 0) #slopes
 
-fitModel <- function(X, N, k, ints, betas, rf_pars = NULL) {
+fitModel <- function(X, N, k, ints, betas, coords, rf_pars = NULL) {
   log_odds <- matrix(NA, nrow = N, ncol = (k - 1))
   sp_list <- vector(mode = "list", length = k)
+  rf_list <- vector(mode = "list", length = k)
   for (h in 1:(k - 1)) {
     # normal calculation of log_odds w/out random fields
     if (is.null(rf_pars)) {
@@ -30,15 +36,11 @@ fitModel <- function(X, N, k, ints, betas, rf_pars = NULL) {
     if (!is.null(rf_pars)) {
       rf_model <- RandomFields::RMmatern(nu = 1, var = rf_pars$sig^2, 
                                          scale = 1/rf_pars$kappa)
-      #assumes relatively coarse grid size currently
-      rf_dat <- expand.grid(x = seq(0, 1, length.out = 20), 
-                            y = seq(0, 1, length.out = 20)) %>% 
+      #assumes relatively coarse grid slightly larger than the number of draws
+      rf_dat <- coords %>% 
         mutate(rf_effect = .rf_sim(model = rf_model, .$x, .$y)) %>% 
         sample_n(., size = N)
-
-      #### TEMP LIST TO LOOK AT SPATIAL OBSERVATIONS ####
-      sp_list[[h]] <- rf_dat      
-      
+      rf_list[[h]] <- rf_dat
       log_odds[ , h] <- ints[h] + betas[h] * X + rf_dat$rf_effect
     }
   }
@@ -73,17 +75,6 @@ fitModel <- function(X, N, k, ints, betas, rf_pars = NULL) {
   for (i in seq_along(y)) {
     y_obs[i, y[i]] <- 1
   }
-  
-  ## temporary vis
-  tt <- cbind(y_obs[ , 1], sp_list[[1]][, 1:2])
-  
-  ggplot(sp_list[[1]], aes(x, y, fill = rf_effect)) +
-    geom_raster() +
-    scale_fill_gradient2() 
-  ggplot(tt, aes(x, y, fill = y_obs[, 1])) +
-    geom_raster() +
-    scale_fill_gradient2() 
-  
     
   ## Data and parameters
   .X <- cbind(1, X) #predictor with intercept
@@ -106,6 +97,11 @@ fitModel <- function(X, N, k, ints, betas, rf_pars = NULL) {
                   summary(sdr), 
                   obj$report())
   names(outlist) <- c("true_probs", "sdr", "ssdr", "r")
+  if (!is.null(rf_pars)) {
+    outlist[[5]] <- rf_list
+    names(outlist)[5] <- "spatial_rf"
+  }
+  # return spatial random effects if present
   return(outlist)
 }
 
@@ -119,14 +115,20 @@ ints <- c(0.3, -1.4, 0.3) #intercepts
 betas <- c(-3, 4, -1) #slopes
 trials <- 2 #number of times to run function
 
+# random effects
+rf_pars <- list(sig = 0.3, kappa = 1.7)
+coords <- expand.grid(x = seq(0, 1, length.out = round(1.25*sqrt(N), 0)), 
+                      y = seq(0, 1, length.out = round(1.25*sqrt(N), 0))) %>% 
+  sample_n(., size = N)
+
 # keep predictor as separate list so it can be used when making DF
 pred_list <- lapply(seq_len(trials), function(k) {
   runif(N)
 })
 names(pred_list) <- seq_len(trials)
 
-sim_list <- map(pred_list, fitModel, N = N, k = 4, ints = ints, 
-                                       betas = betas)
+sim_list <- map(pred_list, fitModel, N = N, k = 4, ints = ints, betas = betas,
+                coords = coords, rf_pars = rf_pars)
 
 # Collapse model runs into dataframe 
 coef_list <- lapply(seq_along(sim_list), function(x) {

@@ -1,9 +1,106 @@
-## Random fields sim from S. Anderson
+## Visualize random fields simulation (included in 
+# generic_multinomial-regression-tmb.R) 
 
 library(sdmTMB)
 library(ggplot2)
 library(dplyr)
 
+.rf_sim <- function(model, x, y) {
+  out <- sdmTMB:::rf_sim(model, x, y)
+  out - mean(out)
+}
+
+N <- 300 # number of observations
+k <- 4 #number of groups
+
+log_odds <- matrix(NA, nrow = N, ncol = (k - 1))
+sp_list <- vector(mode = "list", length = k)
+coords <- expand.grid(x = seq(0, 1, length.out = round(1.25*sqrt(N), 0)), 
+                      y = seq(0, 1, length.out = round(1.25*sqrt(N), 0))) %>% 
+  sample_n(., size = N)
+rf_pars <- list(sig = 0.9, kappa = 1.7)
+# rf_pars <- NULL
+betas <- c(0, 0, 0) #slopes
+ints <- c(0, 0, 0) #slopes
+X <- runif(N)
+
+set.seed(123)
+for (h in 1:(k - 1)) {
+  # normal calculation of log_odds w/out random fields
+  if (is.null(rf_pars)) {
+    log_odds[ , h] <- ints[h] + betas[h] * X
+  }
+  
+  # with simulated draws from random field 
+  if (!is.null(rf_pars)) {
+    rf_model <- RandomFields::RMmatern(nu = 1, var = rf_pars$sig^2, 
+                                       scale = 1/rf_pars$kappa)
+    #assumes relatively coarse grid size currently
+    rf_dat <- coords %>% 
+      mutate(rf_effect = .rf_sim(model = rf_model, coords$x, coords$y)) %>% 
+      sample_n(., size = N)
+    
+    #### TEMP LIST TO LOOK AT SPATIAL OBSERVATIONS ####
+    sp_list[[h]] <- rf_dat      
+    
+    log_odds[ , h] <- ints[h] + betas[h] * X + rf_dat$rf_effect
+  }
+}
+exp_log_odds <- exp(log_odds)
+
+denominator <- rep(NA, length.out = N)
+for (i in 1:N) {
+  denominator[i] <- 1 + sum(exp_log_odds[i, ])
+}
+
+probs <- matrix(NA, nrow = N, ncol = k)
+for (h in 1:k) {
+  if (h < k) {
+    probs[ , h] <- exp_log_odds[ , h] / denominator
+  } 
+  else if (h == k) {
+    for (i in 1:N) {
+      probs[i, h] <- 1 - sum(probs[i, 1:(k-1)]) 
+    }
+  }
+}
+
+#generate observations
+y <- numeric(length = N)
+for (i in seq_along(y)) {
+  temp <- rmultinom(1, 1, probs[i, ])
+  y[i] <- which(temp == 1)
+}
+
+#matrix of observations
+y_obs <- matrix(ncol = k, nrow = N, data = 0)
+for (i in seq_along(y)) {
+  y_obs[i, y[i]] <- 1
+}
+
+## temporary vis
+temp <- NULL
+for (i in 1:3) {
+  dum <- cbind(det = y_obs[ , i], sp_list[[i]][, 1:2])
+  dum$k <- i
+  dum$rf_effect <- sp_list[[i]]$rf_effect
+  temp <- rbind(temp, dum)
+}
+
+rf <- ggplot(temp, aes(x, y, fill = rf_effect)) +
+  geom_raster() +
+  scale_fill_gradient2() +
+  facet_wrap(~k, ncol = 1)
+obs_det <- ggplot(temp, aes(x, y, fill = det)) +
+  geom_raster() +
+  scale_fill_gradient2() +
+  facet_wrap(~k, ncol = 1)
+
+ggpubr::ggarrange(rf, obs_det, ncol = 2)
+
+# ------------------------------------------------------------------------------
+
+## Random fields sim from S. Anderson
 set.seed(122)
 
 d <- expand.grid(X = seq(0, 1, length.out = 100), 
@@ -67,4 +164,5 @@ g <- reshape2::melt(d, id.vars = c("X", "Y", "year"),
         axis.ticks = element_blank()) +
   guides(fill = FALSE)
 print(g)
+
 
