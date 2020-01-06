@@ -17,9 +17,9 @@ log_odds <- matrix(NA, nrow = N, ncol = (k - 1))
 sp_list <- vector(mode = "list", length = k)
 coords <- expand.grid(x = seq(0, 1, length.out = round(1.25*sqrt(N), 0)), 
                       y = seq(0, 1, length.out = round(1.25*sqrt(N), 0))) %>% 
-  sample_n(., size = N)
+  sample_n(., size = N) %>% 
+  arrange(x, y) #important for plotting
 rf_pars <- list(sig = 0.9, kappa = 1.7)
-# rf_pars <- NULL
 betas <- c(0, 0, 0) #slopes
 ints <- c(0, 0, 0) #slopes
 X <- runif(N)
@@ -38,7 +38,8 @@ for (h in 1:(k - 1)) {
     #assumes relatively coarse grid size currently
     rf_dat <- coords %>% 
       mutate(rf_effect = .rf_sim(model = rf_model, coords$x, coords$y)) %>% 
-      sample_n(., size = N)
+      sample_n(., size = N) %>% 
+      arrange(x, y) #important for plotting
     
     #### TEMP LIST TO LOOK AT SPATIAL OBSERVATIONS ####
     sp_list[[h]] <- rf_dat      
@@ -80,23 +81,34 @@ for (i in seq_along(y)) {
 
 ## temporary vis
 temp <- NULL
-for (i in 1:3) {
-  dum <- cbind(det = y_obs[ , i], sp_list[[i]][, 1:2])
+for (i in seq_len(k)) {
+  dum <- cbind(det = y_obs[ , i], coords) %>% 
+    as.data.frame() 
+  if (i < k) {
+    dum <- dum %>% 
+      left_join(., sp_list[[i]], by = c("x", "y"))
+  } else {
+    dum$rf_effect <- 0
+  }
   dum$k <- i
-  dum$rf_effect <- sp_list[[i]]$rf_effect
   temp <- rbind(temp, dum)
 }
 
-rf <- ggplot(temp, aes(x, y, fill = rf_effect)) +
+rf <- ggplot(temp %>% filter(!k == "4"), aes(x, y, fill = rf_effect)) +
   geom_raster() +
   scale_fill_gradient2() +
   facet_wrap(~k, ncol = 1)
-obs_det <- ggplot(temp, aes(x, y, fill = det)) +
+obs_det <- ggplot(temp %>% filter(!k == "4"), aes(x, y, fill = det)) +
   geom_raster() +
   scale_fill_gradient2() +
   facet_wrap(~k, ncol = 1)
 
 ggpubr::ggarrange(rf, obs_det, ncol = 2)
+
+ggplot(temp, aes(x, y, fill = det)) +
+  geom_raster() +
+  scale_fill_gradient2() +
+  facet_wrap(~k)
 
 # ------------------------------------------------------------------------------
 
