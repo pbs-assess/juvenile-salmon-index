@@ -15,20 +15,32 @@ dyn.load(dynlib("R/multinomialPractice/multinomial_generic"))
   out - mean(out)
 }
 
+rf_pars <- list(sig = 0.3, kappa = 1.7)
+
 fitModel <- function(X, N, k, ints, betas, rf_pars = NULL) {
-  # simulate draws from random field 
-  if (!is.null(rf_pars)) {
-    rf_model <- RandomFields::RMmatern(nu = 1, var = rf_pars$sig^2, 
-                                       scale = 1/rf_pars$kappa)
-    
-    rf_dat <- expand.grid(x = seq(0, 1, length.out = 100), 
-                          y = seq(0, 1, length.out = 100)) %>% 
-      mutate(rf_cov = .rf_sim(model = rf_model, .$x, .$y))
-  }
-  
   log_odds <- matrix(NA, nrow = N, ncol = (k - 1))
+  sp_list <- vector(mode = "list", length = k)
   for (h in 1:(k - 1)) {
-    log_odds[ , h] <- int[h] + beta[h] * X
+    # normal calculation of log_odds w/out random fields
+    if (is.null(rf_pars)) {
+      log_odds[ , h] <- ints[h] + betas[h] * X
+    }
+    
+    # with simulated draws from random field 
+    if (!is.null(rf_pars)) {
+      rf_model <- RandomFields::RMmatern(nu = 1, var = rf_pars$sig^2, 
+                                         scale = 1/rf_pars$kappa)
+      #assumes relatively coarse grid size currently
+      rf_dat <- expand.grid(x = seq(0, 1, length.out = 20), 
+                            y = seq(0, 1, length.out = 20)) %>% 
+        mutate(rf_effect = .rf_sim(model = rf_model, .$x, .$y)) %>% 
+        sample_n(., size = N)
+
+      #### TEMP LIST TO LOOK AT SPATIAL OBSERVATIONS ####
+      sp_list[[h]] <- rf_dat      
+      
+      log_odds[ , h] <- ints[h] + betas[h] * X + rf_dat$rf_effect
+    }
   }
   exp_log_odds <- exp(log_odds)
 
@@ -62,6 +74,17 @@ fitModel <- function(X, N, k, ints, betas, rf_pars = NULL) {
     y_obs[i, y[i]] <- 1
   }
   
+  ## temporary vis
+  tt <- cbind(y_obs[ , 1], sp_list[[1]][, 1:2])
+  
+  ggplot(sp_list[[1]], aes(x, y, fill = rf_effect)) +
+    geom_raster() +
+    scale_fill_gradient2() 
+  ggplot(tt, aes(x, y, fill = y_obs[, 1])) +
+    geom_raster() +
+    scale_fill_gradient2() 
+  
+    
   ## Data and parameters
   .X <- cbind(1, X) #predictor with intercept
   data <- list(cov=.X, y_obs = y_obs)
