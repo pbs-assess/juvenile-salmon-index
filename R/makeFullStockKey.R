@@ -3,18 +3,21 @@
 
 library(tidyverse)
 
-scStockKey <- read.csv(here::here("data", "southCoastStockKey.csv")) %>%
+scStockKey <- read.csv(here::here("data", "stockKeys", 
+                                  "southCoastStockKey.csv")) %>%
     mutate(stock = toupper(Stock)) %>%
     select(stock, Region1Name, Region2Name, Region3Name)
-stockKey1 <- readRDS(here::here("data", "tempStockList.rds")) %>%
+# list of observed stocks from high seas
+stockKeyHS <- readRDS(here::here("data", "stockKeys", "tempStockList.rds")) %>%
   left_join(., scStockKey, by = "stock") %>% 
   mutate(Region1Name = as.character(Region1Name),
          Region2Name = as.character(Region2Name),
          Region3Name = as.character(Region3Name)) %>% 
   distinct()
-
-stockKey1 %>% 
-  filter(grepl("PIT", stock))
+# list of observed stocks from WCVI troll
+stockKey1 <- readRDS(here::here("data", "stockKeys", "wcviTrollStocks.rds")) %>% 
+  full_join(., stockKeyHS, by = "stock") %>% 
+  distinct()
 
 # Associate misspelled and unknown stocks with higher level regions
 stockKeyOut <- stockKey1 %>% 
@@ -130,7 +133,6 @@ stockKeyOut <- stockKey1 %>%
         region == "CENTRAL VALLEY-F" ~ "Central_Valley_fa",
         region == "CENT VAL-F" ~ "Central_Valley_fa",
         region == "CENTRAL VALLEY-SP" ~ "Central_Valley_sp",
-        
         TRUE ~ as.character(Region1Name)
       )
     ) %>%
@@ -212,14 +214,15 @@ stockKeyOut <- stockKey1 %>%
   distinct() %>% 
   arrange(Region4Name, Region3Name, Region2Name, Region1Name, stock)
 
-stockKeyOut %>%
-  filter(grepl("Alaska", Region2Name)) 
-
 # check for gaps
-# stockKeyOut %>% 
-#   select(stock, Region1Name, Region3Name) %>% 
-#   filter(is.na(Region3Name)) %>% 
-#   distinct()
+stockKeyOut %>%
+  select(stock, Region1Name, Region3Name) %>%
+  filter(is.na(Region1Name)) %>%
+  distinct()
+stockKeyOut %>%
+  select(stock, Region1Name, Region3Name) %>%
+  filter(is.na(Region3Name)) %>%
+  distinct()
 # stockKeyOut %>%
 #   select(stock, Region1Name:Region3Name) %>%
 #   filter(is.na(stock) | is.na(Region1Name) | is.na(Region2Name) |
