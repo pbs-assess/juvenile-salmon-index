@@ -25,14 +25,19 @@ stockKeyOut <- stockKey1 %>%
     mutate(
       #add unknown stocks
       Region1Name = case_when(
+        grepl("CLEAR_C", stock) ~ "Central_Valley_fa",
+        grepl("CHICKA", stock) ~ "SSE_Alaska",
+        stock %in% c("BEAR_VALLEY_CR", "CAPEHORN_CR", "CAMAS_CR", 
+                     "CATHERINE_CR", "CHAMBERLAIN_CR") ~ 
+          "Snake_R_sp/su",
         stock == "BUTTE_CR_SP" ~ "Central_Valley_sp",
         stock == "BUTTE_CR_F" ~ "Central_Valley_fa",
         grepl("BIG_CR", stock) ~ "L_Columbia_R_fa",
         stock == "BIG_BOULDER_CR" ~ "NSE_Alaska_Chilkat_R",
-        stock == "SALMON_R_F" ~ "Snake_R_fa",
-        stock == "BEAR_VALLEY_CR" ~ "Snake_R_sp/su",
-        stock == "BEAR_CR_SUFA" ~ "C_Puget_Sound",
-        stock == "APPLEGATE_CR" ~ "N_California/S_Oregon_Coast",
+        stock %in% c("CLEARWATERRFA", "SALMON_R_F") ~ "Snake_R_fa",
+        grepl("CEDA", stock) ~ "C_Puget_Sound",
+        stock %in% c("BEAR_CR_SUFA") ~ "C_Puget_Sound",
+        stock %in% c("APPLEGATE_CR", "CHETCO_R") ~ "N_California/S_Oregon_Coast",
         stock == "AMERICAN_SP" ~ "Central_Valley_sp",
         stock == "ALSEA_R" ~ "Mid_Oregon_Coast",
         grepl("PIT", stock) ~ "LWFR-Su",
