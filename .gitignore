@@ -8,6 +8,7 @@ inst/doc
 prediction-grids/*
 *.rds
 !data/*.rds
+!data/stockKeys/*.rds
 *.pdf
 .DS_Store
 R/hidden/
