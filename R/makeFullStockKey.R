@@ -263,7 +263,7 @@ stockKeyOut %>%
   filter(is.na(stock) | is.na(Region1Name) | is.na(Region2Name) |
            is.na(Region3Name))
 
-saveRDS(stockKeyOut, here::here("data", "finalStockList.rds"))
-write.csv(stockKeyOut, here::here("data", "finalStockList.csv"),
+saveRDS(stockKeyOut, here::here("data", "stockKeys", "finalStockList.rds"))
+write.csv(stockKeyOut, here::here("data", "stockKeys", "finalStockList.csv"),
           row.names = FALSE)
 
