@@ -8,9 +8,10 @@ scStockKey <- read.csv(here::here("data", "stockKeys",
     mutate(stock = toupper(Stock)) %>%
     select(stock, Region1Name, Region2Name, Region3Name)
 # list of observed stocks from high seas
-stockKeyHS <- readRDS(here::here("data", "stockKeys", "tempStockList.rds")) %>%
-  # select(-region) %>%
-  left_join(., scStockKey, by = "stock") %>% 
+stockKeyHS <- readRDS(here::here("data", "stockKeys", 
+                                 "highSeasChinoookStockKey.RDS")) %>%
+  select(stock = STOCK_1, region, -HSS_REGION_1) %>%
+  full_join(., scStockKey, by = "stock") %>% 
   mutate(Region1Name = as.character(Region1Name),
          Region2Name = as.character(Region2Name),
          Region3Name = as.character(Region3Name)) %>% 
@@ -29,6 +30,11 @@ stockKeyOut <- stockKey1 %>%
     select(stock, region, Region1Name) %>%
     mutate(
       #add unknown stocks
+      stock = case_when(
+        stock == "BIGQUL@LANG" ~ "BIG_Q",
+        TRUE ~ stock
+      )
+      ,
       Region1Name = case_when(
         grepl("CLEAR_C", stock) ~ "Central_Valley_fa",
         grepl("CHICKA", stock) ~ "SSE_Alaska",
@@ -136,6 +142,7 @@ stockKeyOut <- stockKey1 %>%
         grepl("NAHAT", stock) ~ "LWFR-F",
         grepl("TUY", stock) ~ "Stikine",
         region == "WCVI" ~ "WCVI",
+        region == "NASS" ~ "Nass",
         region == "SKEENA MID" ~ "Skeena Mid",
         region == "SKEENA LOWER" ~ "Skeena Lower",
         region == "MUFR" ~ "MUFR",
@@ -155,7 +162,6 @@ stockKeyOut <- stockKey1 %>%
     ) %>%
   select(-region) %>% 
   distinct() %>% 
-  # glimpse()
   left_join(., 
             stockKey1 %>% 
               select(Region1Name, Region2Name, Region3Name) %>% 
@@ -166,6 +172,7 @@ stockKeyOut <- stockKey1 %>%
   # add higher level regional aggregates
   mutate(Region2Name =
            case_when(
+             Region1Name == "Nass" ~ "North/Central BC",
              Region1Name == "LWTH" ~ "Fraser Early",
              Region1Name == "Juan_de_Fuca" ~ "Washington Coast/Juan de Fuca",
              Region1Name == "Hood_Canal" ~ "Hood Canal",
@@ -228,6 +235,7 @@ stockKeyOut <- stockKey1 %>%
              grepl("Columbia", Region1Name) ~ "Columbia",
              grepl("California", Region2Name) ~ "Oregon/California",
              Region2Name == "Alaska South SE" ~ "Alaska South SE",
+             Region2Name == "North/Central BC" ~ "North/Central BC",
              TRUE ~ as.character(Region3Name)
            ),
          #even higher level aggreagtes for preliminary modeling
@@ -250,10 +258,10 @@ stockKeyOut %>%
   select(stock, Region1Name, Region2Name) %>%
   filter(is.na(Region2Name)) %>%
   distinct()
-# stockKeyOut %>%
-#   select(stock, Region1Name:Region3Name) %>%
-#   filter(is.na(stock) | is.na(Region1Name) | is.na(Region2Name) |
-#            is.na(Region3Name))
+stockKeyOut %>%
+  select(stock, Region1Name:Region3Name) %>%
+  filter(is.na(stock) | is.na(Region1Name) | is.na(Region2Name) |
+           is.na(Region3Name))
 
 saveRDS(stockKeyOut, here::here("data", "finalStockList.rds"))
 write.csv(stockKeyOut, here::here("data", "finalStockList.csv"),
