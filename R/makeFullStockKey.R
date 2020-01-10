@@ -9,6 +9,7 @@ scStockKey <- read.csv(here::here("data", "stockKeys",
     select(stock, Region1Name, Region2Name, Region3Name)
 # list of observed stocks from high seas
 stockKeyHS <- readRDS(here::here("data", "stockKeys", "tempStockList.rds")) %>%
+  # select(-region) %>%
   left_join(., scStockKey, by = "stock") %>% 
   mutate(Region1Name = as.character(Region1Name),
          Region2Name = as.character(Region2Name),
@@ -16,20 +17,21 @@ stockKeyHS <- readRDS(here::here("data", "stockKeys", "tempStockList.rds")) %>%
   distinct()
 # list of observed stocks from WCVI troll
 stockKey1 <- readRDS(here::here("data", "stockKeys", "wcviTrollStocks.rds")) %>% 
-  full_join(., stockKeyHS, by = "stock") %>% 
+  full_join(., stockKeyHS, by = c("stock", "Region1Name")) %>% 
   distinct()
+
+stockKey1 %>% 
+  group_by(stock) %>% 
+  filter(n()>1)
 
 # Associate misspelled and unknown stocks with higher level regions
 stockKeyOut <- stockKey1 %>% 
-    select(stock:Region1Name) %>%
+    select(stock, region, Region1Name) %>%
     mutate(
       #add unknown stocks
       Region1Name = case_when(
         grepl("CLEAR_C", stock) ~ "Central_Valley_fa",
         grepl("CHICKA", stock) ~ "SSE_Alaska",
-        stock %in% c("BEAR_VALLEY_CR", "CAPEHORN_CR", "CAMAS_CR", 
-                     "CATHERINE_CR", "CHAMBERLAIN_CR") ~ 
-          "Snake_R_sp/su",
         stock == "BUTTE_CR_SP" ~ "Central_Valley_sp",
         stock == "BUTTE_CR_F" ~ "Central_Valley_fa",
         grepl("BIG_CR", stock) ~ "L_Columbia_R_fa",
@@ -156,7 +158,7 @@ stockKeyOut <- stockKey1 %>%
   # glimpse()
   left_join(., 
             stockKey1 %>% 
-              select(Region1Name:Region3Name) %>% 
+              select(Region1Name, Region2Name, Region3Name) %>% 
               distinct(), 
             by = "Region1Name") %>% 
   distinct() %>% 
@@ -164,6 +166,20 @@ stockKeyOut <- stockKey1 %>%
   # add higher level regional aggregates
   mutate(Region2Name =
            case_when(
+             Region1Name == "LWTH" ~ "Fraser Early",
+             Region1Name == "Juan_de_Fuca" ~ "Washington Coast/Juan de Fuca",
+             Region1Name == "Hood_Canal" ~ "Hood Canal",
+             Region1Name == "Central_Valley_fa" ~ "California",
+             Region1Name == "Alsek" ~ "North/Central BC",
+             Region1Name == "Alaska" ~ "Alaska South SE",
+             Region1Name == "L_Columbia_R_sp" ~ "Spring Cowlitz",
+             Region1Name == "Snake_R_sp/su" ~ "Snake Sp-Su",
+             Region1Name == "U_Columbia_R_su/fa" ~ 
+               " Up-Columbia S-F",
+             Region1Name == "Mid_and_Upper_Columbia_R_sp" ~ 
+               "Mid-Columbia Brights/Upriver Brights",
+             Region1Name == "Mid_Columbia_R_tule" ~ 
+               "Mid-Columbia Brights/Upriver Brights",
              stock %in% c("SKAGIT_SU", "SKYKOMISH_SU") ~ "Puget Sound Summer",
              stock == "NOOKSACK_SP@KE" ~ "Puget Sound Spring",
              Region1Name == "N_Puget_Sound" ~ "North Puget Sound Fall",
@@ -231,12 +247,8 @@ stockKeyOut <- stockKey1 %>%
 
 # check for gaps
 stockKeyOut %>%
-  select(stock, Region1Name, Region3Name) %>%
-  filter(is.na(Region1Name)) %>%
-  distinct()
-stockKeyOut %>%
-  select(stock, Region1Name, Region3Name) %>%
-  filter(is.na(Region3Name)) %>%
+  select(stock, Region1Name, Region2Name) %>%
+  filter(is.na(Region2Name)) %>%
   distinct()
 # stockKeyOut %>%
 #   select(stock, Region1Name:Region3Name) %>%
