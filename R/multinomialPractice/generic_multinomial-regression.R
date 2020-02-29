@@ -78,6 +78,10 @@ yrCov <- data.frame(yr = sample(c("yr1", "yr2"), size = nrow(Yobs),
                                 replace = T)) 
 .X <- model.matrix(~yr, yrCov)
 
+pars = rep(0, 4)
+Y = Yobs
+covMatrix = .X
+
 nll <- function(pars, Y, covMatrix) {
   k <- ncol(Y)
   N <- nrow(Y) # number of rows in observation matrix
