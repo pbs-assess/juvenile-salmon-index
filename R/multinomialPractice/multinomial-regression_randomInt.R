@@ -107,7 +107,7 @@ nll2 <- function(par) {
   sum(nll)
 }
 # This should be the same but is slightly different(!?).
-par_in <- c(0 , 0, rep(0, n_sites), 0.5)
+par_in <- c(0 , 0, rep(0, n_sites), 1.5)
 m2 <- nlminb(par_in, nll2)
 m2
 
