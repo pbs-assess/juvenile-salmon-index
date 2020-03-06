@@ -91,18 +91,17 @@ f <- function(b0 = 0.3, b2 = -1.4) {
     sum(nll)
   }
   
-  par_in <- c(0 , 0, rep(0, n_sites), -0.5, 0)
+  par_in <- c(0 , 0, rep(0, n_sites), -0.5)
   m2 <- nlminb(par_in, nll2)
   
-  dat_out <- data.frame(var = c("int1", "int2", unique(datf$site), "sigma", 
-                                "mu_int"),
+  dat_out <- data.frame(var = c("int1", "int2", unique(datf$site), "sigma"),
                         est = m2$par,
-                        true = c(b0, b2, site_mean_a, sd_site, 0))
+                        true = c(b0, b2, site_mean_a, sd_site))
   return(dat_out)
 }
 
 dat_list <- vector(mode = "list", length = 100)
-for (i in 1:15) {
+for (i in 1:100) {
   dat_list[[i]] <- f()
 }
 dat_out1 <- dat_list %>% 
