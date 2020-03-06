@@ -26,7 +26,7 @@ f <- function(b0 = 0.3, b2 = -1.4) {
                     g2_int = b2, # intercept describing log odds of category 2 vs. 3
                     site_mean = rep(site_mean_a, each = n_obs_per_site),
                     site_obs = site_obs_ia,
-                    sd_global = sd_global) 
+                    sd_site = sd_site) 
   # ggplot(dat, aes(x = site, y = site_obs)) +
   #   geom_jitter(width = 0.1, height = 0, alpha = 0.25) +
   #   geom_hline(aes(yintercept = site_mean), color = "red") +
@@ -69,11 +69,13 @@ f <- function(b0 = 0.3, b2 = -1.4) {
   
   # negative log likelihood function using dmultinom:
   nll2 <- function(par) {
-    log_sigma <- log(par[8])
+    log_sigma <- par[8]
     .log_odds_1_3 <- par[1] + (par[3] * XX$site1 + par[4] * XX$site2 + 
-                                 par[5] * XX$site3 + par[6] * XX$site4 + par[7] * XX$site5) * log_sigma
+                                 par[5] * XX$site3 + par[6] * XX$site4 + 
+                                 par[7] * XX$site5) * log_sigma
     .log_odds_2_3 <- par[2] + (par[3] * XX$site1 + par[4] * XX$site2 + 
-                                 par[5] * XX$site3 + par[6] * XX$site4 + par[7] * XX$site5) * log_sigma
+                                 par[5] * XX$site3 + par[6] * XX$site4 + 
+                                 par[7] * XX$site5) * log_sigma
     
     .p1 <- exp(.log_odds_1_3) /
       (1 + exp(.log_odds_1_3) + exp(.log_odds_2_3))
@@ -89,36 +91,37 @@ f <- function(b0 = 0.3, b2 = -1.4) {
     sum(nll)
   }
   
-  par_in <- c(0 , 0, rep(0, n_sites), 1.5)
+  par_in <- c(0 , 0, rep(0, n_sites), -0.5, 0)
   m2 <- nlminb(par_in, nll2)
   
-  dat_out <- data.frame(var = c("int1", "int2", unique(datf$site), "sigma"),
+  dat_out <- data.frame(var = c("int1", "int2", unique(datf$site), "sigma", 
+                                "mu_int"),
                         est = m2$par,
-                        true = c(b0, b2, site_mean_a, sd_site))
+                        true = c(b0, b2, site_mean_a, sd_site, 0))
   return(dat_out)
 }
 
 dat_list <- vector(mode = "list", length = 100)
-for (i in 1:100) {
+for (i in 1:15) {
   dat_list[[i]] <- f()
 }
-dat_out <- dat_list %>% 
+dat_out1 <- dat_list %>% 
   bind_rows() 
 
-trans_sig <- dat_out %>% 
-  filter(var == "sigma") %>% 
-  mutate(var = fct_recode(var, log_sigma = "sigma"),
-         est = log(est))
+trans_sig <- dat_out1 %>%
+  filter(var == "sigma") %>%
+  mutate(#var = fct_recode(var, log_sigma = "sigma"),
+         est = exp(est))
 
-dat_trim <- dat_out %>% 
-  filter(var %in% c("int1", "int2", "sigma")) %>% 
+dat_trim <- dat_out1 %>% 
+  filter(var %in% c("mu_int", "int1", "int2")) %>%
   rbind(., trans_sig)
 
 ggplot(dat_trim) +
   geom_boxplot(aes(x = var, y = est)) +
   geom_point(aes(x = var, y = true), colour = "red")
 
-rand_eff <- dat_out %>% 
+rand_eff <- dat_out1 %>% 
   filter(!var %in% c("int1", "int2", "sigma")) %>% 
   pivot_longer(-var, names_to = "type", values_to = "value")
 
@@ -154,67 +157,128 @@ N <- n_sites * n_obs_per_site
 sd_site <- 0.5
 sd_global <- 1
 
+# fixed effects for groups (i.e. years)
+yr_means <- c(0, 0)
+n_yrs <- length(yr_means)
+
 site_mean_a <- rnorm(mean = 0, sd = sd_global, n = n_sites)
 site_obs_ia <- rnorm(mean = rep(site_mean_a, each = n_obs_per_site),
                      sd = sd_site, 
                      n = N)
+yr_obs <- rnorm(mean = rep(yr_means, each = N / length(unique(yr_means))),
+                sd = 0.5, 
+                n = N)
+
 dat <- data.frame(site = as.factor(rep(seq(1, 5, by = 1), 
                                        each = n_obs_per_site)),
-                  # g1_int = 0.3, # intercept describing log odds of category 1 vs. 3
-                  # g2_int = -1.4, # intercept describing log odds of category 2 vs. 3
+                  g1_int = 0.3, # intercept describing log odds of category 1 vs. 3
+                  g2_int = -1.4, # intercept describing log odds of category 2 vs. 3
                   site_mean = rep(site_mean_a, each = n_obs_per_site),
                   site_obs = site_obs_ia,
                   #fixed effect
-                  yr = sample(c("yr1", "yr2"), size = N, replace = T)) 
+                  yr = sample(c("yr1", "yr2"), size = N, replace = T)) %>% 
+  mutate(
+    yr_mean = case_when(
+      yr == "yr1" ~ yr_means[1],
+      yr == "yr2" ~ yr_means[2]
+    ),
+    yr_obs = 0,#rnorm(mean = yr_mean, sd = 0.5, n = N),
+    log_odds_1_3 = g1_int + site_obs + yr_obs,
+    log_odds_2_3 = g2_int + site_obs + yr_obs,
+    # probability of category 1, 2, and 3:
+    p1 = exp(log_odds_1_3) / (1 + exp(log_odds_1_3) + exp(log_odds_2_3)),
+    p2 = exp(log_odds_2_3) / (1 + exp(log_odds_1_3) + exp(log_odds_2_3)),
+    p3 = 1 - (p1 + p2)
+  )
 
-X <- model.matrix(~ yr:site - 1, dat)
+# create the observations:
+y <- numeric(length = nrow(dat))
+p <- dat %>% 
+  select(p1:p3) %>%
+  as.matrix()
 
-int <- c(0.3, -1.4, 0.3)
-beta <- c(-0.25, 0.75, -0.5)
-
-# append with reference category
-#combine intercepts and betas into one matrix that can be multiplied by model
-#matrix; columns are parameters for each group (excluding ref. cat.)
-betas <- matrix(c(int, beta), nrow = ncol(X), ncol = k - 1, byrow = T)
-m <- nrow(betas) #number of covariates (i.e. 1 int. + slopes)
-
-log_odds <- matrix(NA, nrow = N, ncol = k)
-for (h in 1:k) {
-  if (h < k) {
-    cov_effects <- matrix(NA, nrow = N, ncol = m)
-    for (i in seq_len(N)) {
-      for (j in seq_len(m)) {
-        cov_effects[i, j] <- betas[j , h] * X[i, j]  
-      }
-      log_odds[i, h] <- sum(cov_effects[i, ])
-    }
-  } else if (h == k) {
-    log_odds[ , h] <- NA
+# function to calc
+f2 <- function() {
+  for (i in seq_along(y)) {
+    temp <- rmultinom(1, 1, p[i, ])
+    y[i] <- which(temp == 1)
   }
-}
-exp_log_odds <- exp(log_odds)
-
-denominator <- rep(NA, length.out = N)
-for (i in 1:N) {
-  denominator[i] <- 1 + sum(exp_log_odds[i, 1:(k-1)])
-}  
-
-probs <- matrix(NA, nrow = N, ncol = k)
-for (i in 1:k) {
-  if (i < k) {
-    probs[ , i] <- exp_log_odds[ , i] / denominator
-  } 
-  else if (i == k) {
-    for (h in 1:N) {
-      probs[h, i] <- 1 - sum(probs[h, 1:(k-1)]) 
+  datf <- cbind(dat, y)
+  
+  # matrix version for dmultinom():
+  Y <- matrix(ncol = 3, nrow = N, data = 0)
+  for (i in seq_along(y)) Y[i, y[i]] <- 1
+  
+  # X <- model.matrix(~ site + yr - 1, dat)
+  fix_X <- model.matrix(~ yr - 1, dat)
+  rand_X <- model.matrix(~ site - 1, dat)
+  
+  nll2 <- function(par) {
+    #calc fixed effs
+    fix_pars = par[3:4]
+    fix_e = matrix(NA, nrow = N, ncol = ncol(fix_X))
+    for(j in seq_along(fix_pars)) {
+      fix_e[ , j] = fix_pars[j] * fix_X[ , j]
     }
+    sum_fix_e <- apply(fix_e, 1, sum)
+    
+    #calc rand effs
+    log_sigma <- par[10] #log of random variance
+    rand_pars = par[5:9]
+    rand_e = matrix(NA, nrow = N, ncol = ncol(rand_X))
+    for(j in seq_along(rand_pars)) {
+      rand_e[ , j] = rand_pars[j] * rand_X[ , j]
+    }
+    sum_rand_e <- apply(rand_e, 1, sum) * log_sigma
+    
+    .log_odds_1_3 <- par[1] + sum_fix_e + sum_rand_e
+    .log_odds_2_3 <- par[2] + sum_fix_e + sum_rand_e
+    
+    .p1 <- exp(.log_odds_1_3) /
+      (1 + exp(.log_odds_1_3) + exp(.log_odds_2_3))
+    .p2 <- exp(.log_odds_2_3) /
+      (1 + exp(.log_odds_1_3) + exp(.log_odds_2_3))
+    .p3 <- 1 - (.p1 + .p2)
+    
+    nll <- vector(length = length(y))
+    for (i in seq_along(y)) { # not vectorized
+      nll[i] <- -dmultinom(Y[i,], size = 1,
+                           prob = c(.p1[i], .p2[i], .p3[i]), log = TRUE)
+    }
+    sum(nll)
   }
+  
+  par_in <- c(rep(0, k-1), #number of groups
+              rep(0, n_yrs), #number of fixed effects
+              rep(0, n_sites), #number of random effects
+              -1) #variance term
+  m2 <- nlminb(par_in, nll2)
+ 
+  dat_out <- data.frame(var = c("int1", "int2", levels(datf$yr),
+                                levels(datf$site), "sigma"),
+                        est = m2$par,
+                        true = c(unique(datf$g1_int), unique(datf$g2_int), 
+                                 yr_means, site_mean_a, log(sd_global)))
+  return(dat_out) 
 }
+f2()
 
-#generate observations
-y <- numeric(length = N)
-for (i in seq_along(y)) {
-  temp <- rmultinom(1, 1, probs[i, ])
-  y[i] <- which(temp == 1)
+dat_list <- vector(mode = "list", length = 25)
+for (i in 1:25) {
+  dat_list[[i]] <- f2()
 }
-plot(X[ , 2], jitter(y, 0.3))
+dat_out <- dat_list %>% 
+  bind_rows() 
+
+#biased estimates
+ggplot(dat_out) +
+  geom_boxplot(aes(x = var, y = est)) +
+  geom_point(aes(x = var, y = true), colour = "red")
+
+rand_eff <- dat_out %>% 
+  filter(!var %in% c("int1", "int2", "sigma")) %>% 
+  pivot_longer(-var, names_to = "type", values_to = "value")
+
+ggplot(rand_eff) +
+  geom_boxplot(aes(x = type, y = value)) +
+  facet_wrap(~var)
