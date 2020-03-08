@@ -1,9 +1,6 @@
 # Simulate and fit unordered multinomial response models with addition of 
 # random intercepts
 
-# e.g. https://www.bristol.ac.uk/media-library/sites/cmm/migrated/documents/unordered-multi-r-models.pdf
-# but note a number of typos in the equations in those slides!
-
 library(tidyverse)
 
 set.seed(42)
@@ -63,7 +60,7 @@ f <- function(b0 = 0.3, b2 = -1.4) {
   Y <- matrix(ncol = 3, nrow = N, data = 0)
   for (i in seq_along(y)) Y[i, y[i]] <- 1
   
-  # model matrix treating RE as FE
+  # model matrix 
   XX <- model.matrix(~ site - 1, datf) 
 
   # negative log likelihood function using dmultinom:
@@ -72,17 +69,9 @@ f <- function(b0 = 0.3, b2 = -1.4) {
     log_sigma_r <- par[9]
     
     # multiply random coefficients by model matrix to get linear predictor
-    z1_k <- par[3:7]
-    lin_pred <- XX %*% z1_k 
-    
-    .log_odds_1_3 <- par[1] + (lin_pred * exp(log_sigma_r))
-    .log_odds_2_3 <- par[2] + (lin_pred * exp(log_sigma_r))
-    # .log_odds_1_3 <- par[1] + (par[3] * XX$site1 + par[4] * XX$site2 +
-    #                              par[5] * XX$site3 + par[6] * XX$site4 +
-    #                              par[7] * XX$site5) * sigma
-    # .log_odds_2_3 <- par[2] + (par[3] * XX$site1 + par[4] * XX$site2 +
-    #                              par[5] * XX$site3 + par[6] * XX$site4 +
-    #                              par[7] * XX$site5) * sigma
+    z1_i <- XX %*% z1_k
+    .log_odds_1_3b <- par[1] + (z1_i * exp(log_sigma))
+    .log_odds_2_3b <- par[2] + (z1_i * exp(log_sigma))
     
     .p1 <- exp(.log_odds_1_3) /
       (1 + exp(.log_odds_1_3) + exp(.log_odds_2_3))
@@ -96,14 +85,15 @@ f <- function(b0 = 0.3, b2 = -1.4) {
                            prob = c(.p1[i], .p2[i], .p3[i]), log = TRUE)
     }
     # probability of random coefficients
+    # sum(nll)
     nll_r <- vector(length = length(z1_k))
     for (k in seq_along(z1_k)) {
-      nll_r[k] <- -dnorm(z1_k[k], 0, exp(log_sigma))
+      nll_r[k] <- -dnorm(z1_k[k], 0, exp(log_sigma_r), log = TRUE)
     }
     sum(nll, nll_r)
   }
   
-  par_in <- c(0 , 0, rep(0, n_sites), -0.5, -0.5)
+  par_in <- c(0, 0, rep(0, n_sites), -0.75, -0.75)
   m2 <- nlminb(par_in, nll2)
   
   dat_out <- data.frame(var = c("int1", "int2", unique(datf$site), "sigma", 
@@ -114,15 +104,17 @@ f <- function(b0 = 0.3, b2 = -1.4) {
 }
 
 dat_list <- vector(mode = "list", length = 100)
-for (i in 1:50) {
+for (i in 1:20) {
   dat_list[[i]] <- f()
 }
 dat_out1 <- dat_list %>% 
   bind_rows() 
 
 trans_sig <- dat_out1 %>%
-  filter(var == "sigma") %>%
-  mutate(est = exp(est))
+  filter(var %in% c("sigma", "sigma_site")) %>%
+  group_by(var) %>% 
+  mutate(est = exp(est)) %>% 
+  ungroup()
 
 dat_out1 %>% 
   filter(var %in% c("int1", "int2")) %>%
@@ -130,6 +122,9 @@ dat_out1 %>%
   ggplot(.) +
   geom_boxplot(aes(x = var, y = est)) +
   geom_point(aes(x = var, y = true), colour = "red")
+
+
+## Don't worry about following code ##
 
 rand_eff <- dat_out1 %>% 
   filter(!var %in% c("int1", "int2", "sigma")) %>% 
