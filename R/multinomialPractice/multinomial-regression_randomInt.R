@@ -64,18 +64,25 @@ f <- function(b0 = 0.3, b2 = -1.4) {
   for (i in seq_along(y)) Y[i, y[i]] <- 1
   
   # model matrix treating RE as FE
-  XX <- model.matrix(~ site - 1, datf) %>% 
-    as.data.frame()
-  
+  XX <- model.matrix(~ site - 1, datf) 
+
   # negative log likelihood function using dmultinom:
   nll2 <- function(par) {
     log_sigma <- par[8]
-    .log_odds_1_3 <- par[1] + (par[3] * XX$site1 + par[4] * XX$site2 + 
-                                 par[5] * XX$site3 + par[6] * XX$site4 + 
-                                 par[7] * XX$site5) * log_sigma
-    .log_odds_2_3 <- par[2] + (par[3] * XX$site1 + par[4] * XX$site2 + 
-                                 par[5] * XX$site3 + par[6] * XX$site4 + 
-                                 par[7] * XX$site5) * log_sigma
+    log_sigma_r <- par[9]
+    
+    # multiply random coefficients by model matrix to get linear predictor
+    z1_k <- par[3:7]
+    lin_pred <- XX %*% z1_k 
+    
+    .log_odds_1_3 <- par[1] + (lin_pred * exp(log_sigma_r))
+    .log_odds_2_3 <- par[2] + (lin_pred * exp(log_sigma_r))
+    # .log_odds_1_3 <- par[1] + (par[3] * XX$site1 + par[4] * XX$site2 +
+    #                              par[5] * XX$site3 + par[6] * XX$site4 +
+    #                              par[7] * XX$site5) * sigma
+    # .log_odds_2_3 <- par[2] + (par[3] * XX$site1 + par[4] * XX$site2 +
+    #                              par[5] * XX$site3 + par[6] * XX$site4 +
+    #                              par[7] * XX$site5) * sigma
     
     .p1 <- exp(.log_odds_1_3) /
       (1 + exp(.log_odds_1_3) + exp(.log_odds_2_3))
@@ -88,20 +95,26 @@ f <- function(b0 = 0.3, b2 = -1.4) {
       nll[i] <- -dmultinom(Y[i,], size = 1,
                            prob = c(.p1[i], .p2[i], .p3[i]), log = TRUE)
     }
-    sum(nll)
+    # probability of random coefficients
+    nll_r <- vector(length = length(z1_k))
+    for (k in seq_along(z1_k)) {
+      nll_r[k] <- -dnorm(z1_k[k], 0, exp(log_sigma))
+    }
+    sum(nll, nll_r)
   }
   
-  par_in <- c(0 , 0, rep(0, n_sites), -0.5)
+  par_in <- c(0 , 0, rep(0, n_sites), -0.5, -0.5)
   m2 <- nlminb(par_in, nll2)
   
-  dat_out <- data.frame(var = c("int1", "int2", unique(datf$site), "sigma"),
+  dat_out <- data.frame(var = c("int1", "int2", unique(datf$site), "sigma", 
+                                "sigma_site"),
                         est = m2$par,
-                        true = c(b0, b2, site_mean_a, sd_site))
+                        true = c(b0, b2, site_mean_a, sd_global, sd_site))
   return(dat_out)
 }
 
 dat_list <- vector(mode = "list", length = 100)
-for (i in 1:100) {
+for (i in 1:50) {
   dat_list[[i]] <- f()
 }
 dat_out1 <- dat_list %>% 
@@ -109,14 +122,12 @@ dat_out1 <- dat_list %>%
 
 trans_sig <- dat_out1 %>%
   filter(var == "sigma") %>%
-  mutate(#var = fct_recode(var, log_sigma = "sigma"),
-         est = exp(est))
+  mutate(est = exp(est))
 
-dat_trim <- dat_out1 %>% 
-  filter(var %in% c("mu_int", "int1", "int2")) %>%
-  rbind(., trans_sig)
-
-ggplot(dat_trim) +
+dat_out1 %>% 
+  filter(var %in% c("int1", "int2")) %>%
+  rbind(., trans_sig) %>% 
+  ggplot(.) +
   geom_boxplot(aes(x = var, y = est)) +
   geom_point(aes(x = var, y = true), colour = "red")
 
