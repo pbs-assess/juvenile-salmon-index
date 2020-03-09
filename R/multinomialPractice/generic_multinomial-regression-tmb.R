@@ -71,7 +71,7 @@ dyn.load(dynlib("R/multinomialPractice/multinomial_generic"))
 ## Data and parameters
 # .X <- cbind(1, X) #predictor with intercept
 .X <-  model.matrix(~yr, yrCov) #intercept already bound
-data <- list(cov=.X, y_obs = y_obs)
+data <- list(cov = .X, y_obs = y_obs)
 parameters <- list(betas = matrix(data = 0, nrow = ncol(.X), 
                                   ncol = ncol(y_obs) - 1))
 

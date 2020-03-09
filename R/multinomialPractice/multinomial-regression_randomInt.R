@@ -12,7 +12,7 @@ sd_site <- 0.5
 sd_global <- 1
 
 # function to simulate multinomial data and fit hierarchical models
-f <- function(b0 = 0.3, b2 = -1.4) {
+f_sim <- function(b0 = 0.3, b2 = -1.4) {
   site_mean_a <- rnorm(mean = 0, sd = sd_global, n = n_sites)
   site_obs_ia <- rnorm(mean = rep(site_mean_a, each = n_obs_per_site),
                        sd = sd_site, 
@@ -63,52 +63,52 @@ f <- function(b0 = 0.3, b2 = -1.4) {
   # model matrix 
   XX <- model.matrix(~ site - 1, datf) 
 
-  # negative log likelihood function using dmultinom:
-  nll2 <- function(par) {
-    log_sigma <- par[8]
-    log_sigma_r <- par[9]
-    
-    # multiply random coefficients by model matrix to get linear predictor
-    z1_i <- XX %*% z1_k
-    .log_odds_1_3b <- par[1] + (z1_i * exp(log_sigma))
-    .log_odds_2_3b <- par[2] + (z1_i * exp(log_sigma))
-    
-    .p1 <- exp(.log_odds_1_3) /
-      (1 + exp(.log_odds_1_3) + exp(.log_odds_2_3))
-    .p2 <- exp(.log_odds_2_3) /
-      (1 + exp(.log_odds_1_3) + exp(.log_odds_2_3))
-    .p3 <- 1 - (.p1 + .p2)
-    
-    nll <- vector(length = length(y))
-    for (i in seq_along(y)) { # not vectorized
-      nll[i] <- -dmultinom(Y[i,], size = 1,
-                           prob = c(.p1[i], .p2[i], .p3[i]), log = TRUE)
-    }
-    # probability of random coefficients
-    # sum(nll)
-    nll_r <- vector(length = length(z1_k))
-    for (k in seq_along(z1_k)) {
-      nll_r[k] <- -dnorm(z1_k[k], 0, exp(log_sigma_r), log = TRUE)
-    }
-    sum(nll, nll_r)
-  }
-  
-  par_in <- c(0, 0, rep(0, n_sites), -0.75, -0.75)
-  m2 <- nlminb(par_in, nll2)
-  
-  dat_out <- data.frame(var = c("int1", "int2", unique(datf$site), "sigma", 
-                                "sigma_site"),
-                        est = m2$par,
-                        true = c(b0, b2, site_mean_a, sd_global, sd_site))
-  return(dat_out)
+  return(list("obs" = Y, "rand_fac" = datf$site, "full_data" = datf))
 }
 
 dat_list <- vector(mode = "list", length = 100)
 for (i in 1:20) {
-  dat_list[[i]] <- f()
+  dat_list[[i]] <- f_sim()
 }
-dat_out1 <- dat_list %>% 
-  bind_rows() 
+
+
+library(TMB)
+compile("R/multinomialPractice/multinomial_generic_randInt.cpp")
+dyn.load(dynlib("R/multinomialPractice/multinomial_generic_randInt"))
+
+## Data and parameters
+y_obs <- dat_list[[1]]$obs
+fac1 <- as.numeric(dat_list[[1]]$rand_fac)
+data <- list(y_obs = y_obs,
+             fac1 = fac1)
+parameters <- list(beta1 = rep(0, times = ncol(y_obs) - 1),
+                   z_fac1 = rep(0, times = length(unique(fac1))),
+                   log_sigma = 0,
+                   log_sigma_fac1 = 0)
+
+## Make a function object
+obj <- MakeADFun(data, parameters, random = c("z_fac1"),
+                 DLL = "multinomial_generic_randInt")
+ 
+
+## Call function minimizer
+opt <- nlminb(obj$par, obj$fn, obj$gr)
+
+## Get parameter uncertainties and convergence diagnostics
+sdr <- sdreport(obj)
+sdr
+
+ssdr <- summary(sdr)
+ssdr
+
+r <- obj$report()
+r$probs
+r$log_odds
+r$logit_probs
+
+
+
+
 
 trans_sig <- dat_out1 %>%
   filter(var %in% c("sigma", "sigma_site")) %>%
@@ -287,3 +287,53 @@ rand_eff <- dat_out %>%
 ggplot(rand_eff) +
   geom_boxplot(aes(x = type, y = value)) +
   facet_wrap(~var)
+
+
+
+
+
+
+
+
+
+
+## Code chunk for first generic version
+##negative log likelihood function using dmultinom:
+nll2 <- function(par) {
+  log_sigma <- par[8]
+  log_sigma_r <- par[9]
+
+  # multiply random coefficients by model matrix to get linear predictor
+  z1_k <- par[3:7]
+  z1_i <- XX %*% z1_k
+  .log_odds_1_3b <- par[1] + (z1_i * exp(log_sigma))
+  .log_odds_2_3b <- par[2] + (z1_i * exp(log_sigma))
+
+  .p1 <- exp(.log_odds_1_3) /
+    (1 + exp(.log_odds_1_3) + exp(.log_odds_2_3))
+  .p2 <- exp(.log_odds_2_3) /
+    (1 + exp(.log_odds_1_3) + exp(.log_odds_2_3))
+  .p3 <- 1 - (.p1 + .p2)
+
+  nll <- vector(length = length(y))
+  for (i in seq_along(y)) { # not vectorized
+    nll[i] <- -dmultinom(Y[i,], size = 1,
+                         prob = c(.p1[i], .p2[i], .p3[i]), log = TRUE)
+  }
+  # probability of random coefficients
+  # sum(nll)
+  nll_r <- vector(length = length(z1_k))
+  for (k in seq_along(z1_k)) {
+    nll_r[k] <- -dnorm(z1_k[k], 0, exp(log_sigma_r), log = TRUE)
+  }
+  sum(nll, nll_r)
+}
+
+par_in <- c(0, 0, rep(0, n_sites), -0.75, -0.75)
+m2 <- nlminb(par_in, nll2)
+
+dat_out <- data.frame(var = c("int1", "int2", unique(datf$site), "sigma",
+                              "sigma_site"),
+                      est = m2$par,
+                      true = c(b0, b2, site_mean_a, sd_global, sd_site))
+return(dat_out)
