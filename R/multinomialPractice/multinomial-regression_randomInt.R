@@ -60,9 +60,6 @@ f_sim <- function(b0 = 0.3, b2 = -1.4) {
   Y <- matrix(ncol = 3, nrow = N, data = 0)
   for (i in seq_along(y)) Y[i, y[i]] <- 1
   
-  # model matrix 
-  XX <- model.matrix(~ site - 1, datf) 
-
   return(list("obs" = Y, "rand_fac" = datf$site, "full_data" = datf))
 }
 
@@ -83,11 +80,11 @@ data <- list(y_obs = y_obs,
              fac1 = fac1)
 parameters <- list(beta1 = rep(0, times = ncol(y_obs) - 1),
                    z_fac1 = rep(0, times = length(unique(fac1))),
-                   log_sigma = 0,
-                   log_sigma_fac1 = 0)
+                   log_sigma = 0)#,
+                   # log_sigma_fac1 = 0)
 
 ## Make a function object
-obj <- MakeADFun(data, parameters, random = c("z_fac1"),
+obj <- MakeADFun(data, parameters, #random = c("z_fac1"),
                  DLL = "multinomial_generic_randInt")
  
 
