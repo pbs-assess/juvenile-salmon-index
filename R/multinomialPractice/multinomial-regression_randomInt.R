@@ -75,7 +75,7 @@ dyn.load(dynlib("R/multinomialPractice/multinomial_generic_randInt"))
 
 ## Data and parameters
 y_obs <- dat_list[[1]]$obs
-fac1 <- as.numeric(dat_list[[1]]$rand_fac)
+fac1 <- as.numeric(dat_list[[1]]$rand_fac) - 1 #subtract for indexing by 0
 data <- list(y_obs = y_obs,
              fac1 = fac1)
 parameters <- list(beta1 = rep(0, times = ncol(y_obs) - 1),
