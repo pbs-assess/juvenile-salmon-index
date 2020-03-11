@@ -140,19 +140,6 @@ for (k in seq_len(ncol(y_obs) - 1)) {
 cppFunction('NumericVector logOddsC2(NumericMatrix y_obs, NumericVector fac1,
 NumericVector beta1, NumericVector z_fac1, double log_sigma, 
 int n_obs, int n_cat) {
-  // DATA_MATRIX(y_obs);
-  // DATA_IVECTOR(fac1); // vector of factor levels
-  // DATA_INTEGER(n_fac); // number of factor levels
-  
-  // int n_obs = y_obs.rows(); // number of observations
-  // int n_cat = y_obs.cols(); // number of categories
-  // int n_fac = fac1.size(); // number of factor levels
-  
-  // Parameters
-  // PARAMETER_VECTOR(beta1); // intercepts for k-1 categories
-  // PARAMETER_VECTOR(z_fac1); // vector of random intercepts
-  // PARAMETER(log_sigma); // global SD
-  // PARAMETER(log_sigma_fac1); // among random intercept SD
   
   // Matrices for storing intermediate objects
   NumericMatrix log_odds(n_obs, (n_cat - 1));
@@ -168,40 +155,6 @@ int n_obs, int n_cat) {
     exp_log_odds(i, k) = exp(log_odds(i, k));
    }
   }
-   
 
   return exp_log_odds;
-  
-  // for (int i = 0; i < n_obs; ++i) {
-  // Type sum_exp_log_odds = 0.;
-  // for (int k = 0; k < (n_cat - 1); ++k) {
-  // sum_exp_log_odds += exp_log_odds(i, k);
-  // }
-  // denom(i) = 1. + sum_exp_log_odds;
-  // }
-  // 
-  // for (int g = 0; g < n_cat; ++g) {
-  // if (g < (n_cat - 1)) {
-  // for (int i = 0; i < n_obs; ++i) {
-  // probs(i, g) = exp_log_odds(i, g) / denom(i);
-  // }
-  // } else if (g == (n_cat - 1)) {
-  // for (int i = 0; i < n_obs; ++i) {
-  // Type summed_probs = 0;
-  // for (int k = 0; k < (n_cat - 1); ++k) {
-  // summed_probs += probs(i, k);
-  // }
-  // probs(i, g) = 1. - summed_probs;
-  // }
-  // }
-  // for (int i = 0; i < n_obs; ++i) {
-  // logit_probs(i, g) = logit(probs(i, g));
-  // }
-  // }
-  // 
-  // Type jnll = 0.; //initialize joint negative log likelihood
-  // 
-  // for (int i = 0; i < n_obs; i++) {
-  // jnll -=
-  // dmultinom(vector<Type>(y_obs.row(i)), vector<Type>(probs.row(i)), true);
 }')

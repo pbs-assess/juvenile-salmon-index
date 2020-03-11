@@ -8,13 +8,13 @@ Type objective_function<Type>::operator()()
 
   int n_obs = y_obs.rows(); // number of observations
   int n_cat = y_obs.cols(); // number of categories
-  // int n_fac = fac1.size(); // number of factor levels
+  int n_fac = fac1.size(); // number of factor levels
 
   // Parameters
   PARAMETER_VECTOR(beta1); // intercepts for k-1 categories
   PARAMETER_VECTOR(z_fac1); // vector of random intercepts
   PARAMETER(log_sigma); // global SD
-  // PARAMETER(log_sigma_fac1); // among random intercept SD
+  PARAMETER(log_sigma_fac1); // among random intercept SD
 
   // Matrices for storing intermediate objects
   matrix<Type> log_odds(n_obs, (n_cat - 1));
@@ -66,14 +66,14 @@ Type objective_function<Type>::operator()()
   }
 
   // Probability of random coefficients
-  // for (int h = 0; h < n_fac; h++) {
-  //   jnll -= dnorm(z_fac1(h), Type(0.0), exp(log_sigma_fac1), true);
-  // }
+  for (int h = 0; h < n_fac; h++) {
+    jnll -= dnorm(z_fac1(h), Type(0.0), exp(log_sigma_fac1), true);
+  }
 
   Type sigma = exp(log_sigma);
-  // Type sigma_fac1 = exp(log_sigma_fac1);
+  Type sigma_fac1 = exp(log_sigma_fac1);
   REPORT(sigma);
-  // REPORT(sigma_fac1);
+  REPORT(sigma_fac1);
 
   REPORT(log_odds);
   REPORT(probs);
