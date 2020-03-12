@@ -128,7 +128,8 @@ dum <- logOdds(ints, betas, covMatrix, N, k)
 library(Rcpp)
 
 logOddsC2(y_obs, fac1, beta1 = c(b0, b2), z_fac1 = site_mean_a,
-          log_sigma = sd_global, n_obs = nrow(y_obs), n_cat = ncol(y_obs))
+          log_sigma = sd_global, n_obs = nrow(y_obs), n_cat = ncol(y_obs),
+          n_fac = length(site_mean_a))
 
 log_odds <- matrix(nrow = nrow(y_obs), ncol = ncol(y_obs) - 1)
 for (k in seq_len(ncol(y_obs) - 1)) {  
@@ -139,7 +140,7 @@ for (k in seq_len(ncol(y_obs) - 1)) {
 
 cppFunction('NumericVector logOddsC2(NumericMatrix y_obs, NumericVector fac1,
 NumericVector beta1, NumericVector z_fac1, double log_sigma, 
-int n_obs, int n_cat) {
+int n_obs, int n_cat, int n_fac) {
   
   // Matrices for storing intermediate objects
   NumericMatrix log_odds(n_obs, (n_cat - 1));
@@ -147,14 +148,21 @@ int n_obs, int n_cat) {
   NumericMatrix probs(n_obs, n_cat);
   NumericMatrix logit_probs(n_obs, n_cat);
   NumericVector denom(n_obs);
+  NumericVector ests(n_fac);
+  
+  for (int h = 0; h < n_fac; h++) {
+    ests(h) = z_fac1(h);
+  }
+  
+  return(ests);
   
   // Calculate log-odds, then probabilities
-  for (int k = 0; k < (n_cat - 1); ++k) {
-   for (int i = 0; i < n_obs; ++i) {
-     log_odds(i, k) = beta1(k) + (z_fac1(fac1(i)) * exp(log_sigma));
-    exp_log_odds(i, k) = exp(log_odds(i, k));
-   }
-  }
-
-  return exp_log_odds;
+  //for (int k = 0; k < (n_cat - 1); ++k) {
+  // for (int i = 0; i < n_obs; ++i) {
+  //   log_odds(i, k) = beta1(k) + (z_fac1(fac1(i)) * exp(log_sigma));
+  //  exp_log_odds(i, k) = exp(log_odds(i, k));
+  // }
+  //}
+//
+  //return exp_log_odds;
 }')

@@ -6,7 +6,7 @@ library(tidyverse)
 set.seed(42)
 # random intercepts for groups (e.g. sites)
 n_sites <- 5
-n_obs_per_site <- 100
+n_obs_per_site <- 1000
 N <- n_sites * n_obs_per_site
 sd_site <- 0.5
 sd_global <- 1
@@ -77,14 +77,15 @@ dyn.load(dynlib("R/multinomialPractice/multinomial_generic_randInt"))
 y_obs <- dat_list[[1]]$obs
 fac1 <- as.numeric(dat_list[[1]]$rand_fac) - 1 #subtract for indexing by 0
 data <- list(y_obs = y_obs,
-             fac1 = fac1)
+             fac1 = fac1,
+             n_fac = length(unique(fac1)))
 parameters <- list(beta1 = rep(0, times = ncol(y_obs) - 1),
                    z_fac1 = rep(0, times = length(unique(fac1))),
-                   log_sigma = 0)#,
-                   # log_sigma_fac1 = 0)
+                   log_sigma = 0,
+                   log_sigma_fac1 = 0)
 
 ## Make a function object
-obj <- MakeADFun(data, parameters, #random = c("z_fac1"),
+obj <- MakeADFun(data, parameters, random = c("z_fac1"),
                  DLL = "multinomial_generic_randInt")
  
 
