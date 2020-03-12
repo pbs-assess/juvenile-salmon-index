@@ -6,14 +6,14 @@ library(tidyverse)
 set.seed(42)
 # random intercepts for groups (e.g. sites)
 n_sites <- 5
-n_obs_per_site <- 1000
+n_obs_per_site <- 100
 N <- n_sites * n_obs_per_site
 sd_site <- 0.5
-sd_global <- 1
+# sd_global <- 1
 
 # function to simulate multinomial data and fit hierarchical models
-f_sim <- function(b0 = 0.3, b2 = -1.4) {
-  site_mean_a <- rnorm(mean = 0, sd = sd_global, n = n_sites)
+f_sim <- function(trial = trial, b0 = 0.3, b2 = -1.4) {
+  site_mean_a <- runif(n = n_sites, min = -1, max = 1)
   site_obs_ia <- rnorm(mean = rep(site_mean_a, each = n_obs_per_site),
                        sd = sd_site, 
                        n = N)
@@ -24,11 +24,6 @@ f_sim <- function(b0 = 0.3, b2 = -1.4) {
                     site_mean = rep(site_mean_a, each = n_obs_per_site),
                     site_obs = site_obs_ia,
                     sd_site = sd_site) 
-  # ggplot(dat, aes(x = site, y = site_obs)) +
-  #   geom_jitter(width = 0.1, height = 0, alpha = 0.25) +
-  #   geom_hline(aes(yintercept = site_mean), color = "red") +
-  #   ggsidekick::theme_sleek() +
-  #   facet_wrap(~site, scales = "free_x")
   
   # generate log_odds based on fixed and random intercepts
   datf <- dat %>% 
@@ -51,21 +46,21 @@ f_sim <- function(b0 = 0.3, b2 = -1.4) {
     y[i] <- which(temp == 1)
   }
   datf <- cbind(datf, y)
-  # ggplot(datf, aes(x = y)) +
-  #   geom_histogram() + #negative values in site 2 inc. probability of third cat
-  #   ggsidekick::theme_sleek() +
-  #   facet_wrap(~site)
   
   # matrix version for dmultinom():
   Y <- matrix(ncol = 3, nrow = N, data = 0)
   for (i in seq_along(y)) Y[i, y[i]] <- 1
   
-  return(list("obs" = Y, "rand_fac" = datf$site, "full_data" = datf))
+  # true values vector
+  tv <- c(b0, b2, log(sd_site), site_mean_a, sd_site) 
+  
+  return(list("trial" = trial, "obs" = Y, "rand_fac" = datf$site, 
+              "trim_data" = tv, "full_data" = datf))
 }
 
 dat_list <- vector(mode = "list", length = 100)
-for (i in 1:20) {
-  dat_list[[i]] <- f_sim()
+for (i in 1:200) {
+  dat_list[[i]] <- f_sim(trial = i)
 }
 
 
@@ -81,7 +76,7 @@ data <- list(y_obs = y_obs,
              n_fac = length(unique(fac1)))
 parameters <- list(beta1 = rep(0, times = ncol(y_obs) - 1),
                    z_fac1 = rep(0, times = length(unique(fac1))),
-                   log_sigma = 0,
+                   #log_sigma = 0,
                    log_sigma_fac1 = 0)
 
 ## Make a function object
@@ -104,22 +99,57 @@ r$probs
 r$log_odds
 r$logit_probs
 
+ests <- map(dat_list, function(x) {
+  y_obs <- x$obs
+  fac1 <- as.numeric(x$rand_fac) - 1 #subtract for indexing by 0
+  data <- list(y_obs = y_obs,
+               fac1 = fac1,
+               n_fac = length(unique(fac1)))
+  parameters <- list(beta1 = rep(0, times = ncol(y_obs) - 1),
+                     z_fac1 = rep(0, times = length(unique(fac1))),
+                     # log_sigma = 0,
+                     log_sigma_fac1 = 0)
+  ## Make a function object
+  obj <- MakeADFun(data, parameters, random = c("z_fac1"),
+                   DLL = "multinomial_generic_randInt")
+  
+  ## Call function minimizer
+  opt <- nlminb(obj$par, obj$fn, obj$gr)
+  
+  ## Get parameter uncertainties and convergence diagnostics
+  sdr <- sdreport(obj)
+  ssdr <- summary(sdr)
+  
+  fac_seq <- paste("z_fac1", seq(1, length(unique(fac1)), by = 1),
+                   sep = "_")
+  as.data.frame(ssdr) %>% 
+    mutate(par = c("beta1", "beta2", "log_sigma_fac1", 
+                   fac_seq,
+                   "sigma_fac1"),
+           trial = x$trial,
+           vals = x$trim_data)
+}) %>% 
+  bind_rows()
 
-
-
-
-trans_sig <- dat_out1 %>%
-  filter(var %in% c("sigma", "sigma_site")) %>%
-  group_by(var) %>% 
-  mutate(est = exp(est)) %>% 
-  ungroup()
-
-dat_out1 %>% 
-  filter(var %in% c("int1", "int2")) %>%
-  rbind(., trans_sig) %>% 
+ests %>% 
+  filter(par %in% c("beta1", "beta2", "sigma_fac1")) %>%
   ggplot(.) +
-  geom_boxplot(aes(x = var, y = est)) +
-  geom_point(aes(x = var, y = true), colour = "red")
+  geom_boxplot(aes(x = par, y = Estimate)) +
+  geom_point(aes(x = par, y = vals), colour = "red")
+
+r_effs <- ests %>% 
+  filter(grepl("z_fac1", par)) %>%
+  mutate(p_err = (Estimate - vals) / vals) 
+
+r_effs %>% 
+  select(par, est = Estimate, true = vals) %>% 
+  pivot_longer(-par, names_to = "type", values_to = "value") %>% 
+  ggplot(.) +
+  geom_boxplot(aes(x = type, y = value)) +
+  facet_wrap(~par)
+
+ggplot(r_effs) +
+  geom_boxplot(aes(x = par, y = p_err))
 
 
 ## Don't worry about following code ##

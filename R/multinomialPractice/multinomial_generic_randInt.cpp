@@ -25,7 +25,7 @@ Type objective_function<Type>::operator()()
   // Calculate log-odds, then probabilities
   for (int k = 0; k < (n_cat - 1); ++k) {
     for (int i = 0; i < n_obs; ++i) {
-      log_odds(i, k) = beta1(k) + (z_fac1(fac1(i)));
+      log_odds(i, k) = beta1(k) + z_fac1(fac1(i));
       exp_log_odds(i, k) = exp(log_odds(i, k));
     }
   }
@@ -72,12 +72,12 @@ Type objective_function<Type>::operator()()
   // Type sigma = exp(log_sigma);
   Type sigma_fac1 = exp(log_sigma_fac1);
   // REPORT(sigma);
-  REPORT(sigma_fac1);
+  ADREPORT(sigma_fac1);
 
-  REPORT(log_odds);
-  REPORT(probs);
-  REPORT(logit_probs);
-  ADREPORT(logit_probs);
+  //REPORT(log_odds);
+  //REPORT(probs);
+  //REPORT(logit_probs);
+  //ADREPORT(logit_probs);
   
   return jnll;
 }
