@@ -5,16 +5,18 @@ N <- 2000 # number of observations
 k <- 4 #number of groups
 # X <- runif(N) # cont. predictor
 #fixed predictor representing two cats
-yrCov <- data.frame(yr = sample(c("yr1", "yr2"), size = N, replace = T)) 
+yrCov <- data.frame(yr = sample(c("yr1", "yr2", "yr3"), size = N, replace = T)) 
 X <- model.matrix(~yr, yrCov)
 
 int <- c(0.3, -1.4, 0.3)
-beta <- c(-0.25, 0.75, -0.5)
+beta_yr2 <- c(-0.25, 0.75, -0.5)
+beta_yr3 <- c(0.5, -1, 0.1)
 
 # append with reference category
 #combine intercepts and betas into one matrix that can be multiplied by model
 #matrix; columns are parameters for each group (excluding ref. cat.)
-betas <- matrix(c(int, beta), nrow = ncol(X), ncol = k - 1, byrow = T)
+betas <- matrix(c(int, beta_yr2, beta_yr3), nrow = ncol(X), ncol = k - 1, 
+                byrow = T)
 m <- nrow(betas) #number of covariates (i.e. 1 int. + slopes)
 
 log_odds <- matrix(NA, nrow = N, ncol = k)
@@ -56,7 +58,7 @@ for (i in seq_along(y)) {
   temp <- rmultinom(1, 1, probs[i, ])
   y[i] <- which(temp == 1)
 }
-plot(X[ , 2], jitter(y, 0.3))
+# plot(X[ , 2], jitter(y, 0.3))
 
 #matrix of observations
 y_obs <- matrix(ncol = k, nrow = N, data = 0)

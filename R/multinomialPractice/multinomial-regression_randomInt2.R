@@ -12,33 +12,55 @@ sd_site <- 0.5
 N <- n_sites * n_obs_per_site
 
 # fixed intercepts
-reg_ints <- data.frame(reg_int = c(-0.25, 1),
-                       reg = c(1, 2))
-reg_dat <- sample_n(reg_ints, size = N, replace = TRUE) %>% 
-  mutate(reg = as.factor(reg))
+group_ints <- c(0.3, -1.4)
+k <- length(group_ints) #number of groups - 1
+reg2_ints <- c(1.5, -0.25) #i.e. how region 2 differs from reference for each group
+reg3_ints <- c(0, -0.75) #i.e. how region 2 differs from reference for each group
+ints <- matrix(c(group_ints, reg2_ints), ncol = k, byrow = T)
+
+reg_dat <- data.frame(reg = as.factor(seq(1, nrow(ints), by = 1))) %>%
+  sample_n(., size = N, replace = T)
+
+# model matrix for fixed effects
 fix_mm <- model.matrix(~ reg, reg_dat)
 
 # function to simulate multinomial data and fit hierarchical models
-f_sim <- function(trial = 1, b0 = 0.3, b2 = -1.4) {
+f_sim <- function(trial = 1) {
+  
+  #calculate fixed effects using parameter matrix and model matrix
+  n_fix_cov <- nrow(ints)
+  sum_fix_eff <- matrix(NA, nrow = N, ncol = k)
+  for (kk in 1:k) {
+    fix_eff <- matrix(nrow = N, ncol = n_fix_cov)
+    for (i in 1:N) {
+      for (j in 1:n_fix_cov) {
+        fix_eff[i, j] <- ints[j, kk] * fix_mm[i, j]  
+      }
+    }
+    sum_fix_eff[ , kk] <- apply(fix_eff, 1, sum)
+  }
+
+  # generate random effects, then combine with fixed
   site_mean_a <- runif(n = n_sites, min = -1, max = 1)
   site_obs_ia <- rnorm(mean = rep(site_mean_a, each = n_obs_per_site),
                        sd = sd_site, 
                        n = N)
-  dat <- data.frame(site = as.factor(rep(seq(1, 5, by = 1), 
+  site_dat <- data.frame(site = as.factor(rep(seq(1, 5, by = 1), 
                                          each = n_obs_per_site)),
-                    g1_int = b0, # intercept describing log odds of category 1 vs. 3
-                    g2_int = b2, # intercept describing log odds of category 2 vs. 3
-                    site_mean = rep(site_mean_a, each = n_obs_per_site),
-                    site_obs = site_obs_ia,
-                    sd_site = sd_site) %>% 
+                         site_mean = rep(site_mean_a, each = n_obs_per_site),
+                         site_obs = site_obs_ia,
+                         sd_site = sd_site
+                    ) %>% 
     cbind(reg_dat) %>%  #bind regional fixed effects data 
-    arrange(site, reg)
+    # arrange(site, reg) %>% 
+    mutate(g1_fe = sum_fix_eff[, 1],
+           g2_fe = sum_fix_eff[, 2])
   
   # generate log_odds based on fixed and random intercepts
-  datf <- dat %>% 
+  datf <- site_dat %>% 
     mutate(site = as.factor(site),
-           log_odds_1_3 = g1_int + reg_int, #+ site_ob,
-           log_odds_2_3 = g2_int + reg_int, #+ site_obs,
+           log_odds_1_3 = g1_fe + site_obs,
+           log_odds_2_3 = g2_fe + site_obs,
            # probability of category 1, 2, and 3:
            p1 = exp(log_odds_1_3) / (1 + exp(log_odds_1_3) + exp(log_odds_2_3)),
            p2 = exp(log_odds_2_3) / (1 + exp(log_odds_1_3) + exp(log_odds_2_3)),
@@ -55,24 +77,26 @@ f_sim <- function(trial = 1, b0 = 0.3, b2 = -1.4) {
     y[i] <- which(temp == 1)
   }
   datf <- cbind(datf, y)
-  # ggplot(datf, aes(x = y)) +
-  #   geom_histogram() + #negative values in site 2 inc. probability of third cat
-  #   ggsidekick::theme_sleek() +
-  #   facet_wrap(reg~site, nrow = 2)
+  ggplot(datf, aes(x = y)) +
+    geom_histogram() + #negative values in site 2 inc. probability of third cat
+    ggsidekick::theme_sleek() +
+    # facet_wrap(~reg, nrow = 2)
+  facet_wrap(reg~site, nrow = 2)
   
   # matrix version for dmultinom():
   Y <- matrix(ncol = 3, nrow = N, data = 0)
   for (i in seq_along(y)) Y[i, y[i]] <- 1
   
   # true values vector
-  tv <- c(b0, b2, reg_ints$reg_int, log(sd_site), site_mean_a, sd_site) 
+  # tv <- c(b0, b2, reg_ints$reg_int, log(sd_site), site_mean_a, sd_site) 
   
-  return(list("trial" = trial, "obs" = Y, "fixed_fac" = dat$reg, 
-              "rand_fac" = datf$site, "trim_data" = tv, "full_data" = datf))
+  return(list("trial" = trial, "obs" = Y, "fixed_fac" = site_dat$reg, 
+              "rand_fac" = datf$site, #"trim_data" = tv, 
+              "full_data" = datf))
 }
 
 dat_list <- vector(mode = "list", length = 100)
-for (i in 1:200) {
+for (i in 1:10) {
   dat_list[[i]] <- f_sim(trial = i)
 }
 
@@ -84,14 +108,18 @@ dyn.load(dynlib("R/multinomialPractice/multinomial_generic_randInt_fixInt"))
 ## Data and parameters
 y_obs <- dat_list[[1]]$obs
 rfac <- as.numeric(dat_list[[1]]$rand_fac) - 1 #subtract for indexing by 0
-fx1 <- as.numeric(dat_list[[1]]$fixed_fac) - 1 #subtract for indexing by 0
+# fx1 <- as.numeric(dat_list[[1]]$fixed_fac) - 1 #subtract for indexing by 0
+fx_cov <- fix_mm
 data <- list(y_obs = y_obs,
-             rfac = rfac,
-             fx1 = fx1,
-             n_rfac = length(unique(rfac)))
-parameters <- list(beta = rep(0, times = ncol(y_obs) - 1),
+             # rfac = rfac,
+             fx_cov = fx_cov
+             # n_rfac = length(unique(rfac))
+             )
+parameters <- list(#beta = rep(0, times = ncol(y_obs) - 1),
                    #z_rfac = rep(0, times = length(unique(rfac))),
-                   z_fx1 = rep(0, times = length(unique(fx1))))
+                   # z_fx1 = rep(0, times = length(unique(fx1))))
+                   z_ints = matrix(0, nrow = ncol(fx_cov), 
+                                  ncol = ncol(y_obs) - 1))
                    #,
                    #log_sigma_rfac = 0)
 
