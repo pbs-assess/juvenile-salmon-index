@@ -15,14 +15,15 @@ N <- n_sites * n_obs_per_site
 group_ints <- c(0.3, -1.4)
 k <- length(group_ints) #number of groups - 1
 reg2_ints <- c(1.5, -0.25) #i.e. how region 2 differs from reference for each group
-reg3_ints <- c(0, -0.75) #i.e. how region 2 differs from reference for each group
-ints <- matrix(c(group_ints, reg2_ints), ncol = k, byrow = T)
+fac2_ints <- c(0, -0.75) #i.e. how region 2 differs from reference for each group
+fix_ints <- matrix(c(reg2_ints, fac2_ints
+                 ), ncol = k, byrow = T)
 
-reg_dat <- data.frame(reg = as.factor(seq(1, nrow(ints), by = 1))) %>%
-  sample_n(., size = N, replace = T)
+reg_dat <- data.frame(reg = as.factor(sample(c(1, 2), size = N, replace = T)),
+                      fac = as.factor(sample(c(1, 2), size = N, replace = T)))
 
 # model matrix for fixed effects
-fix_mm <- model.matrix(~ reg, reg_dat)
+fix_mm <- model.matrix(~ reg:fac - 1, reg_dat)
 
 # function to simulate multinomial data and fit hierarchical models
 f_sim <- function(trial = 1) {
@@ -34,7 +35,7 @@ f_sim <- function(trial = 1) {
     fix_eff <- matrix(nrow = N, ncol = n_fix_cov)
     for (i in 1:N) {
       for (j in 1:n_fix_cov) {
-        fix_eff[i, j] <- ints[j, kk] * fix_mm[i, j]  
+        fix_eff[i, j] <- group_ints[kk] + (ints[j, kk] * fix_mm[i, j])  
       }
     }
     sum_fix_eff[ , kk] <- apply(fix_eff, 1, sum)
@@ -77,26 +78,26 @@ f_sim <- function(trial = 1) {
     y[i] <- which(temp == 1)
   }
   datf <- cbind(datf, y)
-  ggplot(datf, aes(x = y)) +
-    geom_histogram() + #negative values in site 2 inc. probability of third cat
-    ggsidekick::theme_sleek() +
-    # facet_wrap(~reg, nrow = 2)
-  facet_wrap(reg~site, nrow = 2)
+  # ggplot(datf, aes(x = y)) +
+  #   geom_histogram() + #negative values in site 2 inc. probability of third cat
+  #   ggsidekick::theme_sleek() +
+  #   # facet_wrap(~reg, nrow = 2)
+  # facet_wrap(reg~site, nrow = 2)
   
   # matrix version for dmultinom():
   Y <- matrix(ncol = 3, nrow = N, data = 0)
   for (i in seq_along(y)) Y[i, y[i]] <- 1
   
   # true values vector
-  # tv <- c(b0, b2, reg_ints$reg_int, log(sd_site), site_mean_a, sd_site) 
+  tv <- c(as.vector(ints), log(sd_site), site_mean_a, sd_site)
   
   return(list("trial" = trial, "obs" = Y, "fixed_fac" = site_dat$reg, 
-              "rand_fac" = datf$site, #"trim_data" = tv, 
+              "rand_fac" = datf$site, "trim_data" = tv, 
               "full_data" = datf))
 }
 
 dat_list <- vector(mode = "list", length = 100)
-for (i in 1:10) {
+for (i in seq_along(dat_list)) {
   dat_list[[i]] <- f_sim(trial = i)
 }
 
@@ -108,25 +109,19 @@ dyn.load(dynlib("R/multinomialPractice/multinomial_generic_randInt_fixInt"))
 ## Data and parameters
 y_obs <- dat_list[[1]]$obs
 rfac <- as.numeric(dat_list[[1]]$rand_fac) - 1 #subtract for indexing by 0
-# fx1 <- as.numeric(dat_list[[1]]$fixed_fac) - 1 #subtract for indexing by 0
-fx_cov <- fix_mm
 data <- list(y_obs = y_obs,
-             # rfac = rfac,
-             fx_cov = fx_cov
-             # n_rfac = length(unique(rfac))
+             rfac = rfac,
+             fx_cov = fix_mm, #model matrix from above
+             n_rfac = length(unique(rfac))
              )
-parameters <- list(#beta = rep(0, times = ncol(y_obs) - 1),
-                   #z_rfac = rep(0, times = length(unique(rfac))),
-                   # z_fx1 = rep(0, times = length(unique(fx1))))
-                   z_ints = matrix(0, nrow = ncol(fx_cov), 
-                                  ncol = ncol(y_obs) - 1))
-                   #,
-                   #log_sigma_rfac = 0)
+parameters <- list(z_rfac = rep(0, times = length(unique(rfac))),
+                   z_ints = matrix(0, nrow = ncol(fix_mm),
+                                   ncol = ncol(y_obs) - 1),
+                   log_sigma_rfac = 0)
 
 ## Make a function object
-obj <- MakeADFun(data, parameters, #random = c("z_rfac"),
+obj <- MakeADFun(data, parameters, random = c("z_rfac"),
                  DLL = "multinomial_generic_randInt_fixInt")
-
 
 ## Call function minimizer
 opt <- nlminb(obj$par, obj$fn, obj$gr)
@@ -138,24 +133,22 @@ sdr
 ssdr <- summary(sdr)
 ssdr
 
-r <- obj$report()
-r$probs
-r$log_odds
-r$logit_probs
 
 ests <- map(dat_list, function(x) {
   y_obs <- x$obs
-  fac1 <- as.numeric(x$rand_fac) - 1 #subtract for indexing by 0
+  rfac <- as.numeric(x$rand_fac) - 1 #subtract for indexing by 0
   data <- list(y_obs = y_obs,
-               fac1 = fac1,
-               n_fac = length(unique(fac1)))
-  parameters <- list(beta1 = rep(0, times = ncol(y_obs) - 1),
-                     z_rfac = rep(0, times = length(unique(fac1))),
-                     # log_sigma = 0,
+               rfac = rfac,
+               fx_cov = fix_mm, #model matrix from above
+               n_rfac = length(unique(rfac))
+  )
+  parameters <- list(z_rfac = rep(0, times = length(unique(rfac))),
+                     z_ints = matrix(0, nrow = ncol(fix_mm),
+                                     ncol = k),
                      log_sigma_rfac = 0)
   ## Make a function object
   obj <- MakeADFun(data, parameters, random = c("z_rfac"),
-                   DLL = "multinomial_generic_randInt")
+                   DLL = "multinomial_generic_randInt_fixInt")
   
   ## Call function minimizer
   opt <- nlminb(obj$par, obj$fn, obj$gr)
@@ -164,10 +157,10 @@ ests <- map(dat_list, function(x) {
   sdr <- sdreport(obj)
   ssdr <- summary(sdr)
   
-  fac_seq <- paste("z_rfac", seq(1, length(unique(fac1)), by = 1),
+  fac_seq <- paste("z_rfac", seq(1, length(unique(rfac)), by = 1),
                    sep = "_")
   as.data.frame(ssdr) %>% 
-    mutate(par = c("beta1", "beta2", "log_sigma_rfac", 
+    mutate(par = c("g1_int", "g2_int", "reg2_g1", "reg2_g2", "log_sigma_rfac", 
                    fac_seq,
                    "sigma_fac1"),
            trial = x$trial,
@@ -175,8 +168,9 @@ ests <- map(dat_list, function(x) {
 }) %>% 
   bind_rows()
 
+
 ests %>% 
-  filter(par %in% c("beta1", "beta2", "sigma_fac1")) %>%
+  filter(par %in% c("g1_int", "g2_int", "reg2_g1", "reg2_g2", "sigma_fac1")) %>%
   ggplot(.) +
   geom_boxplot(aes(x = par, y = Estimate)) +
   geom_point(aes(x = par, y = vals), colour = "red")

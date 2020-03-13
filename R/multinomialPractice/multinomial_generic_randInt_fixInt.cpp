@@ -83,13 +83,22 @@ Type objective_function<Type>::operator()()
         dmultinom(vector<Type>(y_obs.row(i)), vector<Type>(probs.row(i)), true);
   }
 
-  // Probability of random coefficients
+  // Probability of random intercepts
   for (int h = 0; h < n_rfac; h++) {
     jnll -= dnorm(z_rfac(h), Type(0.0), exp(log_sigma_rfac), true);
   }
 
   Type sigma_rfac = exp(log_sigma_rfac);
   ADREPORT(sigma_rfac);
+
+  // vector<Type> cat_int(n_cat - 1);
+  // cat_int = z_ints(1, );
+
+  // matrix<Type> fix_int(n_fix_cov - 1, n_cat - 1); // matrix of fixed intercepts
+  // fix_int = z_ints(2:(n_fix_cov - 1), );
+
+  // ADREPORT(cat_int);
+  // ADREPORT(fix_int);
 
   //REPORT(log_odds);
   //REPORT(probs);
