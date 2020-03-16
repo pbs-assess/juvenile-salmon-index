@@ -15,27 +15,30 @@ N <- n_sites * n_obs_per_site
 group_ints <- c(0.3, -1.4)
 k <- length(group_ints) #number of groups - 1
 reg2_ints <- c(1.5, -0.25) #i.e. how region 2 differs from reference for each group
-fac2_ints <- c(0, -0.75) #i.e. how region 2 differs from reference for each group
-fix_ints <- matrix(c(reg2_ints, fac2_ints
+reg3_ints <- c(0.27, 0.49) #i.e. how region 3 differs from reference for each group
+fac2_ints <- c(0, -2) #i.e. how factor 2 differs from reference for each group
+fix_ints <- matrix(c(group_ints, reg2_ints, reg3_ints, fac2_ints
                  ), ncol = k, byrow = T)
 
-reg_dat <- data.frame(reg = as.factor(sample(c(1, 2), size = N, replace = T)),
+reg_dat <- data.frame(reg = as.factor(sample(c(1, 2, 3), size = N, replace = T)),
                       fac = as.factor(sample(c(1, 2), size = N, replace = T)))
 
 # model matrix for fixed effects
-fix_mm <- model.matrix(~ reg:fac - 1, reg_dat)
+# fix_mm <- model.matrix(~ reg:fac - 1, reg_dat)
+fix_mm <- model.matrix(~ (reg + fac), reg_dat)
 
 # function to simulate multinomial data and fit hierarchical models
 f_sim <- function(trial = 1) {
   
   #calculate fixed effects using parameter matrix and model matrix
-  n_fix_cov <- nrow(ints)
+  n_fix_cov <- nrow(fix_ints)
   sum_fix_eff <- matrix(NA, nrow = N, ncol = k)
   for (kk in 1:k) {
     fix_eff <- matrix(nrow = N, ncol = n_fix_cov)
     for (i in 1:N) {
       for (j in 1:n_fix_cov) {
-        fix_eff[i, j] <- group_ints[kk] + (ints[j, kk] * fix_mm[i, j])  
+        # fix_eff[i, j] <- group_ints[kk] + (fix_ints[j, kk] * fix_mm[i, j])  
+        fix_eff[i, j] <- fix_ints[j, kk] * fix_mm[i, j]  
       }
     }
     sum_fix_eff[ , kk] <- apply(fix_eff, 1, sum)
@@ -89,14 +92,14 @@ f_sim <- function(trial = 1) {
   for (i in seq_along(y)) Y[i, y[i]] <- 1
   
   # true values vector
-  tv <- c(as.vector(ints), log(sd_site), site_mean_a, sd_site)
+  tv <- c(as.vector(fix_ints), log(sd_site), site_mean_a, sd_site)
   
   return(list("trial" = trial, "obs" = Y, "fixed_fac" = site_dat$reg, 
               "rand_fac" = datf$site, "trim_data" = tv, 
               "full_data" = datf))
 }
 
-dat_list <- vector(mode = "list", length = 100)
+dat_list <- vector(mode = "list", length = 1000)
 for (i in seq_along(dat_list)) {
   dat_list[[i]] <- f_sim(trial = i)
 }
@@ -133,6 +136,38 @@ sdr
 ssdr <- summary(sdr)
 ssdr
 
+# make dataframe of true predictions and covariates
+dumm <- dat_list[[1]]$full_data
+obs_dat <- dumm %>% 
+  pivot_longer(p1:p3, names_to = "cat_old", values_to = "true_prob") %>% 
+  arrange(cat_old, site) %>% 
+  select(site, reg, fac, cat_old, true_prob) 
+  
+logit_probs_mat <- ssdr[rownames(ssdr) %in% "logit_probs", ] 
+pred_ci <- data.frame(cat = rep(1:(k + 1), each = N),
+                      logit_prob_est = logit_probs_mat[ , "Estimate"],
+                      logit_prob_se =  logit_probs_mat[ , "Std. Error"]) %>% 
+  mutate(pred_prob = plogis(logit_prob_est),
+         pred_prob_low = plogis(logit_prob_est + 
+                                  (qnorm(0.025) * logit_prob_se)),
+         pred_prob_up = plogis(logit_prob_est + 
+                                 (qnorm(0.975) * logit_prob_se))) %>% 
+  cbind(., obs_dat) %>% 
+  select(-logit_prob_est, -logit_prob_se)
+
+ggplot(pred_ci %>% filter(fac == "1")) +
+  geom_boxplot(aes(x = as.factor(cat), y = true_prob)) +
+  geom_pointrange(aes(x = as.factor(cat), y = pred_prob, ymin = pred_prob_low,
+                      ymax = pred_prob_up), col = "red") +
+  facet_wrap(reg ~ site, nrow = 3) +
+  ggsidekick::theme_sleek()
+
+
+## Simulate multiple times and examine coefficient estimates
+# Use model version that doesn't report probs to increase run time (otherwise
+# identical)
+compile("R/multinomialPractice/multinomial_generic_randInt_fixInt_noProbRep.cpp")
+dyn.load(dynlib("R/multinomialPractice/multinomial_generic_randInt_fixInt_noProbRep"))
 
 ests <- map(dat_list, function(x) {
   y_obs <- x$obs
@@ -148,29 +183,30 @@ ests <- map(dat_list, function(x) {
                      log_sigma_rfac = 0)
   ## Make a function object
   obj <- MakeADFun(data, parameters, random = c("z_rfac"),
-                   DLL = "multinomial_generic_randInt_fixInt")
+                   DLL = "multinomial_generic_randInt_fixInt_noProbRep")
   
   ## Call function minimizer
   opt <- nlminb(obj$par, obj$fn, obj$gr)
   
   ## Get parameter uncertainties and convergence diagnostics
   sdr <- sdreport(obj)
-  ssdr <- summary(sdr)
+  ssdr <- summary(sdr) 
+  trim_ssdr <- ssdr[!rownames(ssdr) %in% "logit_probs", ]
   
   fac_seq <- paste("z_rfac", seq(1, length(unique(rfac)), by = 1),
                    sep = "_")
-  as.data.frame(ssdr) %>% 
-    mutate(par = c("g1_int", "g2_int", "reg2_g1", "reg2_g2", "log_sigma_rfac", 
-                   fac_seq,
-                   "sigma_fac1"),
+  as.data.frame(trim_ssdr) %>% 
+    mutate(par = c("g1_int", "g2_int", "reg2_g1", "reg2_g2", "reg3_g1", 
+                   "reg3_g2", "fac2_g1", "fac2_g2", "log_sigma_rfac", 
+                   fac_seq, "sigma_fac1"),
            trial = x$trial,
            vals = x$trim_data)
 }) %>% 
   bind_rows()
 
-
 ests %>% 
-  filter(par %in% c("g1_int", "g2_int", "reg2_g1", "reg2_g2", "sigma_fac1")) %>%
+  filter(par %in% c("g1_int", "g2_int", "reg2_g1", "reg2_g2", "reg3_g1", 
+                    "reg3_g2", "fac2_g1", "fac2_g2", "sigma_fac1")) %>%
   ggplot(.) +
   geom_boxplot(aes(x = par, y = Estimate)) +
   geom_point(aes(x = par, y = vals), colour = "red")
