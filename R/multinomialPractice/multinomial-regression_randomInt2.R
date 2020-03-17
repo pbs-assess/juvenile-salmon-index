@@ -45,10 +45,16 @@ f_sim <- function(trial = 1) {
   }
 
   # generate random effects, then combine with fixed
-  site_mean_a <- runif(n = n_sites, min = -1, max = 1)
+  site_mean_a <- rnorm(mean = 0,
+                       sd = sd_site,
+                       n = n_sites)
   site_obs_ia <- rnorm(mean = rep(site_mean_a, each = n_obs_per_site),
-                       sd = sd_site, 
+                       sd = 0, 
                        n = N)
+  # site_mean_a <- runif(n = n_sites, min = -1, max = 1)
+  # site_obs_ia <- rnorm(mean = rep(site_mean_a, each = n_obs_per_site),
+  #                      sd = sd_site, 
+  #                      n = N)
   site_dat <- data.frame(site = as.factor(rep(seq(1, 5, by = 1), 
                                          each = n_obs_per_site)),
                          site_mean = rep(site_mean_a, each = n_obs_per_site),
@@ -99,7 +105,7 @@ f_sim <- function(trial = 1) {
               "full_data" = datf))
 }
 
-dat_list <- vector(mode = "list", length = 1000)
+dat_list <- vector(mode = "list", length = 10)
 for (i in seq_along(dat_list)) {
   dat_list[[i]] <- f_sim(trial = i)
 }
@@ -111,11 +117,22 @@ dyn.load(dynlib("R/multinomialPractice/multinomial_generic_randInt_fixInt"))
 
 ## Data and parameters
 y_obs <- dat_list[[1]]$obs
+#vector of random intercept ids
 rfac <- as.numeric(dat_list[[1]]$rand_fac) - 1 #subtract for indexing by 0
+fac_dat <- dat_list[[1]]$full_data %>% 
+  mutate(facs = as.factor(paste(reg, fac, site, sep = "_")),
+         facs_n = (as.numeric(facs) - 1)) %>% #subtract for indexing by 0 
+  select(reg, fac, site, facs, facs_n)
+fac_key <- fac_dat %>% 
+  distinct() %>% 
+  arrange(facs_n)
+
 data <- list(y_obs = y_obs,
              rfac = rfac,
              fx_cov = fix_mm, #model matrix from above
-             n_rfac = length(unique(rfac))
+             n_rfac = length(unique(rfac)),
+             all_fac = fac_dat$facs_n, # vector of factor combinations
+             fac_key = fac_key$facs_n #ordered unique factor combos in fac_vec
              )
 parameters <- list(z_rfac = rep(0, times = length(unique(rfac))),
                    z_ints = matrix(0, nrow = ncol(fix_mm),
@@ -137,28 +154,51 @@ ssdr <- summary(sdr)
 ssdr
 
 # make dataframe of true predictions and covariates
-dumm <- dat_list[[1]]$full_data
+dumm <- dat_list[[1]]$full_data %>% 
+  mutate(facs = as.factor(paste(reg, fac, site, sep = "_")))
 obs_dat <- dumm %>% 
-  pivot_longer(p1:p3, names_to = "cat_old", values_to = "true_prob") %>% 
-  arrange(cat_old, site) %>% 
-  select(site, reg, fac, cat_old, true_prob) 
-  
-logit_probs_mat <- ssdr[rownames(ssdr) %in% "logit_probs", ] 
-pred_ci <- data.frame(cat = rep(1:(k + 1), each = N),
-                      logit_prob_est = logit_probs_mat[ , "Estimate"],
-                      logit_prob_se =  logit_probs_mat[ , "Std. Error"]) %>% 
-  mutate(pred_prob = plogis(logit_prob_est),
-         pred_prob_low = plogis(logit_prob_est + 
-                                  (qnorm(0.025) * logit_prob_se)),
-         pred_prob_up = plogis(logit_prob_est + 
-                                 (qnorm(0.975) * logit_prob_se))) %>% 
-  cbind(., obs_dat) %>% 
-  select(-logit_prob_est, -logit_prob_se)
+  pivot_longer(p1:p3, names_to = "cat", names_prefix = "p",
+               values_to = "true_prob") %>% 
+  # arrange(cat, site) %>% 
+  select(cat, site, reg, fac, facs, true_prob) %>%
+  distinct() %>% 
+  left_join(., fac_key %>% select(facs, facs_n), by = "facs") %>% 
+  arrange(facs_n)
+#   
+# logit_probs_mat <- ssdr[rownames(ssdr) %in% "logit_probs", ] 
+# pred_ci_old <- data.frame(cat = rep(1:(k + 1), each = N),
+#                       logit_prob_est = logit_probs_mat[ , "Estimate"],
+#                       logit_prob_se =  logit_probs_mat[ , "Std. Error"]) %>% 
+#   mutate(pred_prob = plogis(logit_prob_est),
+#          pred_prob_low = plogis(logit_prob_est +
+#                                   (qnorm(0.025) * logit_prob_se)),
+#          pred_prob_up = plogis(logit_prob_est +
+#                                  (qnorm(0.975) * logit_prob_se))) %>%
+#   cbind(., obs_dat) #%>% 
+#   # select(-logit_prob_est, -logit_prob_se)
+# 
+# pred_ci2 <- pred_ci_old %>% distinct() %>% arrange(cat, facs)
+#   
 
+logit_probs_mat_n <- ssdr[rownames(ssdr) %in% "logit_probs_out", ]
+pred_ci <- data.frame(cat = as.character(rep(1:(k + 1), 
+                                             each = length(unique(fac_key$facs_n)))), 
+                      logit_prob_est = logit_probs_mat_n[ , "Estimate"],
+                      logit_prob_se =  logit_probs_mat_n[ , "Std. Error"]) %>%
+  mutate(pred_prob = plogis(logit_prob_est),
+         pred_prob_low = plogis(logit_prob_est +
+                                  (qnorm(0.025) * logit_prob_se)),
+         pred_prob_up = plogis(logit_prob_est +
+                                 (qnorm(0.975) * logit_prob_se)),
+         facs_n = rep(fac_key$facs_n, each = k + 1)) %>%
+  # left_join(., fac_key, by = "facs_n") %>% 
+  left_join(., obs_dat, by = c("cat", "facs_n")) %>% 
+  select(-logit_prob_est, -logit_prob_se)
+  
 ggplot(pred_ci %>% filter(fac == "1")) +
   geom_boxplot(aes(x = as.factor(cat), y = true_prob)) +
-  geom_pointrange(aes(x = as.factor(cat), y = pred_prob, ymin = pred_prob_low,
-                      ymax = pred_prob_up), col = "red") +
+  # geom_pointrange(aes(x = as.factor(cat), y = pred_prob, ymin = pred_prob_low,
+  #                     ymax = pred_prob_up), col = "red") +
   facet_wrap(reg ~ site, nrow = 3) +
   ggsidekick::theme_sleek()
 

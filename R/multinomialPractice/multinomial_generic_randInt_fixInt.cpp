@@ -3,16 +3,19 @@ template <class Type>
 Type objective_function<Type>::operator()()
 {
   DATA_MATRIX(y_obs);
-  DATA_MATRIX(fx_cov);     // model matrix for fixed effects
-  DATA_IVECTOR(rfac);   // vector of random factor levels
-  DATA_INTEGER(n_rfac); // number of factor levels
+  DATA_MATRIX(fx_cov);   // model matrix for fixed effects
+  DATA_IVECTOR(rfac);    // vector of random factor levels
+  DATA_INTEGER(n_rfac);  // number of random factor levels
+  DATA_IVECTOR(all_fac); // vector of combined factor levels (fix and rand.)
+  DATA_IVECTOR(fac_key); // vector of unique combined factor levels (fix and rand.)
 
-  int n_obs = y_obs.rows(); // number of observations
-  int n_cat = y_obs.cols(); // number of categories
-  int n_fix_cov = fx_cov.cols(); // number of types of fixed covariates 
+  int n_obs = y_obs.rows();           // number of observations
+  int n_cat = y_obs.cols();           // number of categories
+  int n_fix_cov = fx_cov.cols();      // number of types of fixed covariates in mm
+  int n_fac_comb = fac_key.size();    // number of unique factor combinations
 
   // Parameters
-  PARAMETER_VECTOR(z_rfac); // vector of random intercepts
+  PARAMETER_VECTOR(z_rfac);  // vector of random intercepts
   PARAMETER_MATRIX(z_ints);  // matrix of fixed intercepts (rows = fixed cov, cols = k-1)
   PARAMETER(log_sigma_rfac); // among random intercept SD
 
@@ -91,19 +94,26 @@ Type objective_function<Type>::operator()()
   Type sigma_rfac = exp(log_sigma_rfac);
   ADREPORT(sigma_rfac);
 
-  // vector<Type> cat_int(n_cat - 1);
-  // cat_int = z_ints(1, );
 
-  // matrix<Type> fix_int(n_fix_cov - 1, n_cat - 1); // matrix of fixed intercepts
-  // fix_int = z_ints(2:(n_fix_cov - 1), );
+  // Populate output matrix with unique combinations of factor levels for 
+  // predictions
+  matrix<Type> logit_probs_out(n_fac_comb, n_cat);
+  vector<int> temp_index(n_fac_comb);    
 
-  // ADREPORT(cat_int);
-  // ADREPORT(fix_int);
+  for (int j = 0; j < n_fac_comb; ++j) {
+    for (int i = 0; i < n_obs; ++i) {
+      if (all_fac(i) == fac_key(j)) {
+        temp_index(j) = i;
+        break;
+      }
+    }
+    for (int g = 0; g < n_cat; ++g) {
+      logit_probs_out(j, g) = logit_probs(temp_index(j), g);
+    }
+  }
+  ADREPORT(logit_probs_out);
 
-  //REPORT(log_odds);
-  //REPORT(probs);
-  //REPORT(logit_probs);
-  ADREPORT(logit_probs);
+  // ADREPORT(logit_probs);
   
   return jnll;
 }

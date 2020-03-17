@@ -166,3 +166,57 @@ int n_obs, int n_cat, int n_fac) {
 //
   //return exp_log_odds;
 }')
+
+
+# ------------------------------------------------------------------------------
+# Match and fill vectors
+
+# dummy simulated data from hierarchical multinomial model
+dumm <- readRDS(here::here("R", "multinomialPractice", "temp_data.RDS"))
+probs_mat <- dumm %>% 
+  select(p1:p3) %>% 
+  as.matrix()
+fac_vec <- dumm %>% 
+  pull(facs) %>% 
+  as.numeric() 
+fac_vec <- fac_vec - 1
+fac_key <- sort(unique(fac_vec))
+
+# Fill using R
+pred_out <- matrix(NA,
+                   nrow = length(fac_key),
+                   ncol = (k + 1))
+for (h in 1:nrow(pred_out)) {
+  indexx <- min(which(fac_key[h] == fac_vec)) 
+  for (j in 1:ncol(probs_mat)) {
+    pred_out[h, j] <- probs_mat[indexx, j]
+  }
+}
+pred_out
+
+sub_pred(probs_mat, fac_vec, fac_key)
+
+library(Rcpp)
+cppFunction('NumericMatrix sub_pred(NumericMatrix probs_mat, 
+  NumericVector fac_vec, NumericVector fac_key) {
+    int n_fac = fac_key.size();
+    int cats = probs_mat.cols();
+    int n_obs = fac_vec.size();
+    
+    NumericMatrix pred_out(n_fac, cats);
+    NumericVector indexx(n_fac);    
+
+    for (int f = 0; f < n_fac; ++f) {
+      for (int i = 0; i < n_obs; ++i) {
+        if (fac_vec(i) == fac_key(f)) {
+          indexx(f) = i;
+          break;
+        }
+      }
+      for (int j = 0; j < cats; ++j) {
+        pred_out(f, j) = probs_mat(indexx(f), j);
+      }
+    }
+
+    return(pred_out);
+}')
