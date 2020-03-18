@@ -90,8 +90,8 @@ f_sim <- function(trial = 1) {
   # ggplot(datf, aes(x = y)) +
   #   geom_histogram() + #negative values in site 2 inc. probability of third cat
   #   ggsidekick::theme_sleek() +
-  #   # facet_wrap(~reg, nrow = 2)
-  # facet_wrap(reg~site, nrow = 2)
+    # facet_wrap(~reg, nrow = 2)
+  # facet_wrap(reg~site, nrow = 3)
   
   # matrix version for dmultinom():
   Y <- matrix(ncol = 3, nrow = N, data = 0)
@@ -159,26 +159,10 @@ dumm <- dat_list[[1]]$full_data %>%
 obs_dat <- dumm %>% 
   pivot_longer(p1:p3, names_to = "cat", names_prefix = "p",
                values_to = "true_prob") %>% 
-  # arrange(cat, site) %>% 
   select(cat, site, reg, fac, facs, true_prob) %>%
   distinct() %>% 
   left_join(., fac_key %>% select(facs, facs_n), by = "facs") %>% 
   arrange(facs_n)
-#   
-# logit_probs_mat <- ssdr[rownames(ssdr) %in% "logit_probs", ] 
-# pred_ci_old <- data.frame(cat = rep(1:(k + 1), each = N),
-#                       logit_prob_est = logit_probs_mat[ , "Estimate"],
-#                       logit_prob_se =  logit_probs_mat[ , "Std. Error"]) %>% 
-#   mutate(pred_prob = plogis(logit_prob_est),
-#          pred_prob_low = plogis(logit_prob_est +
-#                                   (qnorm(0.025) * logit_prob_se)),
-#          pred_prob_up = plogis(logit_prob_est +
-#                                  (qnorm(0.975) * logit_prob_se))) %>%
-#   cbind(., obs_dat) #%>% 
-#   # select(-logit_prob_est, -logit_prob_se)
-# 
-# pred_ci2 <- pred_ci_old %>% distinct() %>% arrange(cat, facs)
-#   
 
 logit_probs_mat_n <- ssdr[rownames(ssdr) %in% "logit_probs_out", ]
 pred_ci <- data.frame(cat = as.character(rep(1:(k + 1), 
@@ -190,15 +174,15 @@ pred_ci <- data.frame(cat = as.character(rep(1:(k + 1),
                                   (qnorm(0.025) * logit_prob_se)),
          pred_prob_up = plogis(logit_prob_est +
                                  (qnorm(0.975) * logit_prob_se)),
-         facs_n = rep(fac_key$facs_n, each = k + 1)) %>%
+         facs_n = rep(fac_key$facs_n, times = k + 1)) %>%
   # left_join(., fac_key, by = "facs_n") %>% 
   left_join(., obs_dat, by = c("cat", "facs_n")) %>% 
   select(-logit_prob_est, -logit_prob_se)
   
 ggplot(pred_ci %>% filter(fac == "1")) +
   geom_boxplot(aes(x = as.factor(cat), y = true_prob)) +
-  # geom_pointrange(aes(x = as.factor(cat), y = pred_prob, ymin = pred_prob_low,
-  #                     ymax = pred_prob_up), col = "red") +
+  geom_pointrange(aes(x = as.factor(cat), y = pred_prob, ymin = pred_prob_low,
+                      ymax = pred_prob_up), col = "red") +
   facet_wrap(reg ~ site, nrow = 3) +
   ggsidekick::theme_sleek()
 
