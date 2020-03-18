@@ -44,14 +44,6 @@ Type objective_function<Type>::operator()()
     }
   }
 
-  // for (int k = 0; k < (n_cat - 1); ++k) {
-  //   for (int i = 0; i < n_obs; ++i) {
-  //     // log_odds(i, k) = beta(k) + z_rfac(rfac(i)) + z_fx1(fx1(i));
-  //     log_odds(i, k) = z_ints() + z_fx1(fx1(i), k);
-  //     exp_log_odds(i, k) = exp(log_odds(i, k));
-  //   }
-  // }
-
   for (int i = 0; i < n_obs; ++i) {
     Type sum_exp_log_odds = 0.;
     for (int k = 0; k < (n_cat - 1); ++k) {
@@ -112,8 +104,6 @@ Type objective_function<Type>::operator()()
     }
   }
   ADREPORT(logit_probs_out);
-
-  // ADREPORT(logit_probs);
   
   return jnll;
 }
