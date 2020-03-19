@@ -112,8 +112,16 @@ for (i in seq_along(dat_list)) {
 
 
 library(TMB)
-compile("R/multinomialPractice/multinomial_generic_randInt_fixInt.cpp")
-dyn.load(dynlib("R/multinomialPractice/multinomial_generic_randInt_fixInt"))
+# compile("R/multinomialPractice/multinomial_generic_randInt_fixInt.cpp")
+# dyn.load(dynlib("R/multinomialPractice/multinomial_generic_randInt_fixInt"))
+# version that integrates out random effects for predictions
+# (otherwise same as above)
+compile("R/multinomialPractice/multinomial_generic_randInt2.cpp")
+dyn.load(dynlib("R/multinomialPractice/multinomial_generic_randInt2"))
+# fixed effects version for comparison
+# compile("R/multinomialPractice/multinomial_generic_fixInt.cpp")
+# dyn.load(dynlib("R/multinomialPractice/multinomial_generic_fixInt"))
+
 
 ## Data and parameters
 y_obs <- dat_list[[1]]$obs
@@ -141,7 +149,9 @@ parameters <- list(z_rfac = rep(0, times = length(unique(rfac))),
 
 ## Make a function object
 obj <- MakeADFun(data, parameters, random = c("z_rfac"),
-                 DLL = "multinomial_generic_randInt_fixInt")
+                 DLL = "multinomial_generic_randInt2")
+# obj <- MakeADFun(data, parameters, 
+#                  DLL = "multinomial_generic_fixInt")
 
 ## Call function minimizer
 opt <- nlminb(obj$par, obj$fn, obj$gr)
@@ -149,6 +159,8 @@ opt <- nlminb(obj$par, obj$fn, obj$gr)
 ## Get parameter uncertainties and convergence diagnostics
 sdr <- sdreport(obj)
 sdr
+sdr2 <- sdreport(obj, getReportCovariance = FALSE)
+sdr2
 
 ssdr <- summary(sdr)
 ssdr
@@ -164,34 +176,45 @@ obs_dat <- dumm %>%
   left_join(., fac_key %>% select(facs, facs_n), by = "facs") %>% 
   arrange(facs_n)
 
-logit_probs_mat_n <- ssdr[rownames(ssdr) %in% "logit_probs_out", ]
+logit_probs_mat <- ssdr[rownames(ssdr) %in% "logit_probs_out", ]
 pred_ci <- data.frame(cat = as.character(rep(1:(k + 1), 
                                              each = length(unique(fac_key$facs_n)))), 
-                      logit_prob_est = logit_probs_mat_n[ , "Estimate"],
-                      logit_prob_se =  logit_probs_mat_n[ , "Std. Error"]) %>%
+                      logit_prob_est = logit_probs_mat[ , "Estimate"],
+                      logit_prob_se =  logit_probs_mat[ , "Std. Error"]) %>%
   mutate(pred_prob = plogis(logit_prob_est),
          pred_prob_low = plogis(logit_prob_est +
                                   (qnorm(0.025) * logit_prob_se)),
          pred_prob_up = plogis(logit_prob_est +
                                  (qnorm(0.975) * logit_prob_se)),
          facs_n = rep(fac_key$facs_n, times = k + 1)) %>%
-  # left_join(., fac_key, by = "facs_n") %>% 
   left_join(., obs_dat, by = c("cat", "facs_n")) %>% 
-  select(-logit_prob_est, -logit_prob_se)
-  
-ggplot(pred_ci %>% filter(fac == "1")) +
+  select(-logit_prob_est, -logit_prob_se) %>% 
+  mutate(ests = "pool2")
+
+logit_probs_mat_fe <- ssdr[rownames(ssdr) %in% "logit_probs_out_fe", ]
+pred_ci_fe <- data.frame(cat = as.character(rep(1:(k + 1), 
+                                             each = length(unique(fac_key$facs_n)))), 
+                      logit_prob_est = logit_probs_mat_fe[ , "Estimate"],
+                      logit_prob_se =  logit_probs_mat_fe[ , "Std. Error"]) %>%
+  mutate(pred_prob = plogis(logit_prob_est),
+         pred_prob_low = plogis(logit_prob_est +
+                                  (qnorm(0.025) * logit_prob_se)),
+         pred_prob_up = plogis(logit_prob_est +
+                                 (qnorm(0.975) * logit_prob_se)),
+         facs_n = rep(fac_key$facs_n, times = k + 1)) %>%
+  left_join(., obs_dat, by = c("cat", "facs_n")) %>% 
+  select(-logit_prob_est, -logit_prob_se) %>% 
+  mutate(ests = "fix")
+
+pred_ci_both <- rbind(pred_ci, pred_ci_fe)
+
+ggplot(pred_ci_both %>% filter(fac == "1", reg == "1")) +
   geom_boxplot(aes(x = as.factor(cat), y = true_prob)) +
   geom_pointrange(aes(x = as.factor(cat), y = pred_prob, ymin = pred_prob_low,
                       ymax = pred_prob_up), col = "red") +
-  facet_wrap(reg ~ site, nrow = 3) +
+  facet_wrap(ests ~ site, nrow = 2) +
   ggsidekick::theme_sleek()
 
-
-## Simulate multiple times and examine coefficient estimates
-# Use model version that doesn't report probs to increase run time (otherwise
-# identical)
-compile("R/multinomialPractice/multinomial_generic_randInt_fixInt_noProbRep.cpp")
-dyn.load(dynlib("R/multinomialPractice/multinomial_generic_randInt_fixInt_noProbRep"))
 
 ests <- map(dat_list, function(x) {
   y_obs <- x$obs
@@ -207,7 +230,7 @@ ests <- map(dat_list, function(x) {
                      log_sigma_rfac = 0)
   ## Make a function object
   obj <- MakeADFun(data, parameters, random = c("z_rfac"),
-                   DLL = "multinomial_generic_randInt_fixInt_noProbRep")
+                   DLL = "multinomial_generic_randInt_fixInt")
   
   ## Call function minimizer
   opt <- nlminb(obj$par, obj$fn, obj$gr)
