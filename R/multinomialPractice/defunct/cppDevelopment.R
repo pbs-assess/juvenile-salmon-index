@@ -220,3 +220,36 @@ cppFunction('NumericMatrix sub_pred(NumericMatrix probs_mat,
 
     return(pred_out);
 }')
+
+
+##  ----------------------------------------------------------------------------
+# Dummy log-normal model (data from sim_gamma_re.R)
+
+library(Rcpp)
+cppFunction('NumericVector lm_c(NumericVector y1_i, NumericMatrix X1_ij, 
+            NumericVector b1_j) {
+  
+  int n1 = y1_i.size();
+  int n_cov = b1_j.size();  
+
+  NumericVector linear_predictor1_i(n1);
+  // linear_predictor1_i = X1_ij * b1_j;   
+  
+  for (int i = 0; i < n1; ++i) {
+    double dum_fix = 0;
+    for (int j = 0; j < n_cov; ++j) {
+      dum_fix += b1_j(j) * X1_ij(i, j);
+    }
+    linear_predictor1_i(i) = dum_fix;
+  }
+
+  return linear_predictor1_i;
+}')
+
+reg_ints <- c(0.25, 1)
+
+lm_c(y1_i = dat$site_obs,
+     X1_ij = fix_mm,
+     b1_j = reg_ints)
+
+tt <- fix_mm %*% reg_ints

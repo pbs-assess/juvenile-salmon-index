@@ -159,8 +159,6 @@ opt <- nlminb(obj$par, obj$fn, obj$gr)
 ## Get parameter uncertainties and convergence diagnostics
 sdr <- sdreport(obj)
 sdr
-sdr2 <- sdreport(obj, getReportCovariance = FALSE)
-sdr2
 
 ssdr <- summary(sdr)
 ssdr
@@ -174,41 +172,34 @@ obs_dat <- dumm %>%
   select(cat, site, reg, fac, facs, true_prob) %>%
   distinct() %>% 
   left_join(., fac_key %>% select(facs, facs_n), by = "facs") %>% 
-  arrange(facs_n)
+  arrange(facs_n) %>% 
+  rbind(., .) #stack to match below
 
+# generate predictions with and without fixed effects, then combine dataframes
 logit_probs_mat <- ssdr[rownames(ssdr) %in% "logit_probs_out", ]
-pred_ci <- data.frame(cat = as.character(rep(1:(k + 1), 
-                                             each = length(unique(fac_key$facs_n)))), 
-                      logit_prob_est = logit_probs_mat[ , "Estimate"],
-                      logit_prob_se =  logit_probs_mat[ , "Std. Error"]) %>%
-  mutate(pred_prob = plogis(logit_prob_est),
-         pred_prob_low = plogis(logit_prob_est +
-                                  (qnorm(0.025) * logit_prob_se)),
-         pred_prob_up = plogis(logit_prob_est +
-                                 (qnorm(0.975) * logit_prob_se)),
-         facs_n = rep(fac_key$facs_n, times = k + 1)) %>%
-  left_join(., obs_dat, by = c("cat", "facs_n")) %>% 
-  select(-logit_prob_est, -logit_prob_se) %>% 
-  mutate(ests = "pool2")
-
+pred_ci_pool <- data.frame(cat = as.character(rep(1:(k + 1), 
+                                                each = length(unique(fac_key$facs_n)))), 
+                         logit_prob_est = logit_probs_mat_fe[ , "Estimate"],
+                         logit_prob_se =  logit_probs_mat_fe[ , "Std. Error"]) %>% 
+  mutate(ests = "pool",
+         facs_n = rep(fac_key$facs_n, times = k + 1))
 logit_probs_mat_fe <- ssdr[rownames(ssdr) %in% "logit_probs_out_fe", ]
-pred_ci_fe <- data.frame(cat = as.character(rep(1:(k + 1), 
+pred_ci <- data.frame(cat = as.character(rep(1:(k + 1), 
                                              each = length(unique(fac_key$facs_n)))), 
                       logit_prob_est = logit_probs_mat_fe[ , "Estimate"],
                       logit_prob_se =  logit_probs_mat_fe[ , "Std. Error"]) %>%
+  mutate(ests = "fix",
+         facs_n = rep(fac_key$facs_n, times = k + 1)) %>% 
+  rbind(pred_ci_pool, .) %>% 
   mutate(pred_prob = plogis(logit_prob_est),
          pred_prob_low = plogis(logit_prob_est +
                                   (qnorm(0.025) * logit_prob_se)),
          pred_prob_up = plogis(logit_prob_est +
-                                 (qnorm(0.975) * logit_prob_se)),
-         facs_n = rep(fac_key$facs_n, times = k + 1)) %>%
+                                 (qnorm(0.975) * logit_prob_se))) %>%
   left_join(., obs_dat, by = c("cat", "facs_n")) %>% 
-  select(-logit_prob_est, -logit_prob_se) %>% 
-  mutate(ests = "fix")
-
-pred_ci_both <- rbind(pred_ci, pred_ci_fe)
-
-ggplot(pred_ci_both %>% filter(fac == "1", reg == "1")) +
+  select(-logit_prob_est, -logit_prob_se) 
+  
+ggplot(pred_ci %>% filter(fac == "1", reg == "1")) +
   geom_boxplot(aes(x = as.factor(cat), y = true_prob)) +
   geom_pointrange(aes(x = as.factor(cat), y = pred_prob, ymin = pred_prob_low,
                       ymax = pred_prob_up), col = "red") +
