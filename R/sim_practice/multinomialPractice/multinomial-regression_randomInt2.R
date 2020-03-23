@@ -112,16 +112,15 @@ for (i in seq_along(dat_list)) {
 
 
 library(TMB)
-# compile("R/multinomialPractice/multinomial_generic_randInt_fixInt.cpp")
-# dyn.load(dynlib("R/multinomialPractice/multinomial_generic_randInt_fixInt"))
+# compile("R/sim_practice/multinomialPractice/multinomial_generic_randInt_fixInt.cpp")
+# dyn.load(dynlib("R/sim_practice/multinomialPractice/multinomial_generic_randInt_fixInt"))
 # version that integrates out random effects for predictions
 # (otherwise same as above)
-compile("R/multinomialPractice/multinomial_generic_randInt2.cpp")
-dyn.load(dynlib("R/multinomialPractice/multinomial_generic_randInt2"))
+compile("R/sim_practice/multinomialPractice/multinomial_generic_randInt2.cpp")
+dyn.load(dynlib("R/sim_practice/multinomialPractice/multinomial_generic_randInt2"))
 # fixed effects version for comparison
-# compile("R/multinomialPractice/multinomial_generic_fixInt.cpp")
-# dyn.load(dynlib("R/multinomialPractice/multinomial_generic_fixInt"))
-
+# compile("R/sim_practice/multinomialPractice/multinomial_generic_fixInt.cpp")
+# dyn.load(dynlib("R/sim_practice/multinomialPractice/multinomial_generic_fixInt"))
 
 ## Data and parameters
 y_obs <- dat_list[[1]]$obs
@@ -159,9 +158,11 @@ opt <- nlminb(obj$par, obj$fn, obj$gr)
 ## Get parameter uncertainties and convergence diagnostics
 sdr <- sdreport(obj)
 sdr
+sdr_small <- sdr
 
 ssdr <- summary(sdr)
 ssdr
+ssdr_small <- ssdr
 
 # make dataframe of true predictions and covariates
 dumm <- dat_list[[1]]$full_data %>% 
@@ -263,3 +264,30 @@ r_effs %>%
 ggplot(r_effs) +
   geom_boxplot(aes(x = par, y = p_err))
 
+
+# MISC -------------------------------------------------------------------------
+
+# # experiment w/ increasing the size of dataset while keeping proportions the same
+# dd <- vector(mode = "list", length = 20)
+# y_obs <- NULL
+# reg_dat_long <- NULL
+# rfac_long <- NULL
+# fac_dat_long <- NULL
+# fac_key_long <- NULL
+# for(i in seq_along(dd)) {
+#   y_obs <- rbind(y_obs, dat_list[[1]]$obs)
+#   reg_dat_long <- rbind(reg_dat_long, reg_dat)
+#   
+#   rfac_long <- c(rfac_long, as.numeric(dat_list[[1]]$rand_fac) - 1) 
+#   fac_dat_long <- rbind(fac_dat_long, fac_dat)
+# }
+# 
+# fix_mm <- model.matrix(~ (reg + fac), reg_dat_long)
+# data <- list(y_obs = y_obs,
+#              rfac = rfac_long,
+#              fx_cov = fix_mm, #model matrix from above
+#              n_rfac = length(unique(rfac_long)),
+#              all_fac = fac_dat_long$facs_n, # vector of factor combinations
+#              fac_key = fac_key$facs_n #ordered unique factor combos in fac_vec
+# )
+# unsurprisingly reduces SE substantially
