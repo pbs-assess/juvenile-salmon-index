@@ -24,7 +24,6 @@ reg_dat <- data.frame(reg = as.factor(sample(c(1, 2, 3), size = N, replace = T))
                       fac = as.factor(sample(c(1, 2), size = N, replace = T)))
 
 # model matrix for fixed effects
-# fix_mm <- model.matrix(~ reg:fac - 1, reg_dat)
 fix_mm <- model.matrix(~ (reg + fac), reg_dat)
 
 # function to simulate multinomial data and fit hierarchical models
