@@ -105,15 +105,90 @@ f_sim <- function(trial = 1) {
 }
 
 sim_dat <- f_sim()
+m1_dat <- sim_dat$dat_m1
+m2_dat <- sim_dat$dat_m2
+m2_obs <- sim_dat$obs_m2
 
 ## Check simulated data
 # Abundance data
-ggplot(sim_dat$dat_m1) +
+ggplot(m1_dat) +
   geom_histogram(aes(x = site_obs))
-ggplot(sim_dat$dat_m1) +
+ggplot(m1_dat) +
   geom_boxplot(aes(x = reg, y = site_obs))
 
 # Multinomial data
-ggplot(sim_dat$dat_m2) +
+ggplot(m2_dat) +
     geom_histogram(aes(x = as.factor(y)), stat = "count") + 
     facet_wrap(~reg, nrow = 2)
+
+
+
+## Prep data to pass to TMB
+# order matrix based on unique factor levels with most saturated at bottom
+mm_pred <- fix_mm1 %>% 
+  unique() 
+ord_mat <- mm_pred %>% 
+  apply(., 1, sum) %>%
+  sort() %>% 
+  names()
+mm_pred <- mm_pred[ord_mat, ]
+
+# fit dummy model to speed up tweedie abundance estimates
+m1 <- lm(log(site_obs) ~ reg, data = m1_dat)
+
+#helper function to convert factors 
+fct_to_tmb_num <- function(x) {
+  as.numeric(as.factor(as.character(x))) - 1
+}
+fac1k <- fct_to_tmb_num(m1_dat$site)
+fac2k <- fct_to_tmb_num(m2_dat$site)
+
+# generate factor key for multinomial data
+fac_dat <- m2_dat %>% 
+  mutate(facs = reg,#as.factor(paste(reg, sep = "_")),
+         facs_n = fct_to_tmb_num(facs)) %>% #subtract for indexing by 0 
+  select(reg, facs, facs_n)
+fac_key <- fac_dat %>% 
+  distinct() %>% 
+  arrange(facs_n)
+
+# combine
+data <- list(
+  #abundance data
+  y1_i = m1_dat$site_obs,
+  X1_ij = fix_mm1,
+  factor1k_i = fac1k,
+  nk1 = length(unique(fac1k)),
+  X1_pred_ij = mm_pred,
+  #composition data
+  y2_ig = m2_obs,
+  X2_ij = fix_mm2,
+  factor2k_i = fac2k,
+  nk2 = length(unique(fac2k)),
+  m2_all_fac = fac_dat$facs_n,
+  m2_fac_key = fac_key$facs_n
+)
+
+parameters = list(
+  b1_j = coef(m1) + rnorm(length(coef(m1)), 0, 0.01),#rep(1, ncol(fix_mm)),
+  log_phi = log(1.1),
+  logit_p = boot::logit(0.8),
+  z1_k = rep(0, length(unique(fac1k))),
+  log_sigma_zk1 = log(0.25),
+  b2_jg = matrix(0, nrow = ncol(fix_mm2), ncol = ncol(m2_obs) - 1),
+  z2_k = rep(0, times = length(unique(fac2k))),
+  log_sigma_zk2 = log(0.25)
+)
+
+## Make a function object
+compile("R/sim_practice/tweediePractice/tweedie_multinomial_1re.cpp")
+dyn.load(dynlib("R/sim_practice/tweediePractice/tweedie_multinomial_1re"))
+obj <- MakeADFun(data, parameters, random = c("z1_k", "z2_k"), 
+                 DLL = "tweedie_multinomial_1re")
+
+opt <- nlminb(obj$par, obj$fn, obj$gr)
+
+sdr <- sdreport(obj)
+sdr
+ssdr <- summary(sdr)
+ssdr
