@@ -193,6 +193,9 @@ sdr
 ssdr <- summary(sdr)
 ssdr
 
+saveRDS(ssdr, here::here("data", "modelFits", "temp_combo_ssdr.rds"))
+ssdr <- readRDS(here::here("data", "modelFits", "temp_combo_ssdr.rds"))
+
 
 # PREDICTIONS ------------------------------------------------------------------
 log_pred <- ssdr[rownames(ssdr) %in% "log_pred_abund", ]
@@ -226,18 +229,18 @@ raw_abund <- m1_dat %>%
                values_to = "ppn") %>%
   mutate(abund = site_obs * ppn)
   
-# combined estimates seem off (biased high)
+# combined estimates seem correct
 ggplot() +
   geom_point(data = raw_abund, aes(x = as.factor(cat), y = abund),  
              alpha = 0.4) +
   geom_pointrange(data = pred_ci, aes(x = as.factor(cat), y = abund_est, 
                                       ymin = abund_low,
-                      ymax = abund_up)) +
+                      ymax = abund_up), col = "red") +
   facet_wrap(~ reg, nrow = 2, scales = "free_y") +
   ggsidekick::theme_sleek()
 
 
-# proportions are right though...
+# proportions are right 
 ggplot() +
   geom_point(data = raw_abund %>% select(cat, reg, ppn) %>% distinct(), 
              aes(x = as.factor(cat), y = ppn),  
@@ -248,7 +251,7 @@ ggplot() +
   facet_wrap(~ reg, nrow = 2, scales = "free_y") +
   ggsidekick::theme_sleek()
 
-# raw abundance
+# raw abundance also seems right
 dum <- data.frame(
   reg = as.factor(c(1, 2)),
   raw_abund_est = log_pred[ , "Estimate"],

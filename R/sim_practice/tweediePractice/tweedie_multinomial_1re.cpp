@@ -5,7 +5,6 @@ Type invlogit_p1(Type x){
   return 1.0 / (1.0 + exp(-x)) + 1.0;
 }
 
-
 template<class Type>
 Type objective_function<Type>::operator() ()
 {
@@ -163,7 +162,7 @@ Type objective_function<Type>::operator() ()
 
   for (int m = 0; m < n_fac_comb; ++m) {
   	for (int g = 0; g < n_cat; ++g) {
-  		pred_abund_mg(m, g) = exp(log_pred_abund(m)) * invlogit_p1(logit_pred_prob(m, g));
+  		pred_abund_mg(m, g) = exp(log_pred_abund(m)) * invlogit(logit_pred_prob(m, g));
   	}
   }
 
