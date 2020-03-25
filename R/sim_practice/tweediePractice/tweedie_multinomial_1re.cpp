@@ -167,8 +167,8 @@ Type objective_function<Type>::operator() ()
   	}
   }
 
-  REPORT(logit_pred_prob);
-  ADREPORT(logit_pred_prob);
+  REPORT(pred_abund_mg);
+  ADREPORT(pred_abund_mg);
 
   return jnll;
 }

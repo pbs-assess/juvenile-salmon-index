@@ -192,3 +192,79 @@ sdr <- sdreport(obj)
 sdr
 ssdr <- summary(sdr)
 ssdr
+
+
+# PREDICTIONS ------------------------------------------------------------------
+log_pred <- ssdr[rownames(ssdr) %in% "log_pred_abund", ]
+logit_probs <- ssdr[rownames(ssdr) %in% "logit_pred_prob", ]
+pred_abund <- ssdr[rownames(ssdr) %in% "pred_abund_mg", ]
+
+pred_ci <- data.frame(cat = as.character(rep(1:(k + 1), 
+                                             each = length(unique(fac_key$facs_n)))), 
+                      logit_prob_est = logit_probs[ , "Estimate"],
+                      logit_prob_se =  logit_probs[ , "Std. Error"]) %>%
+  mutate(facs_n = rep(fac_key$facs_n, times = k + 1)) %>% 
+  mutate(pred_prob = plogis(logit_prob_est),
+         pred_prob_low = plogis(logit_prob_est +
+                                  (qnorm(0.025) * logit_prob_se)),
+         pred_prob_up = plogis(logit_prob_est +
+                                 (qnorm(0.975) * logit_prob_se)),
+         abund_est = pred_abund[ , "Estimate"],
+         abund_se =  pred_abund[ , "Std. Error"],
+         abund_low = abund_est + (qnorm(0.025) * abund_se),
+         abund_up = abund_est + (qnorm(0.975) * abund_se)) %>%
+  left_join(., fac_key, by = c("facs_n")) 
+
+# calculate raw summary data for comparison
+raw_prop <- m2_dat %>% 
+  select(reg, site, p1:p3) %>%
+  distinct()
+
+raw_abund <- m1_dat %>% 
+  left_join(., raw_prop, by = c("reg", "site")) %>% 
+  pivot_longer(., cols = p1:p3, names_to = "cat", names_prefix = "p",
+               values_to = "ppn") %>%
+  mutate(abund = site_obs * ppn)
+  
+# combined estimates seem off (biased high)
+ggplot() +
+  geom_point(data = raw_abund, aes(x = as.factor(cat), y = abund),  
+             alpha = 0.4) +
+  geom_pointrange(data = pred_ci, aes(x = as.factor(cat), y = abund_est, 
+                                      ymin = abund_low,
+                      ymax = abund_up)) +
+  facet_wrap(~ reg, nrow = 2, scales = "free_y") +
+  ggsidekick::theme_sleek()
+
+
+# proportions are right though...
+ggplot() +
+  geom_point(data = raw_abund %>% select(cat, reg, ppn) %>% distinct(), 
+             aes(x = as.factor(cat), y = ppn),  
+             alpha = 0.4) +
+  geom_pointrange(data = pred_ci, aes(x = as.factor(cat), y = pred_prob, 
+                                      ymin = pred_prob_low,
+                                      ymax = pred_prob_up)) +
+  facet_wrap(~ reg, nrow = 2, scales = "free_y") +
+  ggsidekick::theme_sleek()
+
+# raw abundance
+dum <- data.frame(
+  reg = as.factor(c(1, 2)),
+  raw_abund_est = log_pred[ , "Estimate"],
+  raw_abund_se = log_pred[ , "Std. Error"]) %>% 
+  mutate(
+    raw_mu = exp(raw_abund_est),
+    raw_abund_low = exp(raw_abund_est + (qnorm(0.025) * raw_abund_se)),
+    raw_abund_up = exp(raw_abund_est + (qnorm(0.975) * raw_abund_se))
+  ) %>% 
+  left_join(pred_ci, ., by = "reg")
+
+ggplot() +
+  geom_point(data = raw_abund, aes(x = as.factor(reg), y = site_obs),  
+             alpha = 0.4) +
+  geom_pointrange(data = dum, aes(x =  as.factor(reg), y = raw_mu, 
+                                      ymin = raw_abund_low,
+                                      ymax = raw_abund_up), color= "red") +
+  facet_wrap(~ reg, nrow = 2, scales = "free_y") +
+  ggsidekick::theme_sleek()
