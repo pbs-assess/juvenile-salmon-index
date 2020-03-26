@@ -1,6 +1,8 @@
 ## Fit GSI data to multinomial model
 # Nov. 28, 2019
 # Note: Currently assumes certain assignment
+# Note2: Should be replaced with version that includes spatiotemporal random 
+# fields
 
 library(tidyverse)
 

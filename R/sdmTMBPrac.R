@@ -46,7 +46,7 @@ m1_nb <- sdmTMB(ck_juv ~ 0 + as.factor(year) + jdayZ + jdayZ2,
                  include_spatial = TRUE,
                  ar1_fields = FALSE,
                  family = nbinom2(link = "log"))
-saveRDS(m1, here::here("data", "modelFits", "day_nb.rds"))
+saveRDS(m1_nb, here::here("data", "modelFits", "day_nb.rds"))
 
 ## Daily model incorporating seasonal effects and quadratics
 m2_nb <- sdmTMB(ck_juv ~ 0 + as.factor(year) + season:jdayZ + season:jdayZ2,
@@ -58,7 +58,7 @@ m2_nb <- sdmTMB(ck_juv ~ 0 + as.factor(year) + season:jdayZ + season:jdayZ2,
                include_spatial = TRUE,
                ar1_fields = FALSE,
                family = nbinom2(link = "log"))
-saveRDS(m2, here::here("data", "modelFits", "day_season_nb.rds"))
+saveRDS(m2_nb, here::here("data", "modelFits", "day_season_nb.rds"))
 
 ## as above but with tweedie
 m2_tw <- sdmTMB(ck_juv ~ 0 + as.factor(year) + season:jdayZ + season:jdayZ2,
