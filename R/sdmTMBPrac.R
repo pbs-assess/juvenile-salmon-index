@@ -23,8 +23,10 @@ jchin <- readRDS(here::here("data", "juvCatchGSI_reg4.rds")) %>%
            )
          ) %>% 
   #remove extra vars and stock ppn data
-  dplyr::select(-c(date, stableStation, samp_catch:SEAK))
-
+  dplyr::select(-c(date, stableStation, samp_catch:SEAK)) %>% 
+  #some sets duplicated (correct SQL code eventually, for now remove)
+  distinct()
+  
 jchin_spde <- make_spde(jchin$xUTM_start, jchin$yUTM_start, n_knots = 150)
 plot_spde(jchin_spde)
 
@@ -34,8 +36,8 @@ ggplot(jchin, aes(x = jday, y = ck_juv, colour = as.factor(month))) +
 
 ## Develop index 
 ## Daily model
-# mDay <- readRDS(here::here("data", "modelFits", "dayModel.rds"))
-m1 <- sdmTMB(ck_juv ~ 0 + as.factor(year) + jdayZ + jdayZ2,
+dir.create(file.path(here::here("data", "modelFits")))
+m1_nb <- sdmTMB(ck_juv ~ 0 + as.factor(year) + jdayZ + jdayZ2,
                  data = jchin,
                  time = "year",
                  spde = jchin_spde,
@@ -44,10 +46,10 @@ m1 <- sdmTMB(ck_juv ~ 0 + as.factor(year) + jdayZ + jdayZ2,
                  include_spatial = TRUE,
                  ar1_fields = FALSE,
                  family = nbinom2(link = "log"))
-saveRDS(m1, here::here("data", "modelFits", "dayModel.rds"))
+saveRDS(m1, here::here("data", "modelFits", "day_nb.rds"))
 
 ## Daily model incorporating seasonal effects and quadratics
-m2 <- sdmTMB(ck_juv ~ 0 + as.factor(year) + season:jdayZ + season:jdayZ2,
+m2_nb <- sdmTMB(ck_juv ~ 0 + as.factor(year) + season:jdayZ + season:jdayZ2,
                data = jchin,
                time = "year",
                spde = jchin_spde,
@@ -56,8 +58,31 @@ m2 <- sdmTMB(ck_juv ~ 0 + as.factor(year) + season:jdayZ + season:jdayZ2,
                include_spatial = TRUE,
                ar1_fields = FALSE,
                family = nbinom2(link = "log"))
-dir.create(file.path(here::here("data", "modelFits")))
-saveRDS(m2, here::here("data", "modelFits", "dayModel.rds"))
+saveRDS(m2, here::here("data", "modelFits", "day_season_nb.rds"))
+
+## as above but with tweedie
+m2_tw <- sdmTMB(ck_juv ~ 0 + as.factor(year) + season:jdayZ + season:jdayZ2,
+             data = jchin,
+             time = "year",
+             spde = jchin_spde,
+             silent = FALSE,
+             anisotropy = TRUE,
+             include_spatial = TRUE,
+             ar1_fields = FALSE,
+             family = tweedie(link = "log"))
+saveRDS(m2_tw, here::here("data", "modelFits", "day_season_nb.rds"))
+
+# examine residuals
+jchin$resid <- residuals(m2)
+hist(jchin$resid)
+ggplot(jchin, aes(xUTM_start, yUTM_start, col = resid)) + 
+  scale_colour_gradient2() +
+  geom_point() + facet_wrap(~year) + coord_fixed()
+
+jchin_trim <- jchin %>% 
+  filter(!resid == Inf) 
+qqnorm(jchin_trim$resid)
+abline(a = 0, b = 1)
 
 
 # Prediction grid (removing subannual daily effect)
@@ -73,9 +98,6 @@ surv_grid <- readRDS(here::here("data", "trimmedSurveyGrid.rds")) %>%
 pred_m <- predict(m2, newdata = surv_grid, return_tmb_object = TRUE)
 glimpse(pred_m$data)
 
-# waiting on patch for neg binomial residuals
-dum <- jchin %>% 
-  mutate(resid = residuals(m2))
 
 # Stolen from vignette...
 plot_map <- function(dat, column) {
