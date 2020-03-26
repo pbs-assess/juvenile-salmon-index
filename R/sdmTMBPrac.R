@@ -73,16 +73,14 @@ m2_tw <- sdmTMB(ck_juv ~ 0 + as.factor(year) + season:jdayZ + season:jdayZ2,
 saveRDS(m2_tw, here::here("data", "modelFits", "day_season_nb.rds"))
 
 # examine residuals
-jchin$resid <- residuals(m2)
-hist(jchin$resid)
-ggplot(jchin, aes(xUTM_start, yUTM_start, col = resid)) + 
+jchin$resid_tw <- residuals(m2_tw)
+hist(jchin$resid_tw)
+ggplot(jchin, aes(xUTM_start, yUTM_start, col = resid_tw)) + 
   scale_colour_gradient2() +
   geom_point() + facet_wrap(~year) + coord_fixed()
 
-jchin_trim <- jchin %>% 
-  filter(!resid == Inf) 
-qqnorm(jchin_trim$resid)
-abline(a = 0, b = 1)
+qqnorm(jchin$resid_tw)
+abline(a = 0, b = 1, col = "red")
 
 
 # Prediction grid (removing subannual daily effect)
