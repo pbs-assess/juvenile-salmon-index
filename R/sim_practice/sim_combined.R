@@ -12,10 +12,17 @@ n_m1_site <- 40
 sd_m1_site <- 0.1
 N_m1 <- n_sites * n_m1_site
 # Fixed 
-fix_ints_m1 <- c(0.75, 1) 
-f_dat_m1 <- data.frame(reg = as.factor(sample(c(1, 2), size = N_m1, replace = T)))
-fix_mm1 <- model.matrix(~ reg, data = f_dat_m1)
-log_phi <- log(1.1)
+log_phi <- log(1.1) #for tweedie dist
+fix_ints_m1 <- c(0.75, 1, -1, 0.5) #intercept and F1a/F1b and F2a relative to reference
+# IMPORTANT: DF has to be arranged by factor levels so predictive model matrix
+# (mm_pred) is structured correctly
+f_dat_m1 <- data.frame(reg = as.factor(sample(c(1, 2, 3), size = N_m1, 
+                                              replace = T)),
+                       fac = as.factor(sample(c(1, 2), size = N_m1, 
+                                              replace = T))) %>% 
+  arrange(reg, fac)
+fix_mm1 <- model.matrix(~ reg + fac, data = f_dat_m1)
+
 
 ## Parameters for multinomial data
 n_m2_site <- 250
@@ -24,16 +31,18 @@ N_m2 <- n_sites * n_m2_site
 # Fixed 
 group_ints_m2 <- c(0.3, -1.4)
 k <- length(group_ints_m2) #number of groups - 1
-f1a_ints_m2 <- c(1.5, -0.25) #i.e. how region 2 differs from reference for each group
-# reg3_ints <- c(0.27, 0.49) #i.e. how region 3 differs from reference for each group
-# fac2_ints <- c(0, -2) #i.e. how factor 2 differs from reference for each group
-fix_ints_m2 <- matrix(c(group_ints_m2, f1a_ints_m2), ncol = k, byrow = T)
+f1a_ints_m2 <- c(1.5, -0.25) #i.e. how fac 1 level a differs from ref for each group
+f1b_ints_m2 <- c(-1, 0.5) #i.e. how fac 1 level b differs from ref for each group
+f2_ints_m2 <- c(0.75, 2) #i.e. how fac 2 level a differs from ref for each group
+fix_ints_m2 <- matrix(c(group_ints_m2, f1a_ints_m2, f1b_ints_m2, f2_ints_m2), 
+                      ncol = k, byrow = T)
 
-f_dat_m2 <- data.frame(reg = as.factor(sample(c(1, 2), size = N_m2, 
-                                              replace = T)))
-# ,
-#                       fac = as.factor(sample(c(1, 2), size = N, replace = T)))
-fix_mm2 <- model.matrix(~ reg, data = f_dat_m2)
+f_dat_m2 <- data.frame(reg = as.factor(sample(c(1, 2, 3), size = N_m2, 
+                                              replace = T)),
+                       fac = as.factor(sample(c(1, 2), size = N_m2, 
+                                              replace = T))) %>% 
+  arrange(reg, fac)
+fix_mm2 <- model.matrix(~ reg + fac, data = f_dat_m2) 
 
 
 ## Simulate data ---------------------------------------------------------------
@@ -105,7 +114,6 @@ f_sim <- function(trial = 1) {
   true_values <- c(fix_ints_m1, log_phi, 1.5, log(sd_m1_site), 
                   as.vector(fix_ints_m2), log(sd_m2_site), site_mean_m1,
                   site_mean_m2)
-
   
   return(list(dat_m1 = dat_m1, dat_m2 = dat_m2, obs_m2 = Y_m2, 
               true_val = true_values))
@@ -121,27 +129,44 @@ m2_obs <- sim_dat$obs_m2
 ggplot(m1_dat) +
   geom_histogram(aes(x = site_obs))
 ggplot(m1_dat) +
-  geom_boxplot(aes(x = reg, y = site_obs))
+  geom_boxplot(aes(x = reg, y = site_obs)) +
+  facet_wrap(~fac)
 
 # Multinomial data
 ggplot(m2_dat) +
     geom_histogram(aes(x = as.factor(y)), stat = "count") + 
-    facet_wrap(~reg, nrow = 2)
-
+    facet_wrap(fac~reg, nrow = 2)
 
 
 ## Prep data to pass to TMB
-# order matrix based on unique factor levels with most saturated at bottom
-mm_pred <- fix_mm1 %>% 
-  unique() 
-ord_mat <- mm_pred %>% 
-  apply(., 1, sum) %>%
-  sort() %>% 
-  names()
-mm_pred <- mm_pred[ord_mat, ]
+# Following doesn't seem to work with multiple factors or with how the 
+# multinomial predictions are currently set up
+# mm_pred2 <- fix_mm1[1:(ncol(fix_mm1)), ]
+# for (i in 1:ncol(mm_pred2)) {
+#   for (j in 1:nrow(mm_pred2)) {
+#     mm_pred2[j, i] <- 0
+#   }}
+# mm_pred2[,1] <- 1
+# for (i in 1:ncol(mm_pred2)) {
+#   for (j in 1:nrow(mm_pred2)) {
+#     if (i == j)
+#       mm_pred2[j, i] <- 1
+#   }}
 
-# fit dummy model to speed up tweedie abundance estimates
-m1 <- lm(log(site_obs) ~ reg, data = m1_dat)
+# instead make key of factors which is used for the multinomial predictions and
+# to generate a predictive model matrix for the tweedie
+fac_dat <- m2_dat %>% 
+  arrange(reg, fac) %>% 
+  mutate(facs = as.factor(paste(reg, fac, sep = "_")),
+         facs_n = fct_to_tmb_num(facs)) %>% #subtract for indexing by 0 
+  select(reg, fac, facs, facs_n)
+fac_key <- fac_dat %>% 
+  distinct() %>% 
+  arrange(facs_n)
+mm_pred <- model.matrix(~ reg + fac, data = fac_key)
+
+# fit dummy model to speed up tweedie estimates
+m1 <- lm(log(site_obs + 0.0001) ~ reg + fac, data = m1_dat)
 
 #helper function to convert factors 
 fct_to_tmb_num <- function(x) {
@@ -149,15 +174,6 @@ fct_to_tmb_num <- function(x) {
 }
 fac1k <- fct_to_tmb_num(m1_dat$site)
 fac2k <- fct_to_tmb_num(m2_dat$site)
-
-# generate factor key for multinomial data
-fac_dat <- m2_dat %>% 
-  mutate(facs = reg,#as.factor(paste(reg, sep = "_")),
-         facs_n = fct_to_tmb_num(facs)) %>% #subtract for indexing by 0 
-  select(reg, facs, facs_n)
-fac_key <- fac_dat %>% 
-  distinct() %>% 
-  arrange(facs_n)
 
 # combine
 data <- list(
@@ -177,12 +193,12 @@ data <- list(
 )
 
 parameters = list(
-  b1_j = coef(m1) + rnorm(length(coef(m1)), 0, 0.01),#rep(1, ncol(fix_mm)),
+  b1_j = coef(m1) + rnorm(length(coef(m1)), 0, 0.01),
   log_phi = log(1.1),
   logit_p = boot::logit(0.8),
   z1_k = rep(0, length(unique(fac1k))),
   log_sigma_zk1 = log(0.25),
-  b2_jg = matrix(0, nrow = ncol(fix_mm2), ncol = ncol(m2_obs) - 1),
+  b2_jg = matrix(0, nrow = ncol(fix_mm2), ncol = ncol(m2_obs) - 1), 
   z2_k = rep(0, times = length(unique(fac2k))),
   log_sigma_zk2 = log(0.25)
 )
@@ -202,9 +218,9 @@ ssdr
 
 
 # PREDICTIONS ------------------------------------------------------------------
-log_pred <- ssdr[rownames(ssdr) %in% "log_pred_abund", ]
-logit_probs <- ssdr[rownames(ssdr) %in% "logit_pred_prob", ]
-pred_abund <- ssdr[rownames(ssdr) %in% "pred_abund_mg", ]
+log_pred <- ssdr[rownames(ssdr) %in% "log_pred_abund", ] #log pred of abundance
+logit_probs <- ssdr[rownames(ssdr) %in% "logit_pred_prob", ] #logit probs of each category
+pred_abund <- ssdr[rownames(ssdr) %in% "pred_abund_mg", ] #pred abundance of each category
 
 pred_ci <- data.frame(cat = as.character(rep(1:(k + 1), 
                                              each = length(unique(fac_key$facs_n)))), 
@@ -224,11 +240,11 @@ pred_ci <- data.frame(cat = as.character(rep(1:(k + 1),
 
 # calculate raw summary data for comparison
 raw_prop <- m2_dat %>% 
-  select(reg, site, p1:p3) %>%
+  select(reg, fac, site, p1:p3) %>%
   distinct()
 
 raw_abund <- m1_dat %>% 
-  left_join(., raw_prop, by = c("reg", "site")) %>% 
+  left_join(., raw_prop, by = c("reg", "fac", "site")) %>% 
   pivot_longer(., cols = p1:p3, names_to = "cat", names_prefix = "p",
                values_to = "ppn") %>%
   mutate(abund = site_obs * ppn)
@@ -240,23 +256,24 @@ ggplot() +
   geom_pointrange(data = pred_ci, aes(x = as.factor(cat), y = abund_est, 
                                       ymin = abund_low,
                       ymax = abund_up), col = "red") +
-  facet_wrap(~ reg, nrow = 2, scales = "free_y") +
+  facet_wrap(fac ~ reg, nrow = 2) +
   ggsidekick::theme_sleek()
 
-# proportions are right 
+# proportions seem right 
 ggplot() +
-  geom_point(data = raw_abund %>% select(cat, reg, ppn) %>% distinct(), 
-             aes(x = as.factor(cat), y = ppn),  
-             alpha = 0.4) +
   geom_pointrange(data = pred_ci, aes(x = as.factor(cat), y = pred_prob, 
                                       ymin = pred_prob_low,
-                                      ymax = pred_prob_up)) +
-  facet_wrap(~ reg, nrow = 2, scales = "free_y") +
+                                      ymax = pred_prob_up),
+                  col = "red") +
+  geom_point(data = raw_abund %>% select(cat, reg, fac, ppn) %>% distinct(), 
+             aes(x = as.factor(cat), y = ppn),  
+             alpha = 0.4) +
+  facet_wrap(fac ~ reg, nrow = 2, scales = "free_y") +
   ggsidekick::theme_sleek()
 
 # raw abundance also seems right
 dum <- data.frame(
-  reg = as.factor(c(1, 2)),
+  facs_n = fac_key$facs_n,
   raw_abund_est = log_pred[ , "Estimate"],
   raw_abund_se = log_pred[ , "Std. Error"]) %>% 
   mutate(
@@ -264,15 +281,15 @@ dum <- data.frame(
     raw_abund_low = exp(raw_abund_est + (qnorm(0.025) * raw_abund_se)),
     raw_abund_up = exp(raw_abund_est + (qnorm(0.975) * raw_abund_se))
   ) %>% 
-  left_join(pred_ci, ., by = "reg")
+  left_join(pred_ci, ., by = "facs_n")
 
 ggplot() +
-  geom_point(data = raw_abund, aes(x = as.factor(reg), y = site_obs),  
+  geom_point(data = m1_dat, aes(x = as.factor(reg), y = site_obs),  
              alpha = 0.4) +
-  geom_pointrange(data = dum, aes(x =  as.factor(reg), y = raw_mu, 
+  geom_pointrange(data = dum, aes(x =  as.factor(reg), y = raw_mu,
                                       ymin = raw_abund_low,
                                       ymax = raw_abund_up), color= "red") +
-  facet_wrap(~ reg, nrow = 2, scales = "free_y") +
+  facet_wrap(~ fac, nrow = 2, scales = "free_y") +
   ggsidekick::theme_sleek()
 
 

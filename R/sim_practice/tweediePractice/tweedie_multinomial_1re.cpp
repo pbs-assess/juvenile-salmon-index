@@ -14,7 +14,7 @@ Type objective_function<Type>::operator() ()
   DATA_IVECTOR(factor1k_i);
   DATA_INTEGER(nk1);
   DATA_MATRIX(X1_pred_ij);
-  // Distribution data
+  // Composition data
   DATA_MATRIX(y2_ig);		// matrix of observed distribuons for g (groups - 1)
   DATA_MATRIX(X2_ij);      	// model matrix for fixed effects
   DATA_IVECTOR(factor2k_i); // vector of random factor levels
@@ -28,7 +28,7 @@ Type objective_function<Type>::operator() ()
   PARAMETER(logit_p);
   PARAMETER_VECTOR(z1_k);
   PARAMETER(log_sigma_zk1);
-  // Distribution parameters
+  // Composition parameters
   PARAMETER_MATRIX(b2_jg); 	 // matrix of fixed int. (rows = fixed cov, cols = g)
   PARAMETER_VECTOR(z2_k); 	 // vector of random int.
   PARAMETER(log_sigma_zk2);  // among random int SD
@@ -36,7 +36,7 @@ Type objective_function<Type>::operator() ()
   // Abundance intermediate variables
   int n1 = y1_i.size();
   vector<Type> linear_predictor1_i(n1);
-  // Distribution intermediate variables
+  // Composition intermediate variables
   int n2 = y2_ig.rows(); 		// number of observations
   int n_cat = y2_ig.cols(); 		// number of categories
   int n_fix_cov = X2_ij.cols(); 	// number of types of fixed covariates 
