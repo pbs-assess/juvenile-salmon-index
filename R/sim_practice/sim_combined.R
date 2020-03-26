@@ -8,24 +8,21 @@ n_sites <- 5
 
 
 ## Parameters for tweedie data
-n_m1_site <- 40
+n_m1_site <- 100
 sd_m1_site <- 0.1
 N_m1 <- n_sites * n_m1_site
 # Fixed 
 log_phi <- log(1.1) #for tweedie dist
 fix_ints_m1 <- c(0.75, 1, -1, 0.5) #intercept and F1a/F1b and F2a relative to reference
-# IMPORTANT: DF has to be arranged by factor levels so predictive model matrix
-# (mm_pred) is structured correctly
 f_dat_m1 <- data.frame(reg = as.factor(sample(c(1, 2, 3), size = N_m1, 
                                               replace = T)),
                        fac = as.factor(sample(c(1, 2), size = N_m1, 
-                                              replace = T))) %>% 
-  arrange(reg, fac)
+                                              replace = T))) 
 fix_mm1 <- model.matrix(~ reg + fac, data = f_dat_m1)
 
 
 ## Parameters for multinomial data
-n_m2_site <- 250
+n_m2_site <- 40
 sd_m2_site <- 0.5
 N_m2 <- n_sites * n_m2_site
 # Fixed 
@@ -40,8 +37,7 @@ fix_ints_m2 <- matrix(c(group_ints_m2, f1a_ints_m2, f1b_ints_m2, f2_ints_m2),
 f_dat_m2 <- data.frame(reg = as.factor(sample(c(1, 2, 3), size = N_m2, 
                                               replace = T)),
                        fac = as.factor(sample(c(1, 2), size = N_m2, 
-                                              replace = T))) %>% 
-  arrange(reg, fac)
+                                              replace = T))) 
 fix_mm2 <- model.matrix(~ reg + fac, data = f_dat_m2) 
 
 
@@ -63,7 +59,6 @@ f_sim <- function(trial = 1) {
            mu = mu_fe_m1,
            site_obs = tweedie::rtweedie(N_m1, mu = mu_fe_m1, 
                                         power = 1.5, phi = exp(log_phi)))
-  
   
   ## Multinomial composition data
   #Calculate multinomial FE
@@ -130,13 +125,12 @@ ggplot(m1_dat) +
   geom_histogram(aes(x = site_obs))
 ggplot(m1_dat) +
   geom_boxplot(aes(x = reg, y = site_obs)) +
-  facet_wrap(~fac)
+  facet_wrap(fac~site, nrow = 2)
 
 # Multinomial data
 ggplot(m2_dat) +
     geom_histogram(aes(x = as.factor(y)), stat = "count") + 
     facet_wrap(fac~reg, nrow = 2)
-
 
 ## Prep data to pass to TMB
 # Following doesn't seem to work with multiple factors or with how the 
@@ -156,7 +150,6 @@ ggplot(m2_dat) +
 # instead make key of factors which is used for the multinomial predictions and
 # to generate a predictive model matrix for the tweedie
 fac_dat <- m2_dat %>% 
-  arrange(reg, fac) %>% 
   mutate(facs = as.factor(paste(reg, fac, sep = "_")),
          facs_n = fct_to_tmb_num(facs)) %>% #subtract for indexing by 0 
   select(reg, fac, facs, facs_n)
@@ -175,19 +168,24 @@ fct_to_tmb_num <- function(x) {
 fac1k <- fct_to_tmb_num(m1_dat$site)
 fac2k <- fct_to_tmb_num(m2_dat$site)
 
+b1_n <- length(fix_ints_m1)
+b2_n <- length(fix_ints_m2)
+nk1 <- length(unique(fac1k))
+nk2 <- length(unique(fac2k))
+
 # combine
 data <- list(
   #abundance data
   y1_i = m1_dat$site_obs,
   X1_ij = fix_mm1,
   factor1k_i = fac1k,
-  nk1 = length(unique(fac1k)),
+  nk1 = nk1,
   X1_pred_ij = mm_pred,
   #composition data
   y2_ig = m2_obs,
   X2_ij = fix_mm2,
   factor2k_i = fac2k,
-  nk2 = length(unique(fac2k)),
+  nk2 = nk2,
   m2_all_fac = fac_dat$facs_n,
   m2_fac_key = fac_key$facs_n
 )
@@ -297,39 +295,30 @@ ggplot() +
 
 # Simulate combined model to ensure parameter estimates can be succesfully 
 # recovered
-dat_list <- vector(mode = "list", length = 50)
+dat_list <- vector(mode = "list", length = 25)
 for (i in seq_along(dat_list)) {
   dat_list[[i]] <- f_sim(trial = i)
 }
-
 
 sim_ests <- map(dat_list, function(x) {
   m1_dat <- x$dat_m1
   m2_dat <- x$dat_m2
   m2_obs <- x$obs_m2
   
-  mm_pred <- fix_mm1 %>% 
-    unique() 
-  ord_mat <- mm_pred %>% 
-    apply(., 1, sum) %>%
-    sort() %>% 
-    names()
-  mm_pred <- mm_pred[ord_mat, ]
-  
-  # fit dummy model to speed up tweedie abundance estimates
-  m1 <- lm(log(site_obs) ~ reg, data = m1_dat %>% filter(site_obs > 0))
-  
-  fac1k <- fct_to_tmb_num(m1_dat$site)
-  fac2k <- fct_to_tmb_num(m2_dat$site)
-  
-  # generate factor key for multinomial data
   fac_dat <- m2_dat %>% 
-    mutate(facs = reg,#as.factor(paste(reg, sep = "_")),
+    mutate(facs = as.factor(paste(reg, fac, sep = "_")),
            facs_n = fct_to_tmb_num(facs)) %>% #subtract for indexing by 0 
-    select(reg, facs, facs_n)
+    select(reg, fac, facs, facs_n)
   fac_key <- fac_dat %>% 
     distinct() %>% 
     arrange(facs_n)
+  mm_pred <- model.matrix(~ reg + fac, data = fac_key)
+  
+  # fit dummy model to speed up tweedie estimates
+  m1 <- lm(log(site_obs + 0.0001) ~ reg + fac, data = m1_dat)
+  
+  fac1k <- fct_to_tmb_num(m1_dat$site)
+  fac2k <- fct_to_tmb_num(m2_dat$site)
   
   # combine
   data <- list(
@@ -373,24 +362,26 @@ sim_ests <- map(dat_list, function(x) {
   trim_ssdr <- ssdr[!rownames(ssdr) %in% 
                       c("log_pred_abund", "logit_pred_prob", "pred_abund_mg"), ]
   as.data.frame(trim_ssdr) %>% 
-    mutate(par = c("b1_j1", "b1_j2", "log_phi", "logit_p", "log_sigma_zk1",
-                   paste("b2_jg", seq(from = 1, to = 4, by = 1), sep = ""),
+    #paste with digits to make unique ids for plotting
+    mutate(par = c(paste("b1_j", seq(from = 1, to = b1_n, by = 1), sep = ""), 
+                   "log_phi", "logit_p", "log_sigma_zk1",
+                   paste("b2_jg", seq(from = 1, to = b2_n, by = 1), sep = ""),
                    "log_sigma_zk2",
-                   paste("z1_k", seq(from = 1, to = 5, by = 1), sep = ""),
-                   paste("z2_k", seq(from = 1, to = 5, by = 1), sep = "")),
+                   paste("z1_k", seq(from = 1, to = nk1, by = 1), sep = ""),
+                   paste("z2_k", seq(from = 1, to = nk2, by = 1), sep = "")),
            trial = unique(x$dat_m1$trial),
            true_val = x$true_val)
 }) %>% 
   bind_rows() 
-
 
 p_dat <- sim_ests %>% 
   filter(par == "logit_p") %>% 
   mutate(Estimate = 1.0 / (1.0 + exp(-Estimate)) + 1.0)
   
 sim_ests %>% 
-  filter(par %in% c("b1_j1", "b1_j2", "log_phi", "log_sigma_zk1",
-                    paste("b2_jg", seq(from = 1, to = 4, by = 1), sep = ""),
+  filter(par %in% c(paste("b1_j", seq(from = 1, to = b1_n, by = 1), sep = ""), 
+                    "log_phi", "log_sigma_zk1",
+                    paste("b2_jg", seq(from = 1, to = b2_n, by = 1), sep = ""),
                     "log_sigma_zk2")) %>%
   rbind(p_dat) %>% 
   ggplot(.) +
