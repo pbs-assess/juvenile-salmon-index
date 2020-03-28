@@ -6,27 +6,100 @@ library(RODBC); library(tidyverse); library(ggplot2)
 # Access databases saved to regional drive to import bridge (i.e. total
 # catches) and genetics data from historical (high seas) and contemporary (IPES)
 # databases
-pathHighSeas <- "R:/SCIENCE/CFreshwater/chinookIndex/HSSALMON.accdb" 
+# pathHighSeas <- "R:/SCIENCE/CFreshwater/chinookIndex/HSSALMON.accdb" 
+pathHighSeas <- "C:/Users/FRESHWATERC/Documents/chinook/highSeasDatabase/HSSALMON.accdb" 
 conHS <- odbcConnectAccess2007(pathHighSeas)
 # similar DB is saved in parent directory, but doesn't include GSI tables
-pathIPES <- "R:/SCIENCE/CFreshwater/chinookIndex/IPES_TrawlDB_v19.07f_2017_18_19_wGSI.mdb"
+# pathIPES <- "R:/SCIENCE/CFreshwater/chinookIndex/IPES_TrawlDB_v19.07f_2017_18_19_wGSI.mdb"
+pathIPES <- "C:/Users/FRESHWATERC/Documents/chinook/highSeasDatabase/IPES_TrawlDB_v19.07f_2017_18_19_wGSI.mdb"
 conIPES <- odbcConnectAccess2007(pathIPES)
 
 
 ##### MERGE CATCH DATA  --------------------------------------------------------
 
-# High seas bridge data - includes catch totals
+# High seas bridge data - includes catch totals by size interval because not
+# adequately summarized in other columns
 bridgeQry <- "SELECT BRIDGE.STATION_ID, BRIDGE.EVENT, STATION_INFO.REGION, 
   BRIDGE.STATION, BRIDGE.YEAR, BRIDGE.MONTH, BRIDGE.DAY, BRIDGE.DATE, 
   BRIDGE.JULIAN_DATE, BRIDGE.START_TIME, BRIDGE.START_LAT, BRIDGE.START_LONG, 
   BRIDGE.END_LAT, BRIDGE.END_LONG, BRIDGE.DISTANCE, BRIDGE.DUR, 
   BRIDGE.[SOG-KTS], BRIDGE.HEADING, BRIDGE.START_BOT_DEPTH, 
   BRIDGE.END_BOT_DEPTH, BRIDGE.NET_OPENING_WIDTH, BRIDGE.NET_OPENING_HEIGHT, 
-  BRIDGE.HEAD_DEPTH, BRIDGE.CK_JUV, BRIDGE.CK_ADULT, BRIDGE.GEAR_TYPE, 
+  BRIDGE.HEAD_DEPTH, BRIDGE.CK, BRIDGE.CK_JUV, BRIDGE.CK_ADULT, BRIDGE.[CK_<100MM], 
+  BRIDGE.[CK_100-199MM], BRIDGE.[CK_200-299MM], BRIDGE.[CK_300-349MM], 
+  BRIDGE.[CK_350-399MM], BRIDGE.[CK_300-399MM], BRIDGE.[CK_400-499MM], 
+  BRIDGE.[CK_500-599MM], BRIDGE.[CK_600-699MM], BRIDGE.[CK_700-799MM], 
+  BRIDGE.[CK_800-899MM], BRIDGE.[CK_900-999MM], BRIDGE.[CK_1000-1099MM], 
+  BRIDGE.GEAR_TYPE, 
   BRIDGE.COMMENTS
 FROM STATION_INFO INNER JOIN BRIDGE ON STATION_INFO.STATION_ID = 
   BRIDGE.STATION_ID;"
-bridgeHS <- sqlQuery(conHS, bridgeQry) 
+bridgeHS <- sqlQuery(conHS, bridgeQry) %>% 
+  replace_na(list(`CK_<100MM` = 0, `CK_100-199MM` = 0, `CK_200-299MM` = 0,
+                  `CK_300-349MM` = 0, `CK_350-399MM` = 0, `CK_300-399MM` = 0,      
+                  `CK_400-499MM` = 0, `CK_500-599MM` = 0, `CK_600-699MM` = 0,       `CK_700-799MM` = 0,      
+                  `CK_800-899MM` = 0, `CK_900-999MM` = 0, 
+                  `CK_1000-1099MM` = 0)) %>% 
+  group_by(STATION_ID) %>% 
+  mutate(
+    season = case_when(
+      MONTH %in% c("FEB", "MAR", "APR", "MAY", "JUN") ~ "sp",
+      MONTH %in% c("JUL", "AUG", "SEP") ~ "su",
+      TRUE ~ "wi"
+    ),
+    # calc juv catch based on season and size
+    # CK_JUV_n = case_when(
+      # CK > 0 & (CK_JUV == 0 | is.na(CK_JUV)) & season == "sp" ~
+      #   sum(`CK_<100MM`, `CK_100-199MM`),
+      # CK > 0 & (CK_JUV == 0 | is.na(CK_JUV)) & season == "su" ~
+      #   sum(`CK_<100MM`, `CK_100-199MM`, `CK_200-299MM`),
+      # CK > 0 & (CK_JUV == 0 | is.na(CK_JUV)) & season == "wi" ~
+      #   sum(`CK_<100MM`, `CK_100-199MM`, `CK_200-299MM`,
+      #       `CK_300-349MM`)
+    # )
+    CK_AD_n = case_when(
+      CK > CK_JUV & (CK_ADULT == 0 | is.na(CK_ADULT)) & season == "sp" ~
+        sum(`CK_200-299MM`:`CK_1000-1099MM`),
+      CK > CK_JUV & (CK_ADULT == 0 | is.na(CK_ADULT)) & season == "su" ~ 
+        sum(`CK_300-399MM`:`CK_1000-1099MM`),
+      CK > CK_JUV & (CK_ADULT == 0 | is.na(CK_ADULT)) & season == "wi" ~
+        sum(`CK_350-399MM`:`CK_1000-1099MM`),
+      TRUE ~ NA_integer_
+    ),
+    # certain surveys (June and Nov) seemed to use abnormal size breakdowns
+    CK_JUV = case_when(
+      (CK_AD_n + CK_JUV) < CK & season == "sp" ~ 
+        sum(`CK_<100MM`:`CK_100-199MM`),
+      (CK_AD_n + CK_JUV) < CK & season == "su" ~ 
+        sum(`CK_<100MM`:`CK_200-299MM`),
+      (CK_AD_n + CK_JUV) < CK & season == "wi" ~ 
+        sum(`CK_<100MM`:`CK_300-349MM`),
+      TRUE ~ CK_JUV
+    )
+  ) %>% 
+  ungroup() %>% 
+  glimpse()
+
+#issues calculating sums correctly...
+
+tt <- bridgeHS %>% 
+  filter(CK > 0 & (CK_ADULT == 0 | is.na(CK_ADULT)) 
+         & (CK_JUV == 0 | is.na(CK_JUV))) %>% 
+  group_by(STATION_ID) %>% 
+  mutate(CK_AD_n = sum(`CK_300-399MM`:`CK_1000-1099MM`)) %>% 
+  ungroup() %>% 
+  select(CK:CK_AD_n)
+
+# Tests to evaluate how ck, ck_juv, and ck_adult interact with time columns
+tt <- bridgeHS %>% 
+  select(MONTH, season, CK, CK_AD_n, CK_JUV:`CK_1000-1099MM`) %>%
+  filter(!is.na(CK_AD_n)) 
+# %>% 
+#   mutate(new_ck = CK_AD_n + CK_JUV) %>% 
+#   filter(MONTH %in% c("JUN", "NOV"))
+  
+
+
 
 # IPES Chinook catches (only non-zero tows)
 chinIPESQuery <- "SELECT CATCH_ID, CATCH_FIELD_ID, 
@@ -94,11 +167,6 @@ ggplot(bridgeHS) +
            color = "black", fill = "gray80") + 
   coord_fixed(xlim = c(-129.5, -123), ylim = c(48, 52), ratio = 1.3)
 
-# ggplot(juvOut %>% filter(stableStation == "Y")) +
-#   geom_point(aes(x = start_long, y = start_lat, color = dataset)) +
-#   geom_map(data = nAm, map = nAm, aes(long, lat, map_id = region), 
-#            color = "black", fill = "gray80") + 
-#   coord_fixed(xlim = c(-129.5, -123), ylim = c(48, 52), ratio = 1.3)
 
 ## Clean High Seas data 
 # exclude tows based on information in comments of access database (see bridge 
@@ -151,6 +219,15 @@ bridgeOut <- dum %>%
   select(station_id, bridge_log_id, stableStation, dataset, date, jday, month, year, start_time, start_lat, 
        start_long, xUTM_start, yUTM_start, dur, avg_bottom_depth, head_depth,
        ck_juv, ck_adult)
+
+# Check against map
+ggplot(bridgeOut %>% filter(stableStation == "Y")) +
+  geom_point(aes(x = start_long, y = start_lat, color = dataset)) +
+  geom_map(data = nAm, map = nAm, aes(long, lat, map_id = region),
+           color = "black", fill = "gray80") +
+  coord_fixed(xlim = c(-129.5, -123), ylim = c(48, 52), ratio = 1.3)
+
+saveRDS(bridgeOut, here::here("data", "ipes_hs_merged_bridge.rds"))
 
 ### NOTE - CATCH ESTIMATES FROM BRIDGEOUT ARE SUSPECT 
 ## I.e. fish sampled from sets with catch recorded as 0. For now assume that 
@@ -206,6 +283,7 @@ dnaIPESQuery <- "SELECT DNA_STOCK_INDIVIDUAL_FISH_ID, BCSI_FISH_NUMBER,
 FROM DNA_STOCK_INDIVIDUAL_FISH;
 "
 dnaIPES <- sqlQuery(conIPES, dnaIPESQuery)
+
 
 #Samples from IPES specimen table have differently formatted fish identifier and 
 #include non-Chinook species
@@ -298,14 +376,31 @@ dnaIPESOut <- chinIPES %>%
   rename_all(., tolower) 
 
 # Check whether there are fish with genetics data that are missing bridge data
-# missed <- dnaIPESOut %>%
-#   filter(is.na(station_id)) %>%
-#   select(fish_number) %>%
-#   as.vector()
+dnaIPESOut %>%
+  filter(is.na(station_id)) %>%
+  select(fish_number) %>%
+  as.vector()
+
 
 # Merge high seas and genetics data
 gsiBind <- dnaHSOut %>% 
   rbind(., dnaIPESOut) 
+
+# Check when fish were caught but bridge log says catch = 0
+gsi_sta <- gsiBind %>% pull(station_id) %>% unique()
+bridgeOut %>% 
+  filter(ck_juv == 0 & ck_adult == 0, 
+         station_id %in% gsi_sta) %>%
+  pull(station_id) 
+
+bridgeOut %>% filter(station_id == "HS200742-EP03")
+gsiBind %>% filter(station_id == "HS200742-EP03")
+
+# raw imported data
+dnaHSOut %>% filter(station_id == "HS200742-EP03")
+bridgeHS %>% filter(STATION_ID == "HS200742-EP03")
+
+
 
 # Convert lat/long to utm
 coords <- gsiBind %>% 
