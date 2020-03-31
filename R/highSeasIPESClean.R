@@ -47,59 +47,60 @@ bridgeHS <- sqlQuery(conHS, bridgeQry) %>%
       MONTH %in% c("JUL", "AUG", "SEP") ~ "su",
       TRUE ~ "wi"
     ),
-    # calc juv catch based on season and size
-    # CK_JUV_n = case_when(
-      # CK > 0 & (CK_JUV == 0 | is.na(CK_JUV)) & season == "sp" ~
-      #   sum(`CK_<100MM`, `CK_100-199MM`),
-      # CK > 0 & (CK_JUV == 0 | is.na(CK_JUV)) & season == "su" ~
-      #   sum(`CK_<100MM`, `CK_100-199MM`, `CK_200-299MM`),
-      # CK > 0 & (CK_JUV == 0 | is.na(CK_JUV)) & season == "wi" ~
-      #   sum(`CK_<100MM`, `CK_100-199MM`, `CK_200-299MM`,
-      #       `CK_300-349MM`)
-    # )
-    CK_AD_n = case_when(
-      CK > CK_JUV & (CK_ADULT == 0 | is.na(CK_ADULT)) & season == "sp" ~
-        sum(`CK_200-299MM`:`CK_1000-1099MM`),
-      CK > CK_JUV & (CK_ADULT == 0 | is.na(CK_ADULT)) & season == "su" ~ 
-        sum(`CK_300-399MM`:`CK_1000-1099MM`),
-      CK > CK_JUV & (CK_ADULT == 0 | is.na(CK_ADULT)) & season == "wi" ~
-        sum(`CK_350-399MM`:`CK_1000-1099MM`),
-      TRUE ~ NA_integer_
-    ),
-    # certain surveys (June and Nov) seemed to use abnormal size breakdowns
+    # calc juv catch based on season and size when values are missing
     CK_JUV = case_when(
-      (CK_AD_n + CK_JUV) < CK & season == "sp" ~ 
-        sum(`CK_<100MM`:`CK_100-199MM`),
-      (CK_AD_n + CK_JUV) < CK & season == "su" ~ 
-        sum(`CK_<100MM`:`CK_200-299MM`),
-      (CK_AD_n + CK_JUV) < CK & season == "wi" ~ 
-        sum(`CK_<100MM`:`CK_300-349MM`),
-      TRUE ~ CK_JUV
+      (CK_JUV == 0 | is.na(CK_JUV)) & season == "sp" ~
+        sum(`CK_<100MM`, `CK_100-199MM`),
+      (CK_JUV == 0 | is.na(CK_JUV)) & season == "su" ~
+        sum(`CK_<100MM`, `CK_100-199MM`, `CK_200-299MM`),
+      (CK_JUV == 0 | is.na(CK_JUV)) & season == "wi" ~
+        sum(`CK_<100MM`, `CK_100-199MM`, `CK_200-299MM`,
+            `CK_300-399MM`),
+      TRUE ~ as.double(CK_JUV)
+    ),
+    # calc adult catch based on season and size when values are missing
+    CK_ADULT = case_when(
+      (CK_ADULT == 0 | is.na(CK_ADULT)) & season == "sp" ~ 
+        sum(`CK_200-299MM`, `CK_300-399MM`, `CK_400-499MM`, `CK_500-599MM`,
+            `CK_600-699MM`, `CK_700-799MM`, `CK_800-899MM`, `CK_900-999MM`,
+            `CK_1000-1099MM`),
+      (CK_ADULT == 0 | is.na(CK_ADULT)) & season == "su" ~
+        sum(`CK_300-399MM`, `CK_400-499MM`, `CK_500-599MM`,
+            `CK_600-699MM`, `CK_700-799MM`, `CK_800-899MM`, `CK_900-999MM`,
+            `CK_1000-1099MM`),
+      (CK_ADULT == 0 | is.na(CK_ADULT)) & season == "wi" ~
+        sum(`CK_400-499MM`, `CK_500-599MM`,
+            `CK_600-699MM`, `CK_700-799MM`, `CK_800-899MM`, `CK_900-999MM`,
+            `CK_1000-1099MM`),
+      TRUE ~ as.double(CK_ADULT)
+    ),
+    #certain surveys (June and Nov) seemed to use abnormal size breakdowns
+    CK_JUV = case_when(
+      (CK_ADULT + CK_JUV) < CK & season == "sp" ~
+        sum(`CK_<100MM`, `CK_100-199MM`),
+      (CK_ADULT + CK_JUV) < CK & season == "su" ~
+        sum(`CK_<100MM`, `CK_100-199MM`, `CK_200-299MM`),
+      (CK_ADULT + CK_JUV) < CK & season == "wi" ~
+        sum(`CK_<100MM`, `CK_100-199MM`, `CK_200-299MM`, `CK_300-349MM`),
+      TRUE ~ as.double(CK_JUV)
     )
   ) %>% 
-  ungroup() %>% 
+  ungroup()
+
+# check to make sure calcs are correct
+# bridgeHS %>% 
+#   group_by(STATION_ID) %>% 
+#   mutate(new_sum = sum(`CK_<100MM`, `CK_100-199MM`,`CK_200-299MM`, `CK_300-399MM`, `CK_400-499MM`, `CK_500-599MM`,
+#                        `CK_600-699MM`, `CK_700-799MM`, `CK_800-899MM`, `CK_900-999MM`,
+#                        `CK_1000-1099MM`)) %>% 
+#   # filter(new_sum > 0 & (CK == 0 & CK_JUV == 0 & CK_ADULT == 0)) %>%
+#   filter(new_sum == 0 & (CK > 0 | CK_JUV > 0 | CK_ADULT > 0)) %>%
+#   ungroup() %>% 
+#   glimpse()
+
+bridgeHS %>% 
+  filter(CK > 0 & (CK_JUV == 0 & CK_ADULT == 0)) %>% 
   glimpse()
-
-#issues calculating sums correctly...
-
-tt <- bridgeHS %>% 
-  filter(CK > 0 & (CK_ADULT == 0 | is.na(CK_ADULT)) 
-         & (CK_JUV == 0 | is.na(CK_JUV))) %>% 
-  group_by(STATION_ID) %>% 
-  mutate(CK_AD_n = sum(`CK_300-399MM`:`CK_1000-1099MM`)) %>% 
-  ungroup() %>% 
-  select(CK:CK_AD_n)
-
-# Tests to evaluate how ck, ck_juv, and ck_adult interact with time columns
-tt <- bridgeHS %>% 
-  select(MONTH, season, CK, CK_AD_n, CK_JUV:`CK_1000-1099MM`) %>%
-  filter(!is.na(CK_AD_n)) 
-# %>% 
-#   mutate(new_ck = CK_AD_n + CK_JUV) %>% 
-#   filter(MONTH %in% c("JUN", "NOV"))
-  
-
-
 
 # IPES Chinook catches (only non-zero tows)
 chinIPESQuery <- "SELECT CATCH_ID, CATCH_FIELD_ID, 
@@ -220,6 +221,29 @@ bridgeOut <- dum %>%
        start_long, xUTM_start, yUTM_start, dur, avg_bottom_depth, head_depth,
        ck_juv, ck_adult)
 
+### NOTE - some fish sampled from sets with catch recorded as 0. Replace those
+# sets with summed GSI numbers as a minimum value
+missing_catch_gsi <- read.csv(here::here("data", "buggyData",
+                                           "missing_catch_gsi.csv")) %>% 
+  group_by(station_id, age) %>% 
+  tally() %>% 
+  pivot_wider(., names_from = age, values_from = n, values_fill = list(n = 0))
+
+bridgeOut <- bridgeOut %>% 
+  left_join(., missing_catch_gsi, by = "station_id") %>% 
+  mutate(
+    ck_juv = case_when(
+      station_id %in% missing_catch_gsi$station_id ~ as.numeric(J),
+      TRUE ~ ck_juv
+      ),
+    ck_adult = case_when(
+      station_id %in% missing_catch_gsi$station_id ~ as.numeric(A),
+      TRUE ~ ck_adult
+    )
+  )
+
+saveRDS(bridgeOut, here::here("data", "ipes_hs_merged_bridge.rds"))
+
 # Check against map
 ggplot(bridgeOut %>% filter(stableStation == "Y")) +
   geom_point(aes(x = start_long, y = start_lat, color = dataset)) +
@@ -227,11 +251,6 @@ ggplot(bridgeOut %>% filter(stableStation == "Y")) +
            color = "black", fill = "gray80") +
   coord_fixed(xlim = c(-129.5, -123), ylim = c(48, 52), ratio = 1.3)
 
-saveRDS(bridgeOut, here::here("data", "ipes_hs_merged_bridge.rds"))
-
-### NOTE - CATCH ESTIMATES FROM BRIDGEOUT ARE SUSPECT 
-## I.e. fish sampled from sets with catch recorded as 0. For now assume that 
-# sampled fish is minimum catch estimate and do not use bridgeout independently.
 
 
 ##### MERGE GENETICS DATA ------------------------------------------------------
@@ -387,19 +406,20 @@ gsiBind <- dnaHSOut %>%
   rbind(., dnaIPESOut) 
 
 # Check when fish were caught but bridge log says catch = 0
-gsi_sta <- gsiBind %>% pull(station_id) %>% unique()
-bridgeOut %>% 
-  filter(ck_juv == 0 & ck_adult == 0, 
-         station_id %in% gsi_sta) %>%
-  pull(station_id) 
-
-bridgeOut %>% filter(station_id == "HS200742-EP03")
-gsiBind %>% filter(station_id == "HS200742-EP03")
-
-# raw imported data
-dnaHSOut %>% filter(station_id == "HS200742-EP03")
-bridgeHS %>% filter(STATION_ID == "HS200742-EP03")
-
+# gsi_sta <- gsiBind %>% pull(station_id) %>% unique()
+# missing_catch_bridge <- bridgeOut %>%
+#   filter(ck_juv == 0 & ck_adult == 0,
+#          station_id %in% gsi_sta) %>%
+#   select(station_id, month)
+# missing_catch_gsi <- gsiBind %>%
+#   filter(station_id %in% missing_catch$station_id)
+# #export to Erika so she can check against paper copies
+# write.csv(missing_catch_bridge, here::here("data", "buggyData",
+#                                            "missing_catch_bridge.csv"), 
+#           row.names = FALSE)
+# write.csv(missing_catch_gsi, here::here("data", "buggyData",
+#                                            "missing_catch_gsi.csv"), 
+#           row.names = FALSE)
 
 
 # Convert lat/long to utm
