@@ -281,9 +281,18 @@ WHERE (((BIOLOGICAL.SPECIES)='chinook'));
 dnaHS <- sqlQuery(conHS, chinDNAQry) 
 dnaHSOut <- dnaHS %>% 
   mutate(
+    season = case_when(
+      Month %in% c("FEB", "MAR", "APR", "MAY", "JUN") ~ "sp",
+      Month %in% c("JUL", "AUG", "SEP") ~ "su",
+      TRUE ~ "wi"
+    ),
     age = case_when(
-      SHIP_FL <= 300 ~ "J",
-      SHIP_FL > 300 ~ "A",
+      season == "sp" & SHIP_FL < 200 ~ "J",
+      season == "sp" & SHIP_FL >= 200 ~ "A",
+      season == "su" & SHIP_FL < 300 ~ "J",
+      season == "su" & SHIP_FL >= 300 ~ "A",
+      season == "wi" & SHIP_FL < 400 ~ "J",
+      season == "wi" & SHIP_FL >= 400 ~ "A",
       TRUE ~ "NA"),
     jDay = lubridate::yday(DATE),
     month2 = lubridate::month(DATE),
@@ -370,24 +379,31 @@ newID <- chinIPES$UNIVERSAL_FISH_LABEL %>%
 # data
 dnaIPESOut <- chinIPES %>% 
   left_join(., newID, by = c("SPECIMEN_ID", "UNIVERSAL_FISH_LABEL")) %>% 
-  mutate(
-    #redefine age based on length (misentered by genetics lab)
-    age = case_when(
-      LENGTH <= 300 ~ "J",
-      LENGTH > 300 ~ "A",
-      TRUE ~ "NA"
-    ),
-    species = paste("124", age, sep = ""),
-    BCSI_FISH_NUMBER = paste(year, survey, sep = "") %>% 
-      paste(prog, ., event, species, conFish, sep = "-")
-  ) %>% 
-  left_join(dnaIPESTrim, ., by = "BCSI_FISH_NUMBER") %>% 
   #add lat longs and dates from ipes bridge data
   left_join(., 
             bridgeOut %>% 
               filter(dataset == "IPES") %>% 
               rename(BRIDGE_LOG_ID = bridge_log_id),
             by = c("BRIDGE_LOG_ID", "year")) %>% 
+  mutate(
+    season = case_when(
+      month %in% c(2, 3, 4, 5, 6) ~ "sp",
+      month %in% c(7, 8, 9) ~ "su",
+      TRUE ~ "wi"
+    ),
+    age = case_when(
+      season == "sp" & LENGTH < 200 ~ "J",
+      season == "sp" & LENGTH >= 200 ~ "A",
+      season == "su" & LENGTH < 300 ~ "J",
+      season == "su" & LENGTH >= 300 ~ "A",
+      season == "wi" & LENGTH < 400 ~ "J",
+      season == "wi" & LENGTH >= 400 ~ "A",
+      TRUE ~ "NA"),
+      species = paste("124", age, sep = ""),
+      BCSI_FISH_NUMBER = paste(year, survey, sep = "") %>% 
+        paste(prog, ., event, species, conFish, sep = "-")
+  ) %>% 
+  left_join(dnaIPESTrim, ., by = "BCSI_FISH_NUMBER") %>%
   select(fish_number = BCSI_FISH_NUMBER, station_id, dataset, year, month, jday, 
          start_lat, start_long, age, 
          ship_fl = LENGTH, BATCH_DNA_NUMBER,  
@@ -467,15 +483,15 @@ gsiLong <- gsiOut %>%
          #exclude individuals from bad sets based on comments
          !station_id %in% excludeTowsComments$STATION_ID)
 
-# export distinct stocks to make key in makeStockKey.R
+# export distinct stocks to make key in stockKey repo
 # change this to a sourced function?
 # stockList <- gsiLong %>%
 #   select(stock, region) %>%
 #   distinct()
-# saveRDS(stockList, here::here("data", "tempStockList.rds"))
+# saveRDS(stockList, here::here("data", "stockKeys", "tempStockList.rds"))
 
 # Import corrected stock list to calculate aggregate probabilities
-cleanStockKey <- readRDS(here::here("data", "finalStockList.rds"))
+cleanStockKey <- readRDS(here::here("data", "stockKeys", "finalStockList_Mar2020.rds"))
 
 gsiLongFull <- gsiLong %>% 
   select(-region_rank, - region) %>% 
@@ -511,6 +527,7 @@ stockComp <- gsiLongAgg %>%
   group_by(station_id, age) %>% 
   mutate(samp_catch = sum(regCatch),
          regPpn = regCatch / samp_catch) %>% 
+  ungroup() %>% 
   pivot_wider(., names_from = Region4Name, values_from = regPpn) %>%
   mutate_if(is.numeric, ~replace_na(., 0)) %>% 
   select(station_id, age, samp_catch:SEAK) 
@@ -531,7 +548,7 @@ adultsOut <- stockComp %>%
     samp_ppn = case_when(
       samp_catch > "0" ~ samp_catch / ck_adult,
       samp_catch == "0" ~ 0)
-  ) %>% 
+  ) %>%
   select(station_id:year, stableStation, start_lat:ck_adult, samp_catch, 
          samp_ppn, SalSea:SEAK)
 juvOut <- stockComp %>% 
@@ -541,7 +558,7 @@ juvOut <- stockComp %>%
             ., 
             by = "station_id") %>%
   mutate(
-    #replace erroneous 0 catches (i.e. when bridge = 0 but fish were GSId)
+    #replace erroneous catches (i.e. when bridge is less than fish that were GSId)
     ck_juv = case_when(
       samp_catch > ck_juv ~ samp_catch,
       TRUE ~ ck_juv
@@ -554,5 +571,13 @@ juvOut <- stockComp %>%
          samp_ppn, SalSea:SEAK)
 
 
+# check for missing GSI that's suspicious
+juvOut %>% 
+  filter(samp_catch == 0 | is.na(samp_catch),
+         ck_juv > 0) %>% 
+  nrow()
+#~25%; large but perhaps reasonable?
+
 saveRDS(adultsOut, here::here("data", "adultCatchGSI_reg4.rds"))
 saveRDS(juvOut, here::here("data", "juvCatchGSI_reg4.rds"))
+
