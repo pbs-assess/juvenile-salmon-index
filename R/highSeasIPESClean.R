@@ -144,13 +144,20 @@ bridgeIPES <- sqlQuery(conIPES, bridgeIPESQuery) %>%
          AVG_BOTTOM_DEPTH = (START_BOTTOM_DEPTH + END_BOTTOM_DEPTH) / 2,
          #convert to fractions of an hour to match HS database
          DUR = TOW_DURATION / 60, 
-         DATASET = "IPES")
+         DATASET = "IPES",
+         #define day/night tows
+         hour = lubridate::hour(bridgeIPES$BEGIN_DEPLOYMENT_TIME),
+         TIME_F = case_when(
+           hour > 22 | hour < 5 ~ "night",
+           TRUE ~ "day")
+         )
+
 
 ## Clean IPES data 
 # Trime to match high seas
 trimBridgeIPES <- bridgeIPES %>% 
   select(STATION_ID, BRIDGE_LOG_ID, DATASET, DATE = EVENT_DATE, 
-         START_TIME = BEGIN_DEPLOYMENT_TIME,
+         START_TIME = BEGIN_DEPLOYMENT_TIME, TIME_F,
          START_LAT = START_LATITUDE, START_LONG = START_LONGITUDE, DUR,
          AVG_BOTTOM_DEPTH, HEAD_DEPTH = AVG_GEAR_DEPTH, CK_JUV = JUV_CATCH,
          CK_ADULT = ADULT_CATCH)
@@ -180,9 +187,10 @@ trimBridgeHS <- bridgeHS %>%
          !is.na(START_LAT)) %>% 
   mutate(BRIDGE_LOG_ID = NA,
          AVG_BOTTOM_DEPTH = (START_BOT_DEPTH + END_BOT_DEPTH) / 2, 
-         DATASET = "HighSeas") %>%
+         DATASET = "HighSeas",
+         TIME_F = "day") %>%
   replace_na(list(CK_ADULT = 0, CK_JUV = 0)) %>% 
-  select(STATION_ID, BRIDGE_LOG_ID, DATASET, DATE, START_TIME, START_LAT, 
+  select(STATION_ID, BRIDGE_LOG_ID, DATASET, DATE, START_TIME, TIME_F, START_LAT, 
          START_LONG, DUR, AVG_BOTTOM_DEPTH, HEAD_DEPTH, CK_JUV, CK_ADULT)
 
 
@@ -217,9 +225,10 @@ bridgeOut <- dum %>%
       station_id %in% excludeTowsRegion$STATION_ID ~ "N",
       TRUE ~ "Y"
     )) %>% 
-  select(station_id, bridge_log_id, stableStation, dataset, date, jday, month, year, start_time, start_lat, 
-       start_long, xUTM_start, yUTM_start, dur, avg_bottom_depth, head_depth,
-       ck_juv, ck_adult)
+  select(station_id, bridge_log_id, stableStation, dataset, date, start_time, 
+         time_f, jday, month, year, start_time, start_lat, start_long, 
+         xUTM_start, yUTM_start, dur, avg_bottom_depth, head_depth, ck_juv, 
+         ck_adult)
 
 ### NOTE - some fish sampled from sets with catch recorded as 0. Replace those
 # sets with summed GSI numbers as a minimum value
