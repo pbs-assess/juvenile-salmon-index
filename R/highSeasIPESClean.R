@@ -20,7 +20,7 @@ conIPES <- odbcConnectAccess2007(pathIPES)
 # High seas bridge data - includes catch totals by size interval because not
 # adequately summarized in other columns
 bridgeQry <- "SELECT BRIDGE.STATION_ID, BRIDGE.EVENT, STATION_INFO.REGION, 
-  BRIDGE.STATION, BRIDGE.YEAR, BRIDGE.MONTH, BRIDGE.DAY, BRIDGE.DATE, 
+  BRIDGE.STATION, STATION_INFO.SYNOPTIC_STATION, BRIDGE.YEAR, BRIDGE.MONTH, BRIDGE.DAY, BRIDGE.DATE, 
   BRIDGE.JULIAN_DATE, BRIDGE.START_TIME, BRIDGE.START_LAT, BRIDGE.START_LONG, 
   BRIDGE.END_LAT, BRIDGE.END_LONG, BRIDGE.DISTANCE, BRIDGE.DUR, 
   BRIDGE.[SOG-KTS], BRIDGE.HEADING, BRIDGE.START_BOT_DEPTH, 
@@ -118,7 +118,7 @@ trimChinIPES <- sqlQuery(conIPES, chinIPESQuery) %>%
 
 # IPES bridge data (no catch); separate from Chin catches to keep sets with 0s
 bridgeIPESQuery <- "SELECT BRIDGE_LOG_ID,
-  BRIDGE_LOG_FIELD_ID, BRIDGE_LOG.TRIP_ID, 
+  BRIDGE_LOG_FIELD_ID, BRIDGE_LOG.TRIP_ID, BRIDGE_LOG.BLOCK_DESIGNATION,
   EVENT_DATE, EVENT_NUMBER, TOW_NUMBER, 
   EVENT_TYPE, EVENT_SUB_TYPE, GEAR_CODE, 
   BEGIN_DEPLOYMENT_TIME, END_DEPLOYMENT_TIME, 
@@ -148,15 +148,18 @@ bridgeIPES <- sqlQuery(conIPES, bridgeIPESQuery) %>%
          #define day/night tows
          hour = lubridate::hour(bridgeIPES$BEGIN_DEPLOYMENT_TIME),
          TIME_F = case_when(
-           hour > 22 | hour < 5 ~ "night",
-           TRUE ~ "day")
+           hour > 20.9 | hour < 5 ~ "night",
+           TRUE ~ "day"), 
+         SYNOPTIC = case_when(
+           BLOCK_DESIGNATION > 0 ~ 1,
+           TRUE ~ 0
          )
-
+         )
 
 ## Clean IPES data 
 # Trime to match high seas
 trimBridgeIPES <- bridgeIPES %>% 
-  select(STATION_ID, BRIDGE_LOG_ID, DATASET, DATE = EVENT_DATE, 
+  select(STATION_ID, BRIDGE_LOG_ID, DATASET, SYNOPTIC, DATE = EVENT_DATE, 
          START_TIME = BEGIN_DEPLOYMENT_TIME, TIME_F,
          START_LAT = START_LATITUDE, START_LONG = START_LONGITUDE, DUR,
          AVG_BOTTOM_DEPTH, HEAD_DEPTH = AVG_GEAR_DEPTH, CK_JUV = JUV_CATCH,
@@ -168,7 +171,7 @@ nAm <- map_data("world") %>%
   filter(region %in% c("Canada", "USA"))
 
 ggplot(bridgeHS) +
-  geom_point(aes(x = START_LONG, y = START_LAT, color = REGION)) +
+  geom_point(aes(x = START_LONG, y = START_LAT, color = SYNOPTIC_STATION)) +
   geom_point(data = trimBridgeIPES,
              aes(x = START_LONG, y = START_LAT)) +
   geom_map(data = nAm, map = nAm, aes(long, lat, map_id = region), 
@@ -190,7 +193,8 @@ trimBridgeHS <- bridgeHS %>%
          DATASET = "HighSeas",
          TIME_F = "day") %>%
   replace_na(list(CK_ADULT = 0, CK_JUV = 0)) %>% 
-  select(STATION_ID, BRIDGE_LOG_ID, DATASET, DATE, START_TIME, TIME_F, START_LAT, 
+  select(STATION_ID, BRIDGE_LOG_ID, DATASET, SYNOPTIC = SYNOPTIC_STATION,
+         DATE, START_TIME, TIME_F, START_LAT, 
          START_LONG, DUR, AVG_BOTTOM_DEPTH, HEAD_DEPTH, CK_JUV, CK_ADULT)
 
 
@@ -198,7 +202,7 @@ trimBridgeHS <- bridgeHS %>%
 dum <- rbind(trimBridgeHS, trimBridgeIPES) %>% 
   mutate(MONTH = lubridate::month(DATE),
          YEAR = lubridate::year(DATE),
-         jDay = lubridate::yday(DATE),
+         yDay = lubridate::yday(DATE),
          START_TIME = strftime(START_TIME, format = "%H:%M:%S")) %>% 
   rename_all(., tolower)
 
@@ -221,12 +225,12 @@ bridgeOut <- dum %>%
   cbind(., coords2@coords) %>% 
   mutate(
     #is station present in both IPES and HS datasets
-    stableStation = case_when(
-      station_id %in% excludeTowsRegion$STATION_ID ~ "N",
-      TRUE ~ "Y"
+    stable_station = case_when(
+      station_id %in% excludeTowsRegion$STATION_ID ~ 0,
+      TRUE ~ 1
     )) %>% 
-  select(station_id, bridge_log_id, stableStation, dataset, date, start_time, 
-         time_f, jday, month, year, start_time, start_lat, start_long, 
+  select(station_id, bridge_log_id, stable_station, synoptic, dataset, date, start_time, 
+         time_f, yday, month, year, start_time, start_lat, start_long, 
          xUTM_start, yUTM_start, dur, avg_bottom_depth, head_depth, ck_juv, 
          ck_adult)
 
@@ -255,7 +259,7 @@ bridgeOut <- bridgeOut %>%
 saveRDS(bridgeOut, here::here("data", "ipes_hs_merged_bridge.rds"))
 
 # Check against map
-ggplot(bridgeOut %>% filter(stableStation == "Y")) +
+ggplot(bridgeOut %>% filter(stable_station == "Y")) +
   geom_point(aes(x = start_long, y = start_lat, color = dataset)) +
   geom_map(data = nAm, map = nAm, aes(long, lat, map_id = region),
            color = "black", fill = "gray80") +
@@ -304,12 +308,12 @@ dnaHSOut <- dnaHS %>%
       season == "wi" & SHIP_FL < 400 ~ "J",
       season == "wi" & SHIP_FL >= 400 ~ "A",
       TRUE ~ "NA"),
-    jDay = lubridate::yday(DATE),
+    yDay = lubridate::yday(DATE),
     month2 = lubridate::month(DATE),
     dataset = "HighSeas"
   ) %>% 
   rename_all(., tolower) %>% 
-  select(fish_number, station_id, dataset, year, month = month2, jday, start_lat, 
+  select(fish_number, station_id, dataset, year, month = month2, yday, start_lat, 
          start_long, age, ship_fl, batch_dna_number = `batch-dna_number`, 
          stock_1:prob_5) 
 
@@ -414,8 +418,8 @@ dnaIPESOut <- chinIPES %>%
         paste(prog, ., event, species, conFish, sep = "-")
   ) %>% 
   left_join(dnaIPESTrim, ., by = "BCSI_FISH_NUMBER") %>%
-  select(fish_number = BCSI_FISH_NUMBER, station_id, dataset, year, month, jday, 
-         start_lat, start_long, age, 
+  select(fish_number = BCSI_FISH_NUMBER, station_id,
+         dataset, year, month, yday, start_lat, start_long, age, 
          ship_fl = LENGTH, BATCH_DNA_NUMBER,  
          STOCK_1:REGION_5, PROB_1:PROB_5) %>% 
   rename_all(., tolower) 
@@ -518,7 +522,7 @@ gsiLongAgg <- gsiLongFull %>%
   select(-c(batch_dna_number:Region3Name)) %>%
   arrange(fish_number) %>% 
   ungroup() %>% 
-  # arrange(year, month, jday, dataset, fish_number) %>% 
+  # arrange(year, month, yday, dataset, fish_number) %>% 
   distinct() %>%
   #remove probabilities that are not the max and individuals where max doesn't
   #exceed threshold (50%)
@@ -546,7 +550,7 @@ stockComp <- gsiLongAgg %>%
 adultsOut <- stockComp %>% 
   filter(age == "A") %>%
   left_join(bridgeOut %>% 
-              select(station_id, stableStation:head_depth, ck_adult),
+              select(station_id, stable_station:head_depth, ck_adult),
             ., 
             by = "station_id") %>%
   mutate(
@@ -559,12 +563,12 @@ adultsOut <- stockComp %>%
       samp_catch > "0" ~ samp_catch / ck_adult,
       samp_catch == "0" ~ 0)
   ) %>%
-  select(station_id:year, stableStation, start_lat:ck_adult, samp_catch, 
+  select(station_id:year, stable_station, start_lat:ck_adult, samp_catch, 
          samp_ppn, SalSea:SEAK)
 juvOut <- stockComp %>% 
   filter(age == "J") %>% 
   left_join(bridgeOut %>% 
-              select(station_id, stableStation:head_depth, ck_juv),
+              select(station_id, stable_station:head_depth, ck_juv),
             ., 
             by = "station_id") %>%
   mutate(
@@ -577,7 +581,7 @@ juvOut <- stockComp %>%
       samp_catch > "0" ~ samp_catch / ck_juv,
       samp_catch == "0" ~ 0)
   ) %>% 
-  select(station_id:year, stableStation, start_lat:ck_juv, samp_catch,
+  select(station_id:year, stable_station, start_lat:ck_juv, samp_catch,
          samp_ppn, SalSea:SEAK)
 
 
