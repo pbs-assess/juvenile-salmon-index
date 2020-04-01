@@ -240,7 +240,8 @@ bridgeOut <- bridgeOut %>%
       station_id %in% missing_catch_gsi$station_id ~ as.numeric(A),
       TRUE ~ ck_adult
     )
-  )
+  ) %>% 
+  select(-c(J, A))
 
 saveRDS(bridgeOut, here::here("data", "ipes_hs_merged_bridge.rds"))
 

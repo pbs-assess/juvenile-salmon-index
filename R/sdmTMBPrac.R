@@ -7,6 +7,8 @@ library(ggplot2)
 
 # browseVignettes("sdmTMB")
 
+bridge <- readRDS(here::here("data", "ipes_hs_merged_bridge.rds")) %>% 
+  mutate(start_time = strftime(start_time, format = "%H:%M:%S"))
 jchin <- readRDS(here::here("data", "juvCatchGSI_reg4.rds")) %>% 
   #remove stations that aren't present in both dataset
   filter(stableStation == "Y") %>%
@@ -93,7 +95,7 @@ surv_grid <- readRDS(here::here("data", "trimmedSurveyGrid.rds")) %>%
   mutate(jdayZ = 0,
          jdayZ2 = 0)
 
-pred_m <- predict(m2, newdata = surv_grid, return_tmb_object = TRUE)
+pred_m <- predict(m2_tw, newdata = surv_grid, return_tmb_object = TRUE)
 glimpse(pred_m$data)
 
 
