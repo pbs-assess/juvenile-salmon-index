@@ -7,32 +7,48 @@ library(ggplot2)
 
 # browseVignettes("sdmTMB")
 
-bridge <- readRDS(here::here("data", "ipes_hs_merged_bridge.rds")) %>% 
-  mutate(start_time = strftime(start_time, format = "%H:%M:%S"))
-jchin <- readRDS(here::here("data", "juvCatchGSI_reg4.rds")) %>% 
-  #remove stations that aren't present in both dataset
-  filter(stableStation == "Y") %>%
+bridge <- readRDS(here::here("data", "ipes_hs_merged_bridge.rds")) 
+# jchin <- readRDS(here::here("data", "juvCatchGSI_reg4.rds"))
+
+# use bridge data alone for now since ignoring stock composition
+jchin <- bridge %>%
   #scale UTM coords
   mutate(xUTM_start = xUTM_start / 10000,
          yUTM_start = yUTM_start / 10000,
-         jdayZ = as.vector(scale(jday)[,1]),
-         jdayZ2 = jdayZ^2,
+         yday_z = as.vector(scale(yday)[,1]),
+         yday_z2 = yday_z^2,
          season = as.factor(
            case_when(
             month %in% c("2", "3") ~ "winter",
             month %in% c("5", "6", "7", "8") ~ "summer",
             month %in% c("9", "10", "11" , "12") ~ "fall")
-           )
+           ),
+         time_f = as.factor(time_f)
          ) %>% 
   #remove extra vars and stock ppn data
-  dplyr::select(-c(date, stableStation, samp_catch:SEAK)) %>% 
-  #some sets duplicated (correct SQL code eventually, for now remove)
-  distinct()
-  
-jchin_spde <- make_spde(jchin$xUTM_start, jchin$yUTM_start, n_knots = 150)
-plot_spde(jchin_spde)
+  dplyr::select(station_id, stable_station:date, time_f:dur, head_depth, ck_juv)
 
-ggplot(jchin, aes(x = jday, y = ck_juv, colour = as.factor(month))) +
+#generate two datasets:
+# 1) limited to spatially overlapping tows and <20 m headrope depth, but includes
+# inlets/nocturnal tows and all seasons
+# 2) limited to above, plus daytime tows only in June/July, in overlapping strata
+jchin1 <- jchin %>% 
+  filter(stable_station == "1",
+         head_depth < 21)
+jchin2 <- jchin %>% 
+  filter(synoptic == "1",
+         head_depth < 21,
+         month %in% c(6, 7),
+         time_f == "day")
+
+jchin_spde1 <- make_spde(jchin1$xUTM_start, jchin1$yUTM_start, n_knots = 150)
+jchin_spde2 <- make_spde(jchin2$xUTM_start, jchin2$yUTM_start, n_knots = 150)
+plot_spde(jchin_spde1)
+plot_spde(jchin_spde2)
+
+ggplot(jchin1, aes(x = yday, y = ck_juv, colour = as.factor(month))) +
+  geom_point()
+ggplot(jchin2, aes(x = yday, y = ck_juv, colour = as.factor(month))) +
   geom_point()
 
 
