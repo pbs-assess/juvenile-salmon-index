@@ -22,11 +22,14 @@ jchin <- bridge %>%
             month %in% c("5", "6", "7", "8") ~ "summer",
             month %in% c("9", "10", "11" , "12") ~ "fall")
            ),
+         yday_z = as.vector(scale(yday)[,1]),
+         yday_z2 = yday_z^2,
          time_f = as.factor(time_f),
          juv_cpue = ck_juv / dur
          ) %>% 
   #remove extra vars and stock ppn data
-  dplyr::select(station_id, stable_station:date, time_f, yday, season, 
+  dplyr::select(station_id, stable_station:date, time_f, yday, yday_z, yday_z2,
+                season, 
                 month:dur, head_depth,
                 ck_juv, juv_cpue)
 
@@ -84,16 +87,12 @@ jchin1 <- jchin %>%
          month %in% c(6, 7),
          head_depth < 21,
          !juv_cpue > 500 #remove large values that may be skewing results
-         # remove 2014 due to convergence issues in truncated dataset
-         #!year == "2014"
          ) %>% 
   mutate(trim_size = "large") 
 jchin2 <- jchin %>% 
   filter(synoptic == "1",
          head_depth < 21,
          month %in% c(6, 7)
-         # time_f == "day", #removed because zi-nb model indicated not sig.
-         #!year == "2014"
          ) %>% 
   mutate(trim_size = "small") 
 
@@ -128,10 +127,9 @@ jchin2 %>%
   print(n = Inf)
 
 ## Develop index 
-# Yearly model with tweedie distribution (should include day of year but 
-# lead to convergence issues in trimmed dataset)
+# Yearly model with tweedie distribution 
 dir.create(file.path(here::here("data", "modelFits")))
-m1_tw <- sdmTMB(juv_cpue ~ 0 + as.factor(year), #+ season:yday_z + season:yday_z2,
+m1_tw <- sdmTMB(juv_cpue ~ 0 + as.factor(year) + yday_z + yday_z2,
                 data = jchin1,
                 time = "year",
                 spde = jchin1_spde,
@@ -152,7 +150,7 @@ m1_tw <- sdmTMB(juv_cpue ~ 0 + as.factor(year), #+ season:yday_z + season:yday_z
 #              family = nbinom2(link = "log"))
 saveRDS(m1_tw, here::here("data", "modelFits", "ck1_yrInt_tw.rds"))
 
-m2_tw <- sdmTMB(juv_cpue ~ 0 + as.factor(year),
+m2_tw <- sdmTMB(juv_cpue ~ 0 + as.factor(year) + yday_z + yday_z2,
                 data = jchin2,
                 time = "year",
                 spde = jchin2_spde,
@@ -204,8 +202,14 @@ pred_grid_list <- map(jchin_list, function(x) {
     mutate(X = X / 10000, #scale back up
            Y = Y / 10000) %>% 
     expand(nesting(X, Y), #make a predictive dataframe
-           year = unique(x$year))
+           year = unique(x$year)) %>%
+    mutate(yday_z = 0,
+           yday_z2 = 0)
 })
+# saveRDS(pred_grid_list[[1]], here::here("data", "pred_grids", 
+#                                         "large_ck_grid.rds"))
+# saveRDS(pred_grid_list[[2]], here::here("data", "pred_grids", 
+#                                         "small_ck_grid.rds"))
 
 pred_m1 <- predict(m1_tw, newdata = pred_grid_list[[1]], return_tmb_object = TRUE)
 pred_m2 <- predict(m2_tw, newdata = pred_grid_list[[2]], return_tmb_object = TRUE)
@@ -254,4 +258,3 @@ plot_map(pred_m2$data, "omega_s") +
 plot_map(pred_m2$data, "epsilon_st") +
   ggtitle("Spatiotemporal random effects only") +
   scale_fill_gradient2()
-
