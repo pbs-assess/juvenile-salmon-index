@@ -25,11 +25,12 @@ jchin <- bridge %>%
          yday_z = as.vector(scale(yday)[,1]),
          yday_z2 = yday_z^2,
          time_f = as.factor(time_f),
-         juv_cpue = ck_juv / dur
+         juv_cpue = ck_juv / dur,
+         offset = dur
          ) %>% 
   #remove extra vars and stock ppn data
   dplyr::select(station_id, stable_station:date, time_f, yday, yday_z, yday_z2,
-                season, 
+                offset, 
                 month:dur, head_depth,
                 ck_juv, juv_cpue)
 
@@ -47,16 +48,13 @@ library(glmmTMB)
 
 #fit various models with distributions appropriate for zero-inflated integer 
 #data
-fit_tweedie <- glmmTMB(ck_juv ~ time_f + (1|year), data = ipes_only,
-                       family = tweedie)
 fit_zibin <- glmmTMB(ck_juv ~ time_f + (1|year), data = ipes_only, 
                      ziformula = ~1, family = nbinom2)
 fit_pois <- glmmTMB(ck_juv ~ time_f + (1|year), data = ipes_only, 
                      ziformula = ~1, family = poisson)
-summary(fit_tweedie)
 summary(fit_zibin)
 summary(fit_pois)
-AIC(fit_tweedie, fit_zibin, fit_pois)
+AIC(fit_zibin, fit_pois)
 
 # make predictions
 preds <- predict(fit_zibin,
@@ -92,10 +90,18 @@ jchin1 <- jchin %>%
 jchin2 <- jchin %>% 
   filter(synoptic == "1",
          head_depth < 21,
-         month %in% c(6, 7)
+         month %in% c(6, 7),
+         !year == "2014"
          ) %>% 
   mutate(trim_size = "small") 
 
+
+jchin %>% 
+  filter(stable_station == "1",
+         month %in% c(6, 7),
+         head_depth < 21,
+         juv_cpue > 500 #remove large values that may be skewing results
+  ) 
 # compare spatial distributions
 library(ggmap)
 nAm <- map_data("world") %>% 
@@ -129,37 +135,29 @@ jchin2 %>%
 ## Develop index 
 # Yearly model with tweedie distribution 
 dir.create(file.path(here::here("data", "modelFits")))
-m1_tw <- sdmTMB(juv_cpue ~ 0 + as.factor(year) + yday_z + yday_z2,
-                data = jchin1,
-                time = "year",
-                spde = jchin1_spde,
-                silent = FALSE,
-                anisotropy = TRUE,
-                include_spatial = TRUE,
-                ar1_fields = FALSE,
-                family = tweedie(link = "log"))
-# negative binomial models also possible, but the residuals are wonkier
-# m1_nb <- sdmTMB(ck_juv ~ 0 + as.factor(year) + season:yday_z + season:yday_z2,
-#              data = jchin1,
-#              time = "year",
-#              spde = jchin1_spde,
-#              silent = FALSE,
-#              anisotropy = TRUE,
-#              include_spatial = TRUE,
-#              ar1_fields = FALSE,
-#              family = nbinom2(link = "log"))
-saveRDS(m1_tw, here::here("data", "modelFits", "ck1_yrInt_tw.rds"))
+# m1_tw <- sdmTMB(juv_cpue ~ 0 + as.factor(year) + yday_z + yday_z2,
+#                 data = jchin1,
+#                 time = "year",
+#                 spde = jchin1_spde,
+#                 silent = FALSE,
+#                 anisotropy = TRUE,
+#                 include_spatial = TRUE,
+#                 ar1_fields = FALSE,
+#                 family = tweedie(link = "log"))
+# saveRDS(m1_tw, here::here("data", "modelFits", "ck1_yrInt_tw.rds"))
+# negative binomial model with effort offset favored by SA
+m1_nb <- sdmTMB(ck_juv ~ 0 + as.factor(year) + yday_z + yday_z2 + offset,
+             data = jchin1,
+             time = "year",
+             spde = jchin1_spde,
+             silent = FALSE,
+             anisotropy = TRUE,
+             include_spatial = TRUE,
+             ar1_fields = FALSE,
+             family = nbinom2(link = "log"))
+saveRDS(m1_nb, here::here("data", "modelFits", "ck1_yrInt_nb.rds"))
 
-m2_tw <- sdmTMB(juv_cpue ~ 0 + as.factor(year) + yday_z + yday_z2,
-                data = jchin2,
-                time = "year",
-                spde = jchin2_spde,
-                silent = FALSE,
-                anisotropy = TRUE,
-                include_spatial = TRUE,
-                ar1_fields = FALSE,
-                family = tweedie(link = "log"))
-# m2_nb <- sdmTMB(ck_juv ~ 0 + as.factor(year) + yday_z + yday_z2,
+# m2_tw <- sdmTMB(juv_cpue ~ 0 + as.factor(year) + yday_z + yday_z2,
 #                 data = jchin2,
 #                 time = "year",
 #                 spde = jchin2_spde,
@@ -167,8 +165,18 @@ m2_tw <- sdmTMB(juv_cpue ~ 0 + as.factor(year) + yday_z + yday_z2,
 #                 anisotropy = TRUE,
 #                 include_spatial = TRUE,
 #                 ar1_fields = FALSE,
-#                 family = nbinom2(link = "log"))
-saveRDS(m2_tw, here::here("data", "modelFits", "ck2_yrInt_tw.rds"))
+#                 family = tweedie(link = "log"))
+# saveRDS(m2_tw, here::here("data", "modelFits", "ck2_yrInt_tw.rds"))
+m2_nb <- sdmTMB(ck_juv ~ 0 + as.factor(year) + yday_z + yday_z2 + offset,
+                data = jchin2,
+                time = "year",
+                spde = jchin2_spde,
+                silent = FALSE,
+                anisotropy = TRUE,
+                include_spatial = TRUE,
+                ar1_fields = FALSE,
+                family = nbinom2(link = "log"))
+saveRDS(m2_nb, here::here("data", "modelFits", "ck2_yrInt_nb.rds"))
 
 
 # examine residuals
@@ -185,8 +193,10 @@ check_res <- function(mod, dat) {
     geom_point() + facet_wrap(~year) + coord_fixed()
 }
 
-check_res(m1_tw, jchin1)
-check_res(m2_tw, jchin2)
+# check_res(m1_tw, jchin1)
+# check_res(m2_tw, jchin2)
+check_res(m1_nb, jchin1)
+check_res(m2_nb, jchin2)
 
 
 # Make predictions 
@@ -204,27 +214,31 @@ pred_grid_list <- map(jchin_list, function(x) {
     expand(nesting(X, Y), #make a predictive dataframe
            year = unique(x$year)) %>%
     mutate(yday_z = 0,
-           yday_z2 = 0)
+           yday_z2 = 0,
+           offset = mean(x$dur))
 })
-# saveRDS(pred_grid_list[[1]], here::here("data", "pred_grids", 
-#                                         "large_ck_grid.rds"))
-# saveRDS(pred_grid_list[[2]], here::here("data", "pred_grids", 
-#                                         "small_ck_grid.rds"))
+saveRDS(pred_grid_list[[1]], here::here("data", "pred_grids",
+                                        "large_ck_grid.rds"))
+saveRDS(pred_grid_list[[2]], here::here("data", "pred_grids",
+                                        "small_ck_grid.rds"))
 
-pred_m1 <- predict(m1_tw, newdata = pred_grid_list[[1]], return_tmb_object = TRUE)
-pred_m2 <- predict(m2_tw, newdata = pred_grid_list[[2]], return_tmb_object = TRUE)
+pred_m1 <- predict(m1_nb, newdata = pred_grid_list[[1]], return_tmb_object = TRUE)
+pred_m2 <- predict(m2_nb, newdata = pred_grid_list[[2]], return_tmb_object = TRUE)
 glimpse(pred_m1$data)
 
 # Compare predictions from the two datasets
 ind1 <- get_index(pred_m1, bias_correct = FALSE) %>% 
   mutate(dataset = "large")
 ind2 <- get_index(pred_m2, bias_correct = FALSE) %>% 
-  mutate(dataset = "small")
+  #add gap for 2014
+  rbind(., data.frame(year = 2014, est = NA, lwr = NA, upr = NA, log_est = NA,
+                      se = NA, max_gradient = NA, bad_eig = FALSE)) %>% 
+  mutate(dataset = "small")  
 inds <- rbind(ind1, ind2)
 
 scale <- 2 * 2  # 2 x 2 km grid 
 ggplot(inds, aes(year, est*scale)) + 
-  geom_line() +
+  geom_line(aes(group = 1)) +
   geom_ribbon(aes(ymin = lwr*scale, ymax = upr*scale), alpha = 0.4) +
   xlab('Year') + ylab('Abundance Estimate') +
   facet_wrap(~dataset)

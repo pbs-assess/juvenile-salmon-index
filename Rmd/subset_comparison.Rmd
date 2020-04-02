@@ -95,7 +95,8 @@ jchin1 <- jchin %>%
 jchin2 <- jchin %>% 
   filter(synoptic == "1",
          head_depth < 21,
-         month %in% c(6, 7)
+         month %in% c(6, 7),
+         !year == "2014"
          ) %>% 
   mutate(trim_size = "small") 
 
@@ -121,7 +122,7 @@ rbind(jchin1, jchin2) %>%
 
 The majority of both datasets are shared and come from the core IPES sets, so it's unsurprising that they both show similar seasonal patterns in catch (i.e. peaking in late June); howerver, there are certainly some differences in abundance driven by the inlets (presumably more catch) and offshore tows (presumably less catch). We could chop the former dataset a bit more if we're interested in keeping more data but excluding the offshore transects, but I wanted to maximize contrast on this first pass. 
 
-Now we prep the SPDE mesh necessary to account for spatial heterogeneity and fit Sean's models. To account for those seasonal effects we include z-scored year day as a covariate. To account for differences in tow length (the average high seas tow was substantially longer), I fit the models to cpue (i.e. catch / tow duration). The data are not log transformed prior because the tweedie distribution is intended for zero bounded, positive data and can account for zero-inflation (similar to a gamma hurdle model but with more flexibility). Note that the run time for these models can be pretty long so I've included the RDS files that you can simply load once you move them to the appropriate location.
+Now we prep the SPDE mesh necessary to account for spatial heterogeneity and fit Sean's models. To account for those seasonal effects we include z-scored year day as a covariate. To account for differences in tow length (the average high seas tow was substantially longer), I fit the models to catch and included tow duration as an offset. The data are not log transformed prior because the negative binomial is intended for positive integer data and can account for a relatively large number of zeros. Note that the run time for these models can be pretty long so I've included the RDS files that you can simply load once you move them to the appropriate location.
 
 ```{r annual_index_fit}
 # Make mesh representing survey area for each dataset
@@ -131,20 +132,20 @@ jchin2_spde <- make_spde(jchin2$xUTM_start, jchin2$yUTM_start, n_knots = 150)
 #plot_spde(jchin_spde2)
 
 # import data (note the file path will obviously need to be changed)
-m1_tw <- readRDS(here::here("data", "modelFits", "ck1_yrInt_tw.rds"))
-m2_tw <- readRDS(here::here("data", "modelFits", "ck2_yrInt_tw.rds"))
+m1_nb <- readRDS(here::here("data", "modelFits", "ck1_yrInt_nb.rds"))
+m2_nb <- readRDS(here::here("data", "modelFits", "ck2_yrInt_nb.rds"))
 
-# alternatively run models
-# m1_tw <- sdmTMB(juv_cpue ~ 0 + as.factor(year) + yday_z + yday_z2,
-#                 data = jchin1,
-#                 time = "year",
-#                 spde = jchin1_spde,
-#                 silent = FALSE,
-#                 anisotropy = TRUE,
-#                 include_spatial = TRUE,
-#                 ar1_fields = FALSE,
-#                 family = tweedie(link = "log"))
-# m2_tw <- sdmTMB(juv_cpue ~ 0 + as.factor(year) + yday_z + yday_z2,
+# alternatively run models (note tweedie replaced with NB)
+# m1_nb <- sdmTMB(ck_juv ~ 0 + as.factor(year) + yday_z + yday_z2 + offset,
+#              data = jchin1,
+#              time = "year",
+#              spde = jchin1_spde,
+#              silent = FALSE,
+#              anisotropy = TRUE,
+#              include_spatial = TRUE,
+#              ar1_fields = FALSE,
+#              family = nbinom2(link = "log"))
+# m2_nb <- sdmTMB(ck_juv ~ 0 + as.factor(year) + yday_z + yday_z2 + offset,
 #                 data = jchin2,
 #                 time = "year",
 #                 spde = jchin2_spde,
@@ -152,7 +153,7 @@ m2_tw <- readRDS(here::here("data", "modelFits", "ck2_yrInt_tw.rds"))
 #                 anisotropy = TRUE,
 #                 include_spatial = TRUE,
 #                 ar1_fields = FALSE,
-#                 family = tweedie(link = "log"))
+#                 family = nbinom2(link = "log"))
 ```
 
 We can examine the coefficient estimates using `summary()`, but for now we'll just jump right into predictions. My understanding from Sean is that the predicted fixed effects are generated after accounting spatial variation that's treated as a random field. So differences in specific survey locations among years are integrated out and incorporated as uncertainty in the fixed effect predictions (similar to when you make predictions with a mixed-effects model). The estiamted abundance at each point in the predictive spatial grid are then summed, resulting in an annual index of total abundance for the survey area/time.
@@ -165,19 +166,22 @@ I generated the predictive grids externally because they require a bit of code, 
 pred_grid1 <- readRDS(here::here("data", "pred_grids", "large_ck_grid.rds"))
 pred_grid2 <- readRDS(here::here("data", "pred_grids", "small_ck_grid.rds"))
 
-pred_m1 <- predict(m1_tw, newdata = pred_grid1, return_tmb_object = TRUE)
-pred_m2 <- predict(m2_tw, newdata = pred_grid2, return_tmb_object = TRUE)
+pred_m1 <- predict(m1_nb, newdata = pred_grid1, return_tmb_object = TRUE)
+pred_m2 <- predict(m2_nb, newdata = pred_grid2, return_tmb_object = TRUE)
 
 # Compare predictions from the two datasets
 ind1 <- get_index(pred_m1, bias_correct = FALSE) %>% 
   mutate(dataset = "large")
 ind2 <- get_index(pred_m2, bias_correct = FALSE) %>% 
-  mutate(dataset = "small")
+  #add gap for 2014
+  rbind(., data.frame(year = 2014, est = NA, lwr = NA, upr = NA, log_est = NA,
+                      se = NA, max_gradient = NA, bad_eig = FALSE)) %>% 
+  mutate(dataset = "small")  
 inds <- rbind(ind1, ind2)
 
 scale <- 2 * 2  # 2 x 2 km grid 
 ggplot(inds, aes(year, est*scale)) + 
-  geom_line() +
+  geom_line(aes(group = 1)) +
   geom_ribbon(aes(ymin = lwr*scale, ymax = upr*scale), alpha = 0.4) +
   xlab('Year') + ylab('Abundance Estimate') +
   facet_wrap(~dataset)
@@ -186,7 +190,7 @@ ggplot(inds, aes(year, est*scale)) +
 So what can we glean from this? 
 
 1. The two datasets have some similar results including periods of low abundance in the early 2000s and a peak in 2008.
-2. Generally the uncertainty is similar, however little survey effort and low catches (i.e. 0) within the IPES grid in years like 2014 means that estimates there are probably biased low.  
+2. Generally the uncertainty is similar, however little survey effort and low catches (i.e. 0) within the IPES grid in years like 2014 means that the model can't converge until they're removed.  
 3. Perhaps most importantly the estimates of abundance for recent years are similar, suggesting that the inclusion of additional data in historical years doesn't dramatically change our conclusions about absolute abundance in the IPES survey (it will change relative abundance estimates because large positive anomalies in the high seas database are muted).
 
 This is by no means a final product and will change a lot as I roll in the multinomial component of the model to generate stock-specific predictions, but hopefully it provides some context for what I've been working on recently. 
