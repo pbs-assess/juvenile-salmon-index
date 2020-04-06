@@ -149,6 +149,10 @@ ggplot(m2_dat) +
 
 # instead make key of factors which is used for the multinomial predictions and
 # to generate a predictive model matrix for the tweedie
+#helper function to convert factors 
+fct_to_tmb_num <- function(x) {
+  as.numeric(as.factor(as.character(x))) - 1
+}
 fac_dat <- m2_dat %>% 
   mutate(facs = as.factor(paste(reg, fac, sep = "_")),
          facs_n = fct_to_tmb_num(facs)) %>% #subtract for indexing by 0 
@@ -161,10 +165,6 @@ mm_pred <- model.matrix(~ reg + fac, data = fac_key)
 # fit dummy model to speed up tweedie estimates
 m1 <- lm(log(site_obs + 0.0001) ~ reg + fac, data = m1_dat)
 
-#helper function to convert factors 
-fct_to_tmb_num <- function(x) {
-  as.numeric(as.factor(as.character(x))) - 1
-}
 fac1k <- fct_to_tmb_num(m1_dat$site)
 fac2k <- fct_to_tmb_num(m2_dat$site)
 
