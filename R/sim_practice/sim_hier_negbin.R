@@ -10,20 +10,21 @@ n_obs_per_site <- 250
 sd_site <- 0.5
 N <- n_sites * n_obs_per_site
 
-fix_dat <- data.frame(reg = as.factor(sample(c(1, 2, 3), size = N, replace = T)),
+fix_dat <- data.frame(eff_z = rnorm(N, 0, 1), #continuous pred
+                      reg = as.factor(sample(c(1, 2, 3), size = N, replace = T)),
                       seas = as.factor(sample(c(1, 2), size = N, replace = T)))
 
-# fixed intercepts
-fix_ints <- c(0.75, 1, 2, -0.25) 
+# fixed intercepts and slope parameter (last)
+fix_pars <- c(0.75, 1, 2, -0.25, 0.5) 
 
 # model matrix for fixed effects
-fix_mm <- model.matrix(~ reg + seas, fix_dat)
+fix_mm <- model.matrix(~ reg + seas + eff_z, fix_dat)
 
 
 # function to simulate hier negbin data and fit hierarchical models
 f_sim <- function(trial = 1) {
   #calculate fixed effects using parameter matrix and model matrix
-  sum_fix_eff <- fix_mm %*% fix_ints
+  sum_fix_eff <- fix_mm %*% fix_pars
   
   # generate random effects, then combine with fixed
   site_mean_a <- rnorm(mean = 0,
@@ -50,11 +51,11 @@ ggplot(dat) +
   geom_boxplot(aes(x = reg, y = site_obs)) +
   facet_wrap(~seas)
 
-m2 <- glmmTMB::glmmTMB(site_obs ~ reg + seas, data = dat, 
+m2 <- glmmTMB::glmmTMB(site_obs ~ reg + seas + eff_z, data = dat, 
                        family = glmmTMB::nbinom2(link = "log")
                        )
 summary(m2)
-m1 <- lm(log(site_obs + 0.0001) ~ reg + seas, data = dat)
+m1 <- lm(log(site_obs + 0.0001) ~ reg + seas + eff_z, data = dat)
 summary(m1)
 
 #helper function to convert factors 
@@ -65,13 +66,14 @@ fct_to_tmb_num <- function(x) {
 fac1k <- fct_to_tmb_num(dat$site)
 
 # order matrix based on unique factor levels with most saturated at bottom
-mm_pred <- fix_mm %>% 
+mm_pred1 <- fix_mm[, -5] %>%
   unique() 
-ord_mat <- mm_pred %>% 
+ord_mat <- mm_pred1 %>% 
   apply(., 1, sum) %>%
   sort() %>% 
   names()
-mm_pred <- mm_pred[ord_mat, ]
+mm_pred2 <- mm_pred1[ord_mat, ]
+mm_pred <- cbind(mm_pred2, eff_z = rep(0, n = nrow(mm_pred2)))
 
 data <- list(y1_i = dat$site_obs,
              X1_ij = fix_mm,
@@ -80,7 +82,7 @@ data <- list(y1_i = dat$site_obs,
              X1_pred_ij = mm_pred
              )
 parameters = list(
-  b1_j = coef(m1) + rnorm(length(coef(m1)), 0, 0.01),#rep(1, ncol(fix_mm)),
+  b1_j = coef(m1) + rnorm(length(coef(m1)), 0, 0.01),
   log_phi = log(1.1),
   # logit_p = boot::logit(0.8),
   z1_k = rep(0, length(unique(fac1k))),
