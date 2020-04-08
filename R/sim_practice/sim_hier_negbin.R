@@ -66,14 +66,23 @@ fct_to_tmb_num <- function(x) {
 fac1k <- fct_to_tmb_num(dat$site)
 
 # order matrix based on unique factor levels with most saturated at bottom
-mm_pred1 <- fix_mm[, -5] %>%
-  unique() 
-ord_mat <- mm_pred1 %>% 
-  apply(., 1, sum) %>%
-  sort() %>% 
-  names()
-mm_pred2 <- mm_pred1[ord_mat, ]
-mm_pred <- cbind(mm_pred2, eff_z = rep(0, n = nrow(mm_pred2)))
+fac_key <- dat %>% 
+  select(reg, seas) %>% 
+  distinct() %>% 
+  mutate(facs = paste(reg, seas, sep = "_"),
+         facs_n = as.numeric(as.factor(facs))) %>% 
+  arrange(facs_n)
+mm_pred1 <- model.matrix(~ reg + seas, data = fac_key)
+mm_pred <- cbind(mm_pred1, eff_z = rep(0, n = nrow(mm_pred1)))
+
+# mm_pred1 <- fix_mm[, -5] %>%
+#   unique() 
+# ord_mat <- mm_pred1 %>% 
+#   apply(., 1, sum) %>%
+#   sort() %>% 
+#   names()
+# mm_pred2 <- mm_pred1[ord_mat, ]
+# mm_pred <- cbind(mm_pred2, eff_z = rep(0, n = nrow(mm_pred2)))
 
 data <- list(y1_i = dat$site_obs,
              X1_ij = fix_mm,
@@ -89,6 +98,7 @@ parameters = list(
   log_sigma_zk1 = log(0.25)
   )
 
+
 ## Make a function object
 compile("R/sim_practice/catchEstPractice/negbin_1re.cpp")
 dyn.load(dynlib("R/sim_practice/catchEstPractice/negbin_1re"))
@@ -102,3 +112,29 @@ sdr
 ssdr <- summary(sdr)
 ssdr
 
+
+## Make predictions
+log_pred_fe <- ssdr[rownames(ssdr) %in% "log_prediction", ]
+pred_ci <- data.frame(log_pred_est = log_pred_fe[ , "Estimate"],
+                      log_pred_se =  log_pred_fe[ , "Std. Error"]) %>%
+  mutate(facs_n = fac_key$facs_n) %>% 
+  mutate(log_pred_low = log_pred_est + (qnorm(0.025) * log_pred_se),
+         log_pred_up = log_pred_est + (qnorm(0.975) * log_pred_se),
+         pred_est = exp(log_pred_est),
+         pred_se = exp(log_pred_se),
+         pred_low = exp(log_pred_low),
+         pred_up = exp(log_pred_up)) %>%
+  left_join(., fac_key, by = "facs_n") 
+
+ggplot() +
+  geom_boxplot(data = dat, aes(x = reg, y = site_obs), alpha = 0.4) +
+  geom_pointrange(data = pred_ci, aes(x = as.factor(reg), y = pred_est,
+                                      ymin = pred_low, 
+                                      ymax = pred_up)) +
+  facet_wrap(~seas)
+ggplot() +
+  geom_boxplot(data = dat, aes(x = reg, y = log(site_obs)), alpha = 0.4) +
+  geom_pointrange(data = pred_ci, aes(x = as.factor(reg), y = log_pred_est,
+                                      ymin = log_pred_low, 
+                                      ymax = log_pred_up)) +
+  facet_wrap(~seas)
