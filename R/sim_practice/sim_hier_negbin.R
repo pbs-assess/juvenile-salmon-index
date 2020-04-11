@@ -50,11 +50,20 @@ hist(dat$site_obs)
 ggplot(dat) +
   geom_boxplot(aes(x = reg, y = site_obs)) +
   facet_wrap(~seas)
+ggplot(dat) +
+  geom_point(aes(x = eff_z, y = site_obs))
+
 
 m2 <- glmmTMB::glmmTMB(site_obs ~ reg + seas + eff_z, data = dat, 
                        family = glmmTMB::nbinom2(link = "log")
                        )
+datb <- dat %>% 
+  mutate(eff_z2 = eff_z^2)
+m2b <- glmmTMB::glmmTMB(site_obs ~ reg + seas + eff_z + eff_z2, data = datb, 
+                        family = glmmTMB::nbinom2(link = "log")
+)
 summary(m2)
+
 m1 <- lm(log(site_obs + 0.0001) ~ reg + seas + eff_z, data = dat)
 summary(m1)
 

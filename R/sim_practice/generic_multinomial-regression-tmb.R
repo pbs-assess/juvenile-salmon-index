@@ -67,8 +67,8 @@ for (i in seq_along(y)) {
 }
 
 library(TMB)
-compile("R/multinomialPractice/multinomial_generic.cpp")
-dyn.load(dynlib("R/multinomialPractice/multinomial_generic"))
+compile("R/sim_practice/multinomialPractice/multinomial_generic.cpp")
+dyn.load(dynlib("R/sim_practice/multinomialPractice/multinomial_generic"))
 
 ## Data and parameters
 # .X <- cbind(1, X) #predictor with intercept
@@ -94,3 +94,49 @@ r <- obj$report()
 r$probs
 r$log_odds
 r$logit_probs
+
+
+# compare with vanilla multinomial model
+long_dat <- y_obs %>% 
+  cbind(yrCov, .) %>% 
+  as.data.frame() %>% 
+  pivot_longer(., cols = `1`:`4`) %>% 
+  filter(!value == 0) %>% 
+  select(-value) %>% 
+  mutate(name = as.factor(name))
+m1 <- nnet::multinom(name ~ yr, data = long_dat)
+summary(m1)
+exp(coef(m1))
+head(pp <- fitted(m1))
+
+
+# replace all category 4 covariates to yr1
+cat_4_cov <- which(y_obs[, 4] == 1)
+yrCov[cat_4_cov, ] <- "yr2"
+yrCov[cat_4_cov, ]
+
+#rerun basic model
+long_dat <- y_obs %>% 
+  cbind(yrCov, .) %>% 
+  as.data.frame() %>% 
+  pivot_longer(., cols = `1`:`4`) %>% 
+  filter(!value == 0) %>% 
+  select(-value) %>% 
+  mutate(name = as.factor(name))
+m2 <- nnet::multinom(name ~ yr, data = long_dat)
+summary(m2)
+exp(coef(m2))
+
+#rerun tmb model
+obj <- MakeADFun(data, parameters, DLL="multinomial_generic")
+
+## Call function minimizer
+opt <- nlminb(obj$par, obj$fn, obj$gr)
+
+## Get parameter uncertainties and convergence diagnostics
+sdr <- sdreport(obj)
+# SEs blow up on parameter estimates, but predictions are surprisingly stable
+
+head(pp <- fitted(m2))
+r <- obj$report()
+head(r$probs)
