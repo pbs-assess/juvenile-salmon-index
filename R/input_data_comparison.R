@@ -1,6 +1,8 @@
 ### Fit subsets of survey catch data to determine how changes in sampling
 # effort will impact annual abundance estimates
-## April 1, 2020
+# Model fits and some figures from day/night and spatial strat sections are 
+# incorporated into subset_comparison.Rmd
+## April 29, 2020
 
 library(tidyverse)
 library(sdmTMB)
@@ -75,6 +77,7 @@ data.frame(time_f = unique(ipes_only$time_f),
 
 
 # ------------------------------------------------------------------------------
+## Test for spatial stratification impacts
 
 #generate two datasets:
 # 1) limited to spatially overlapping tows and <20 m headrope depth, but includes
@@ -118,8 +121,8 @@ rbind(jchin1, jchin2) %>%
 
 jchin1_spde <- make_spde(jchin1$xUTM_start, jchin1$yUTM_start, n_knots = 150)
 jchin2_spde <- make_spde(jchin2$xUTM_start, jchin2$yUTM_start, n_knots = 150)
-plot_spde(jchin_spde1)
-plot_spde(jchin_spde2)
+plot_spde(jchin1_spde)
+plot_spde(jchin2_spde)
 
 ggplot(jchin1, aes(x = yday, y = juv_cpue, colour = as.factor(dataset))) +
   geom_point()
@@ -272,3 +275,4 @@ plot_map(pred_m2$data, "omega_s") +
 plot_map(pred_m2$data, "epsilon_st") +
   ggtitle("Spatiotemporal random effects only") +
   scale_fill_gradient2()
+

@@ -55,7 +55,8 @@ make_pred_grid <- function(dat, file_name_out = "trimmedSurveyGrid.rds") {
   # Subset spatially
   subGrid <- fullGrid %>%
     st_join(., sets, join = st_intersects) %>% 
-    filter(!is.na(year)) 
+    filter(!is.na(year)) %>% 
+    distinct()
   plot(st_geometry(subGrid))
   
   # Extract just the coordinates and export

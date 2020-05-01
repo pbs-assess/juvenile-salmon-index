@@ -3,7 +3,7 @@ title: "Chinook Index V1"
 output: pdf_document
 ---
 
-This is an initial fitting of Sean's spatio-temporal random fields model (`sdmTMB`) to the Chinook data from the High Seas and IPES surveys. I had two main objectives:
+This is an initial fitting of Sean's spatio-temporal random fields model (`sdmTMB`) to the Chinook data from the High Seas and IPES surveys. Models are fit in `input_data_comparison.R`. I had two main objectives:
 
 1. Determine whether there were sufficient differences in Chinook catch between day/night tows to justify excluding the latter for historical comparisons.
 2. Evaluate how including two different subsets of the high seas data impacts predicted estimates of annual abundance.
@@ -46,7 +46,7 @@ ipes_only <- jchin %>%
          dataset == "IPES")
 
 fit_zibin <- glmmTMB(ck_juv ~ time_f + (1|year), data = ipes_only, 
-                     ziformula = ~1, family = nbinom2)
+                     ziformula = ~1|year, family = nbinom2)
 summary(fit_zibin)
 ```
 
@@ -81,7 +81,7 @@ So the night data predict an abundance of ~0.35 and day of 0.42 juvenile Chinook
 
 ** Annual Index **
 
-First generate two datasets that subset the high seas data in different ways (the goal is to retain as much as is appropriate since a data accouting for stock composition will be very data hungry). Both datasets are constrained to only include June/July catches (though I'd like to eventually look into incorporating more data) and tows less than 21 m deep. The less conservative dataset includes all the regions where spatial overlap of the two surveys occurs (e.g. WCVI inlets, QCS). The second includes only the high seas surveys that fall within the IPES standard survey grid (based on Erika's SQL code).
+First generate two datasets that subset the high seas data in different ways (the goal is to retain as much as is appropriate since a model accounting for stock composition will be very data hungry). Both datasets are constrained to only include June/July catches (though I'd like to eventually look into incorporating more data) and tows less than 21 m deep. The less conservative dataset includes all the regions where spatial overlap of the two surveys occurs (e.g. WCVI inlets, QCS). The second includes only the high seas surveys that fall within the IPES standard survey grid (based on Erika's SQL code).
 
 ```{r annual_index_data}
 jchin1 <- jchin %>% 
@@ -128,8 +128,8 @@ Now we prep the SPDE mesh necessary to account for spatial heterogeneity and fit
 # Make mesh representing survey area for each dataset
 jchin1_spde <- make_spde(jchin1$xUTM_start, jchin1$yUTM_start, n_knots = 150)
 jchin2_spde <- make_spde(jchin2$xUTM_start, jchin2$yUTM_start, n_knots = 150)
-#plot_spde(jchin_spde1)
-#plot_spde(jchin_spde2)
+plot_spde(jchin1_spde)
+plot_spde(jchin2_spde)
 
 # import data (note the file path will obviously need to be changed)
 m1_nb <- readRDS(here::here("data", "modelFits", "ck1_yrInt_nb.rds"))
@@ -156,7 +156,7 @@ m2_nb <- readRDS(here::here("data", "modelFits", "ck2_yrInt_nb.rds"))
 #                 family = nbinom2(link = "log"))
 ```
 
-We can examine the coefficient estimates using `summary()`, but for now we'll just jump right into predictions. My understanding from Sean is that the predicted fixed effects are generated after accounting spatial variation that's treated as a random field. So differences in specific survey locations among years are integrated out and incorporated as uncertainty in the fixed effect predictions (similar to when you make predictions with a mixed-effects model). The estiamted abundance at each point in the predictive spatial grid are then summed, resulting in an annual index of total abundance for the survey area/time.
+We can examine the coefficient estimates using `summary()`, but for now we'll just jump right into predictions. My understanding from Sean is that the predicted fixed effects are generated after accounting spatial variation that's treated as a random field. So differences in specific survey locations among years are integrated out and incorporated as uncertainty in the fixed effect predictions (similar to when you make predictions with a mixed-effects model). The estimated abundance at each point in the predictive spatial grid are then summed, resulting in an annual index of total abundance for the survey area/time.
 
 I generated the predictive grids externally because they require a bit of code, but let me know if you'd like to see what's happening. Basically for now you can just think of it as making a prediction for a given year, in a given grid cell, assuming scaled yday is set to 0 (i.e. abundance on the "average" summer survey day).
 
