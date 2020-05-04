@@ -12,7 +12,7 @@ sd_site <- 0.5
 N <- n_sites * n_obs_per_site
 
 # fixed intercepts
-group_ints <- c(1.9, -1.4)
+group_ints <- c(0.5, -4) #reference is group 3
 k <- length(group_ints) #number of groups - 1
 reg2_ints <- c(1.9, -0.25) #i.e. how region 2 differs from reference for each group
 reg3_ints <- c(1.9, 0.49) #i.e. how region 3 differs from reference for each group
@@ -47,10 +47,6 @@ f_sim <- function(trial = 1) {
   site_obs_ia <- rnorm(mean = rep(site_mean_a, each = n_obs_per_site),
                        sd = 0, 
                        n = N)
-  # site_mean_a <- runif(n = n_sites, min = -1, max = 1)
-  # site_obs_ia <- rnorm(mean = rep(site_mean_a, each = n_obs_per_site),
-  #                      sd = sd_site, 
-  #                      n = N)
   site_dat <- data.frame(site = as.factor(rep(seq(1, 5, by = 1), 
                                               each = n_obs_per_site)),
                          site_mean = rep(site_mean_a, each = n_obs_per_site),
@@ -84,10 +80,11 @@ f_sim <- function(trial = 1) {
   }
 
   #change all region 2 variables to category 1
-  reg2_dat <- which(datf$reg == 2 & y == 3)
-  y[reg2_dat] <- 1
-  
+  # reg2_dat <- which(datf$reg == 2 & y == 3)
+  # y[reg2_dat] <- 1
+  # 
   datf <- cbind(datf, y)
+  
   # ggplot(datf, aes(x = y)) +
   #   geom_histogram() + #negative values in site 2 inc. probability of third cat
   #   ggsidekick::theme_sleek() +
@@ -110,6 +107,10 @@ for (i in seq_along(dat_list)) {
   dat_list[[i]] <- f_sim(trial = i)
 }
 
+ggplot(dat_list[[3]]$full_data, aes(x = y)) +
+  geom_histogram() + #negative values in site 2 inc. probability of third cat
+  ggsidekick::theme_sleek() +
+  facet_wrap(~reg, nrow = 2)
 
 library(TMB)
 # compile("R/sim_practice/multinomialPractice/multinomial_generic_randInt_fixInt.cpp")
@@ -123,10 +124,10 @@ dyn.load(dynlib("R/sim_practice/multinomialPractice/multinomial_generic_randInt2
 # dyn.load(dynlib("R/sim_practice/multinomialPractice/multinomial_generic_fixInt"))
 
 ## Data and parameters
-y_obs <- dat_list[[1]]$obs
+y_obs <- dat_list[[3]]$obs
 #vector of random intercept ids
-rfac <- as.numeric(dat_list[[1]]$rand_fac) - 1 #subtract for indexing by 0
-fac_dat <- dat_list[[1]]$full_data %>% 
+rfac <- as.numeric(dat_list[[3]]$rand_fac) - 1 #subtract for indexing by 0
+fac_dat <- dat_list[[3]]$full_data %>% 
   mutate(facs = as.factor(paste(reg, site, sep = "_")),
          facs_n = (as.numeric(facs) - 1)) %>% #subtract for indexing by 0 
   select(reg, site, facs, facs_n)
@@ -146,26 +147,41 @@ parameters <- list(z_rfac = rep(0, times = length(unique(rfac))),
                                    ncol = ncol(y_obs) - 1),
                    log_sigma_rfac = 0)
 
+
+# add map to specify parameters without estimated values
+tt <- table(dat_list[[3]]$full_data$reg, dat_list[[3]]$full_data$y)
+empty_vals <- which(tt[, -3] == 0)
+seq_tt <- seq(1, length(tt[, -3]), by = 1)
+seq_tt[empty_vals] <- NA
+map = list(z_ints = as.factor(seq_tt))
+
+# map = list(z_ints = as.factor(c(1, 2, 3, 4, NA, 6)))
+# add U and L to bound parameter estimates
+L = c(z_ints = -5)
+U = c(z_ints = 5)
+
 ## Make a function object
-obj <- MakeADFun(data, parameters, random = c("z_rfac"),
+obj <- MakeADFun(data, parameters, random = c("z_rfac"), 
+                 map = map,
                  DLL = "multinomial_generic_randInt2")
 # obj <- MakeADFun(data, parameters, 
 #                  DLL = "multinomial_generic_fixInt")
 
 ## Call function minimizer
-opt <- nlminb(obj$par, obj$fn, obj$gr)
+opt <- nlminb(obj$par, obj$fn, obj$gr
+              # , lower = L, upper = U
+              )
 
 ## Get parameter uncertainties and convergence diagnostics
 sdr <- sdreport(obj)
 sdr
-sdr_small <- sdr
+fix_ints
 
 ssdr <- summary(sdr)
 ssdr
-ssdr_small <- ssdr
 
 # make dataframe of true predictions and covariates
-dumm <- dat_list[[1]]$full_data %>% 
+dumm <- dat_list[[3]]$full_data %>% 
   mutate(facs = as.factor(paste(reg, site, sep = "_")))
 obs_dat <- dumm %>% 
   pivot_longer(p1:p3, names_to = "cat", names_prefix = "p",
@@ -211,8 +227,14 @@ ggplot(pred_ci %>% filter(reg == "1")) +
 ggplot(pred_ci %>% filter(ests == "fix")) +
   geom_pointrange(aes(x = as.factor(cat), y = pred_prob, ymin = pred_prob_low,
                       ymax = pred_prob_up), col = "red") +
-  facet_wrap(reg ~ site, nrow = 3) +
+  facet_wrap(~reg) +
+  # facet_grid(reg ~ site) +
   ggsidekick::theme_sleek()
+
+pred_ci %>% 
+  filter(ests == "fix", cat == 2) %>% 
+  select(cat, pred_prob, pred_prob_low, reg) %>% 
+  distinct()
 
 ests <- map(dat_list, function(x) {
   y_obs <- x$obs
