@@ -202,8 +202,8 @@ parameters = list(
 )
 
 ## Make a function object
-compile("R/sim_practice/tweediePractice/tweedie_multinomial_1re.cpp")
-dyn.load(dynlib("R/sim_practice/tweediePractice/tweedie_multinomial_1re"))
+compile(here::here("src/tweedie_multinomial_1re.cpp"))
+dyn.load(dynlib(here::here("src/tweedie_multinomial_1re")))
 obj <- MakeADFun(data, parameters, random = c("z1_k", "z2_k"), 
                  DLL = "tweedie_multinomial_1re")
 

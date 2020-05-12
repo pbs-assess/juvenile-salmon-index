@@ -117,8 +117,8 @@ library(TMB)
 # dyn.load(dynlib("R/sim_practice/multinomialPractice/multinomial_generic_randInt_fixInt"))
 # version that integrates out random effects for predictions
 # (otherwise same as above)
-compile("R/sim_practice/multinomialPractice/multinomial_generic_randInt2.cpp")
-dyn.load(dynlib("R/sim_practice/multinomialPractice/multinomial_generic_randInt2"))
+compile(here::here("src/multinomial_generic_randInt2.cpp"))
+dyn.load(dynlib(here::here("src/multinomial_generic_randInt2")))
 # fixed effects version for comparison
 # compile("R/sim_practice/multinomialPractice/multinomial_generic_fixInt.cpp")
 # dyn.load(dynlib("R/sim_practice/multinomialPractice/multinomial_generic_fixInt"))

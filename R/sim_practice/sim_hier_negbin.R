@@ -109,8 +109,8 @@ parameters = list(
 
 
 ## Make a function object
-compile("R/sim_practice/catchEstPractice/negbin_1re.cpp")
-dyn.load(dynlib("R/sim_practice/catchEstPractice/negbin_1re"))
+compile(here::here("src/negbin_1re.cpp"))
+dyn.load(dynlib(here::here("src/negbin_1re")))
 obj <- MakeADFun(data, parameters, random = c("z1_k"), 
                  DLL = "negbin_1re")
 
