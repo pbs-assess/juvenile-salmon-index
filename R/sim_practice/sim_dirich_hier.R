@@ -80,7 +80,7 @@ f_sim <- function(trial = 1, scalar = 100) {
   ))
 }
 
-n_trials <- 50
+n_trials <- 5
 sims <- vector(mode = "list", length = n_trials)
 sims_100 <- vector(mode = "list", length = n_trials)
 for (i in 1:n_trials) {
@@ -95,17 +95,27 @@ sim_list <- c(sims, sims_100)
 
 #initial parameter values
 beta_in <- matrix(rnorm(n = (P+1)*K, mean = 0), (P+1), K)
+
+#prediction model matrix
+pred_dat <- reg_dat %>%
+  select(reg, fac) %>%
+  distinct() %>%
+  arrange(reg, fac)
+pred_mm <- model.matrix(~ reg + fac, pred_dat)
+
 compile(here::here("src", "dirichlet_fixInt.cpp"))
 dyn.load(dynlib(here::here("src", "dirichlet_fixInt")))
-dyn.load(dynlib(here::here("src", "DMRegressionFreq")))
+# dyn.load(dynlib(here::here("src", "DMRegressionFreq")))
 
 #fit models with all data
 sims_in <- sim_list[[1]]
 # fit_list <- map(sim_list, function(sims_in) {
   Y_in <- sims_in$obs
   
-  obj <- MakeADFun(data=list(fx_cov = fix_mm, y_obs = Y_in),
-                   parameters=list(z_ints=beta_in),
+  obj <- MakeADFun(data=list(fx_cov = fix_mm,
+                             y_obs = Y_in,
+                             pred_cov = pred_mm),
+                   parameters=list(z_ints = beta_in),
                    DLL="dirichlet_fixInt")
   # obj <- MakeADFun(data=list(X=fix_mm, Y=Y_in),
   #                  parameters=list(beta=beta_in),
@@ -122,11 +132,7 @@ sims_in <- sim_list[[1]]
   )
 # })
 
-  pred_dat <- reg_dat %>%
-    select(reg, fac) %>%
-    distinct() %>%
-    arrange(reg, fac)
-  pred_mm <- model.matrix(~ reg + fac, pred_dat)
+  
   est_beta <- matrix(ssdr[, 1], nrow = P+1, ncol = K)
   pred_eff <- pred_mm %*% est_beta
   pred_Gamma = exp(pred_eff) #fixed effects
@@ -135,7 +141,6 @@ sims_in <- sim_list[[1]]
   pred_pi = apply(pred_Gamma, 2, function(x) {x / pred_theta})
   pred_pi_prop <- pred_pi / rowSums(pred_pi)
   
-  #predicted probabilities are correct but shuffled...
   pred_pi_prop
   
   datf <- sims_in$full_dat

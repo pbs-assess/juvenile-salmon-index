@@ -9,27 +9,20 @@ Type objective_function<Type>::operator() ()
   // DATA_INTEGER(n_rfac);  // number of random factor levels
   // DATA_IVECTOR(all_fac); // vector of combined factor levels (fix and rand.)
   // DATA_IVECTOR(fac_key); // vector of unique combined factor levels (fix and rand.)
+  DATA_MATRIX(pred_cov);    // model matrix fo predictions
+
   // parameter inputs
   PARAMETER_MATRIX(z_ints); // parameter matrix
   // PARAMETER_VECTOR(z_rfac);  // vector of random intercepts
   // PARAMETER(log_sigma_rfac); // among random intercept SD
 
   // The dimensions of data
-  // Type k;
-  // k = y_obs.array().cols();
-  // REPORT(k);
-  // Type j;
-  // j = fx_cov.array().cols();
-  // j = j - 1;
-  // Type n;
-  // n = X.array().rows();
-  
-  int n_obs = y_obs.rows();           // number of observations
-  int n_cat = y_obs.cols();           // number of categories
-  int n_fix_cov = fx_cov.cols();      // number of types of fixed covariates in mm
-  int n_fix_cov_m1 = n_fix_cov - 1;   // number of fixed covs minus intercept
+  int n_obs = y_obs.rows();         // number of observations
+  int n_cat = y_obs.cols();         // number of categories
+  // int n_fix_cov = fx_cov.cols();    // number of types of fixed covariates in mm
+  int n_levels = pred_cov.rows();   // number of covariates to make predictions on
 
-  // calculate fixed effects, first row is intercept parameter)
+  // calculate fixed effects
   matrix<Type> fx_eff = fx_cov * z_ints;
   matrix<Type> gamma = exp(fx_eff.array());
   vector<Type> n_plus = y_obs.rowwise().sum(); // row sum of response
@@ -47,12 +40,43 @@ Type objective_function<Type>::operator() ()
     }
   }
   
+  // calculate predictions
+  matrix<Type> pred_eff(n_levels, n_cat);    //pred effects on log scale
+  matrix<Type> pred_gamma(n_levels, n_cat);  //transformed pred effects 
+  vector<Type> pred_gamma_plus(n_levels);        
+  vector<Type> pred_theta(n_levels); 
+  matrix<Type> pred_pi(n_levels, n_cat);      // predicted counts in real 
+  vector<Type> pred_n_plus(n_levels); 
+  matrix<Type> pred_pi_prop(n_levels, n_cat); // predicted counts as ppn.
+
+  pred_eff = pred_cov * z_ints; 
+  pred_gamma = exp(pred_eff.array());
+  pred_gamma_plus = pred_gamma.rowwise().sum();
+  pred_theta = 1 / (pred_gamma_plus + 1);
+  for(int m = 0; m < n_levels; m++) {
+    for(int k = 0; k < n_cat; k++) {
+      pred_pi(m, k) = pred_gamma(m, k) / pred_theta(m);
+    }
+  }
+  pred_n_plus = pred_pi.rowwise().sum();
+  for(int m = 0; m < n_levels; m++) {
+    for(int k = 0; k < n_cat; k++) {
+      pred_pi_prop(m, k) = pred_pi(m, k) / pred_n_plus(m);
+    }
+  }
+
+  REPORT(pred_gamma);
+  ADREPORT(pred_gamma);
+  REPORT(pred_pi);
+  ADREPORT(pred_pi);
+  REPORT(pred_pi_prop);
+  ADREPORT(pred_pi_prop);
   
-  Type negloglikelihood;
-  negloglikelihood = -jll;
+  Type jnll;
+  jnll = -jll;
   
   // Return negative loglikelihood
-  return negloglikelihood;
+  return jnll;
   
 }
 
