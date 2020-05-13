@@ -16,13 +16,12 @@ sd_site <- 0.5
 n <- n_sites * n_obs_per_site
 
 #covdat
-reg_dat <- data.frame(reg = as.factor(sample(c(1, 2, 3), size = n, replace = T))
-                      # ,
-                      # fac = as.factor(sample(c(1, 2), size = N, replace = T))
+reg_dat <- data.frame(reg = as.factor(sample(c(1, 2, 3), size = n, 
+                                             replace = T)),
+                      fac = as.factor(sample(c(1, 2), size = n, replace = T))
 )
 # model matrix for fixed effects
-fix_mm <- model.matrix(~ reg#(reg + fac)
-                       , reg_dat)
+fix_mm <- model.matrix(~ (reg + fac), reg_dat)
 
 # fixed intercepts (P x K)
 P <- ncol(fix_mm) - 1
@@ -96,7 +95,8 @@ sim_list <- c(sims, sims_100)
 
 #initial parameter values
 beta_in <- matrix(rnorm(n = (P+1)*K, mean = 0), (P+1), K)
-compile(here::here("src", "DMRegressionFreq.cpp"))
+compile(here::here("src", "dirichlet_fixInt.cpp"))
+dyn.load(dynlib(here::here("src", "dirichlet_fixInt")))
 dyn.load(dynlib(here::here("src", "DMRegressionFreq")))
 
 #fit models with all data
@@ -104,9 +104,12 @@ sims_in <- sim_list[[1]]
 # fit_list <- map(sim_list, function(sims_in) {
   Y_in <- sims_in$obs
   
-  obj <- MakeADFun(data=list(X=fix_mm, Y=Y_in),
-                   parameters=list(beta=beta_in),
-                   DLL="DMRegressionFreq")
+  obj <- MakeADFun(data=list(fx_cov = fix_mm, y_obs = Y_in),
+                   parameters=list(z_ints=beta_in),
+                   DLL="dirichlet_fixInt")
+  # obj <- MakeADFun(data=list(X=fix_mm, Y=Y_in),
+  #                  parameters=list(beta=beta_in),
+  #                  DLL="DMRegressionFreq")
   opt <- nlminb(obj$par, obj$fn, obj$gr)
   sdr <- sdreport(obj)
   ssdr <- summary(sdr)
@@ -120,10 +123,10 @@ sims_in <- sim_list[[1]]
 # })
 
   pred_dat <- reg_dat %>%
-    select(reg) %>%
+    select(reg, fac) %>%
     distinct() %>%
-    arrange(reg)
-  pred_mm <- model.matrix(~ reg, pred_dat)
+    arrange(reg, fac)
+  pred_mm <- model.matrix(~ reg + fac, pred_dat)
   est_beta <- matrix(ssdr[, 1], nrow = P+1, ncol = K)
   pred_eff <- pred_mm %*% est_beta
   pred_Gamma = exp(pred_eff) #fixed effects
@@ -139,6 +142,6 @@ sims_in <- sim_list[[1]]
     
   datf %>%
     pivot_longer(., cols = `1`:`4`, names_to = "cat", values_to = "prob") %>% 
-    group_by(reg, cat) %>%
+    group_by(reg, fac, cat) %>%
     summarize(mean(prob) / 100)
   
