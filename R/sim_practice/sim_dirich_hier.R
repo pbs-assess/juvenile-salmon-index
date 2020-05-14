@@ -108,8 +108,7 @@ dyn.load(dynlib(here::here("src", "dirichlet_fixInt")))
 # dyn.load(dynlib(here::here("src", "DMRegressionFreq")))
 
 #fit models with all data
-sims_in <- sim_list[[1]]
-# fit_list <- map(sim_list, function(sims_in) {
+fit_list <- map(sim_list, function(sims_in) {
   Y_in <- sims_in$obs
   
   obj <- MakeADFun(data=list(fx_cov = fix_mm,
@@ -117,36 +116,45 @@ sims_in <- sim_list[[1]]
                              pred_cov = pred_mm),
                    parameters=list(z_ints = beta_in),
                    DLL="dirichlet_fixInt")
-  # obj <- MakeADFun(data=list(X=fix_mm, Y=Y_in),
-  #                  parameters=list(beta=beta_in),
-  #                  DLL="DMRegressionFreq")
   opt <- nlminb(obj$par, obj$fn, obj$gr)
   sdr <- sdreport(obj)
   ssdr <- summary(sdr)
   data.frame(
-    tran = sims_in$trans,
-    trial = sims_in$trial,
     beta = seq(1, length(betas), by = 1),
-    est = ssdr[ , 1],
-    true = as.vector(betas)
+    est = ssdr[rownames(ssdr) %in% "z_ints" , 1],
+    true = as.vector(betas),
+    tran = sims_in$trans,
+    trial = sims_in$trial
   )
-# })
+})
 
+coef_dat <- fit_list %>%
+  bind_rows()
+
+ggplot(coef_dat) +
+  geom_boxplot(aes(x = tran, y = est)) +
+  geom_hline(aes(yintercept = true), color = "red") +
+  # geom_point(aes(x = tran, y = true), shape = 21, fill = "red") +
+  ggsidekick::theme_sleek() +
+  facet_wrap(~beta, scales = "free_y")
+
+# look at one sims predictions
+ssdr_out <- fit_list[[1]]$est
+est_beta <- matrix(ssdr_out, nrow = P+1, ncol = K)
+pred_eff <- pred_mm %*% est_beta
+pred_Gamma = exp(pred_eff) #fixed effects
+pred_Gamma_plus = apply(pred_Gamma, 1, sum) #sum of fixed_effects
+pred_theta = 1 / (pred_Gamma_plus + 1)
+pred_pi = apply(pred_Gamma, 2, function(x) {x / pred_theta})
+pred_pi_prop <- pred_pi / rowSums(pred_pi)
+
+pred_pi_prop
+cbind(pred_dat, probs = ssdr[rownames(ssdr) %in% "pred_pi_prop" , 1])
+
+datf <- sims_in$full_dat
   
-  est_beta <- matrix(ssdr[, 1], nrow = P+1, ncol = K)
-  pred_eff <- pred_mm %*% est_beta
-  pred_Gamma = exp(pred_eff) #fixed effects
-  pred_Gamma_plus = apply(pred_Gamma, 1, sum) #sum of fixed_effects
-  pred_theta = 1 / (pred_Gamma_plus + 1)
-  pred_pi = apply(pred_Gamma, 2, function(x) {x / pred_theta})
-  pred_pi_prop <- pred_pi / rowSums(pred_pi)
-  
-  pred_pi_prop
-  
-  datf <- sims_in$full_dat
-    
-  datf %>%
-    pivot_longer(., cols = `1`:`4`, names_to = "cat", values_to = "prob") %>% 
-    group_by(reg, fac, cat) %>%
-    summarize(mean(prob) / 100)
-  
+datf %>%
+  pivot_longer(., cols = `1`:`4`, names_to = "cat", values_to = "prob") %>% 
+  group_by(reg, fac, cat) %>%
+  summarize(mean(prob) / 100) %>% 
+  arrange(cat, reg)
