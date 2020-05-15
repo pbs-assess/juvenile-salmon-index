@@ -90,7 +90,7 @@ f_sim <- function(trial = 1, scalar = 100) {
 }
 
 # generate data
-n_trials <- 5
+n_trials <- 100
 sim_list <- vector(mode = "list", length = n_trials)
 for (i in 1:n_trials) {
   sims_dat <- f_sim(trial = i, scalar = 100)
@@ -191,39 +191,54 @@ fit_list <- map(sim_list, function(sims_in) {
   ssdr_m <- summary(sdr_m)
   
   ## Fit dirichlet regression from DirichletReg
-  # temp <- reg_dat
-  # temp$comp <- DR_data(sims_in$adj$obs / 100)
-  # 
-  # fit_dr <- DirichletReg::DirichReg(comp ~ reg + fac, data = temp)
-  # betas_dr <- coef(fit_dr) %>%
-  #   do.call(c, .) %>%
-  #   as.vector()
-  # coef_dat_DR <- make_coef_df(betas,
-  #                             est_betas = betas_dr, 
-  #                             tran = sims_in$adj$trans,
-  #                             trial = sims_in$adj$trial)
+  temp <- reg_dat
+  # comp_dat <- sims_in$raw$obs / rowSums(sims_in$raw$obs) 
+  temp$comp <- DR_data(sims_in$adj$obs / 100)
+
+  fit_dr <- DirichletReg::DirichReg(comp ~ reg + fac, data = temp)
+  betas_dr <- coef(fit_dr) %>%
+    do.call(c, .) %>%
+    as.vector()
+  coef_dat_DR <- make_coef_df(betas,
+                              est_betas = betas_dr,
+                              tran = "DR",
+                              trial = sims_in$adj$trial)
   
   # output lists
   obs_list <- list(dir1 = Y_d1, 
                    dir2 = Y_d2, 
-                   multi = Y_m
-                   # , 
-                   # DR = (Y_d2 / 100)
+                   multi = Y_m, 
+                   DR = (Y_d2 / 100)
                    )
   fits_list <- list(dir1 = ssdr_dir, 
                     dir2 = ssdr_dir2, 
-                    multi = ssdr_m
-                    # , 
-                    # DR = fit_dr
+                    multi = ssdr_m, 
+                    DR = fit_dr
                     )
   coef_list <- list(dir1 = coef_dat_dir, 
-                    dir2 = coef_dat_dir2
-                    # , 
-                    # DR = coef_dat_DR
+                    dir2 = coef_dat_dir2, 
+                    DR = coef_dat_DR
                     )
   return(list(obs = obs_list, fits = fits_list, coefs = coef_list))
 })
 
+
+# Compare coefficient estimates ------------------------------------------------
+## excludes multinomial because estimated parameters are different
+
+coef_dat <- map(fit_list, function (x) {
+  x$coefs %>% 
+    bind_rows()
+}) %>% 
+  bind_rows()
+
+ggplot(coef_dat) + 
+  geom_boxplot(aes(x = as.factor(tran), y = est)) +
+  geom_hline(aes(yintercept = true)) +
+  facet_wrap(~beta, scales = "free_y")
+
+
+# Compare predictions ----------------------------------------------------------
 
 # function to generate dataframe of true vales for each model type based on
 # different input structures
@@ -236,16 +251,17 @@ make_true_df <- function(model, trial, y_obs) {
     cbind(., y_obs, row_sum) %>% 
     pivot_longer(., cols = 3:(3 - 1 + K), names_to = "cat", 
                  values_to = "prob") %>%  
-    mutate(model = model,
+    mutate(#model = model,
            trial = trial) %>% 
     group_by(reg, fac, cat) %>%
     mutate(
-      true_prob = case_when(
-        model %in% c("dir_adj", "dir_raw") ~ mean(prob / row_sum),
-        model == "multi" ~ sum(prob) / sum(row_sum)
-        )
+      true_prob = mean(prob / row_sum)
+      # true_prob = case_when(
+      #   model %in% c("dir_adj", "dir_raw") ~ mean(prob / row_sum),
+      #   model == "multi" ~ sum(prob) / sum(row_sum)
+      #   )
       ) %>%
-    select(trial, model, reg, fac, cat, true_prob) %>% 
+    select(trial, reg, fac, cat, true_prob) %>% 
     distinct()
 }
 
@@ -257,7 +273,8 @@ make_pred_df <- function(model, true_dat, ssdr_in) {
               cat = as.character(seq(1, K, by = 1))) %>% 
     distinct() %>%
     arrange(cat, reg) %>%
-    left_join(., true_dat, by = c("reg", "fac", "cat"))
+    left_join(., true_dat, by = c("reg", "fac", "cat")) %>% 
+    mutate(model = model)
   
   if (model == "multi") {
     out <- dum %>% 
@@ -290,26 +307,19 @@ make_pred_df <- function(model, true_dat, ssdr_in) {
 pred_list <- map(fit_list, function (x) {
   # pull trial from coef dataframe 
   trial_n <- unique(x$coefs$dir1$trial)
+  true_df_in <- make_true_df(model = "dir_raw", trial = trial_n,
+                             y_obs = x$obs$dir1)
   
   preds_dir1 <- x$fits$dir1[rownames(x$fits$dir1) %in% "pred_pi_prop" , ]
-  true_df_dir1 <- make_true_df(model = "dir_raw",
-                               trial = trial_n,
-                               y_obs = x$obs$dir1)
-  pred_df_dir1 <- make_pred_df(model = "dir_raw", true_dat = true_df_dir1,
+  pred_df_dir1 <- make_pred_df(model = "dir_raw", true_dat = true_df_in,
                                ssdr_in = preds_dir1)
   
   preds_dir2 <- x$fits$dir2[rownames(x$fits$dir2) %in% "pred_pi_prop" , ]
-  true_df_dir2 <- make_true_df(model = "dir_adj",
-                               trial = trial_n,
-                               y_obs = x$obs$dir2)
-  pred_df_dir2 <- make_pred_df(model = "dir_adj", true_dat = true_df_dir2,
+  pred_df_dir2 <- make_pred_df(model = "dir_adj", true_dat = true_df_in,
                                ssdr_in = preds_dir2)
   
   preds_m <- x$fits$multi[rownames(x$fits$multi) %in% "logit_probs_out" , ]
-  true_df_m <- make_true_df(model = "multi",
-                            trial = trial_n,
-                            y_obs = x$obs$multi)
-  pred_df_m <- make_pred_df(model = "multi", true_dat = true_df_m,
+  pred_df_m <- make_pred_df(model = "multi", true_dat = true_df_in,
                             ssdr_in = preds_m)
   
   rbind(pred_df_dir1, pred_df_dir2, pred_df_m)
@@ -319,6 +329,8 @@ pred_out <- pred_list %>%
   bind_rows() 
 pred_out$sq_err <- (pred_out$mu - pred_out$true_prob)^2
 
+# calculate rmse and average coverage of predicted proportions per trial for 
+# each model
 fig_summ <- pred_out %>% 
   group_by(model, trial) %>% 
   summarize(coverage = mean(covered),
@@ -329,12 +341,3 @@ fig_summ <- pred_out %>%
 ggplot(fig_summ) +
   geom_boxplot(aes(x = model, y = est)) +
   facet_wrap(~perf_ind, scales = "free_y")
-
-# check to confirm true and predicted values sum to one
-# temp_list <- list(pred_df_dir1, pred_df_dir2, pred_df_m)
-# map(temp_list, function(x) {
-#   x %>% 
-#     group_by(reg, fac) %>% 
-#     summarize(sum(true_prob),
-#               sum(mu))
-# })
