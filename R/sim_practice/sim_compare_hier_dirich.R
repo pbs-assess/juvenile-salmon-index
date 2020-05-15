@@ -191,30 +191,36 @@ fit_list <- map(sim_list, function(sims_in) {
   ssdr_m <- summary(sdr_m)
   
   ## Fit dirichlet regression from DirichletReg
-  temp <- reg_dat
-  temp$comp <- DR_data(sims_in$adj$obs / 100)
-  
-  fit_dr <- DirichletReg::DirichReg(comp ~ reg + fac, data = temp)
-  betas_dr <- coef(fit_dr) %>%
-    do.call(c, .) %>%
-    as.vector()
-  coef_dat_DR <- make_coef_df(betas,
-                              est_betas = betas_dr, 
-                              tran = sims_in$adj$trans,
-                              trial = sims_in$adj$trial)
+  # temp <- reg_dat
+  # temp$comp <- DR_data(sims_in$adj$obs / 100)
+  # 
+  # fit_dr <- DirichletReg::DirichReg(comp ~ reg + fac, data = temp)
+  # betas_dr <- coef(fit_dr) %>%
+  #   do.call(c, .) %>%
+  #   as.vector()
+  # coef_dat_DR <- make_coef_df(betas,
+  #                             est_betas = betas_dr, 
+  #                             tran = sims_in$adj$trans,
+  #                             trial = sims_in$adj$trial)
   
   # output lists
   obs_list <- list(dir1 = Y_d1, 
                    dir2 = Y_d2, 
-                   multi = Y_m, 
-                   DR = (Y_d2 / 100))
+                   multi = Y_m
+                   # , 
+                   # DR = (Y_d2 / 100)
+                   )
   fits_list <- list(dir1 = ssdr_dir, 
                     dir2 = ssdr_dir2, 
-                    multi = ssdr_m, 
-                    DR = fit_dr)
+                    multi = ssdr_m
+                    # , 
+                    # DR = fit_dr
+                    )
   coef_list <- list(dir1 = coef_dat_dir, 
-                    dir2 = coef_dat_dir2, 
-                    DR = coef_dat_DR)
+                    dir2 = coef_dat_dir2
+                    # , 
+                    # DR = coef_dat_DR
+                    )
   return(list(obs = obs_list, fits = fits_list, coefs = coef_list))
 })
 
@@ -309,14 +315,20 @@ pred_list <- map(fit_list, function (x) {
   rbind(pred_df_dir1, pred_df_dir2, pred_df_m)
 })
 
-tt <- pred_list %>% 
-  bind_rows %>% 
-  mutate(s)
+pred_out <- pred_list %>% 
+  bind_rows() 
+pred_out$sq_err <- (pred_out$mu - pred_out$true_prob)^2
 
-tt %>% 
+fig_summ <- pred_out %>% 
   group_by(model, trial) %>% 
-  summarize(coverage = mean(covered)) #/ length(covered)))
+  summarize(coverage = mean(covered),
+            rmse = mean(sq_err))  %>% 
+  pivot_longer(., cols = c("coverage", "rmse"), names_to = "perf_ind", 
+               values_to = "est")
 
+ggplot(fig_summ) +
+  geom_boxplot(aes(x = model, y = est)) +
+  facet_wrap(~perf_ind, scales = "free_y")
 
 # check to confirm true and predicted values sum to one
 # temp_list <- list(pred_df_dir1, pred_df_dir2, pred_df_m)
