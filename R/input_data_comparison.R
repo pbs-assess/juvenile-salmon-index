@@ -75,6 +75,28 @@ data.frame(time_f = unique(ipes_only$time_f),
   ggsidekick::theme_sleek()
 
 
+## alternative format using brms
+library(brms)
+
+fit_zibinB <- brm(ck_juv ~ time_f + (1|year), data = ipes_only, 
+                  family = zero_inflated_negbinomial(),
+                  chains = 4, cores = 4, control = list(adapt_delta = 0.97))
+plot(marginal_effects(fit_zibinB))
+summary(fit_zibinB)
+
+
+
+zinb <- read.csv("http://stats.idre.ucla.edu/stat/data/fish.csv")
+
+## fit a model with constant zero inflation
+fit_zinb1 <- brm(count ~ s(persons, k = 4) + s(child, k = 4) + camper, 
+                 data = zinb, family = zero_inflated_negbinomial(),
+                 chains = 4, cores = 4,
+                 control = list(adapt_delta = 0.999))
+## plot the marginal effects
+plot(marginal_effects(fit_zinb1))
+## model summary
+summary(fit_zinb1, WAIC = FALSE)
 
 # ------------------------------------------------------------------------------
 ## Test for spatial stratification impacts
