@@ -51,7 +51,7 @@ grid <- jchin1 %>%
   make_pred_grid()
 grid <- grid / 10000
 
-bnd <- INLA::inla.nonconvex.hull(as.matrix(pred_grid), convex = -0.03)
+bnd <- INLA::inla.nonconvex.hull(as.matrix(grid), convex = -0.03)
 plot(bnd$loc)
 mesh.loc <- SpatialPoints(as.matrix(cbind(jchin1$xUTM_start, 
                                           jchin1$yUTM_start)))

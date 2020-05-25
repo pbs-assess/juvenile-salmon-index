@@ -35,7 +35,7 @@ jchin <- bridge %>%
                 ck_juv, juv_cpue)
 ```
 
-** Day/Night Comparison **
+**Day/Night Comparison**
 
 To evaluate day/night impacts I fit a zero-inflated negative binomial model to the IPES data. The day/night intercept was the only fixed effect and year was treated as a random intercept to account for covariance in abundance within a survey. Given that the survey is intentionally structured to be randomly stratified I believe additional covariates are probably unnecessary for this particular question.
 
@@ -45,8 +45,8 @@ ipes_only <- jchin %>%
          month %in% c(6, 7),
          dataset == "IPES")
 
-fit_zibin <- glmmTMB(ck_juv ~ time_f + (1|year), data = ipes_only, 
-                     ziformula = ~1|year, family = nbinom2)
+fit_zibin <- glmmTMB(ck_juv ~ time_f + (1 | year), data = ipes_only, 
+                     ziformula = ~1 | year, family = nbinom2)
 summary(fit_zibin)
 ```
 
@@ -79,7 +79,7 @@ data.frame(time_f = unique(ipes_only$time_f),
 So the night data predict an abundance of ~0.35 and day of 0.42 juvenile Chinook per tow, but there's substantial overlap in the confidence intervals. I also tried fitting similar models with tweedie and poisson distributions. They generated similar results, but weren't supported given AIC scores. Unless we identify other covariates that might confound this relationship I would suggest that, at least for juvenile Chinook, we can pool day and night tows when making annual indices.
 
 
-** Annual Index **
+**Annual Index**
 
 First generate two datasets that subset the high seas data in different ways (the goal is to retain as much as is appropriate since a model accounting for stock composition will be very data hungry). Both datasets are constrained to only include June/July catches (though I'd like to eventually look into incorporating more data) and tows less than 21 m deep. The less conservative dataset includes all the regions where spatial overlap of the two surveys occurs (e.g. WCVI inlets, QCS). The second includes only the high seas surveys that fall within the IPES standard survey grid (based on Erika's SQL code).
 
@@ -106,23 +106,31 @@ nAm <- map_data("world") %>%
   filter(region %in% c("Canada", "USA"))
 rbind(jchin1, jchin2) %>% 
   ggplot(.) +
-  geom_point(aes(x = start_long, y = start_lat, color = dataset), alpha = 0.4) +
-  geom_map(data = nAm, map = nAm, aes(long, lat, map_id = region),
-           color = "black", fill = "gray80") +
-  coord_fixed(xlim = c(-129.5, -123), ylim = c(48, 52), ratio = 1.3) +
-  facet_wrap(~trim_size) +
-  ggsidekick::theme_sleek()
+    geom_point(aes(x = start_long, y = start_lat, color = dataset), 
+               alpha = 0.4) +
+    geom_map(data = nAm, map = nAm, aes(long, lat, map_id = region),
+             color = "black", fill = "gray80") +
+    scale_colour_discrete("Dataset") +
+    coord_fixed(xlim = c(-129.5, -123), ylim = c(48, 52), ratio = 1.3) +
+    facet_wrap(~trim_size) +
+    ggsidekick::theme_sleek() +
+    labs(y = "", x = "")
+
 
 rbind(jchin1, jchin2) %>% 
   ggplot(., aes(x = yday, y = juv_cpue, colour = as.factor(dataset))) +
     geom_point(alpha = 0.5) +
+    scale_colour_discrete("Dataset") +
     facet_wrap(~trim_size) +
-    ggsidekick::theme_sleek()
+    ggsidekick::theme_sleek() +
+    labs(y = "Juvenile CPUE\n(catch / tow hour)", x = "Year Day")
 ```
 
-The majority of both datasets are shared and come from the core IPES sets, so it's unsurprising that they both show similar seasonal patterns in catch (i.e. peaking in late June); howerver, there are certainly some differences in abundance driven by the inlets (presumably more catch) and offshore tows (presumably less catch). We could chop the former dataset a bit more if we're interested in keeping more data but excluding the offshore transects, but I wanted to maximize contrast on this first pass. 
+The majority of both datasets are shared and come from the core IPES sets, so it's unsurprising that they both show similar seasonal patterns in catch (i.e. peaking in late June); howerver, there are certainly some differences in abundance driven by the inlets (presumably more catch) and offshore tows (presumably less catch). We could chop the larger dataset a bit more if we're interested in keeping more data but excluding the offshore transects, but I wanted to maximize contrast on this first pass. 
 
-Now we prep the SPDE mesh necessary to account for spatial heterogeneity and fit Sean's models. To account for those seasonal effects we include z-scored year day as a covariate. To account for differences in tow length (the average high seas tow was substantially longer), I fit the models to catch and included tow duration as an offset. The data are not log transformed prior because the negative binomial is intended for positive integer data and can account for a relatively large number of zeros. Note that the run time for these models can be pretty long so I've included the RDS files that you can simply load once you move them to the appropriate location.
+Now we prep the SPDE mesh necessary to account for spatial heterogeneity and fit Sean's models. As I understand it stochastic partial differential equation (SPDE) approaches are a family of techniques to approximate continuous spatial processes using covariance functions applied to point data. The structure of the mesh (shape and number of panels) can strongly influence predictions. While there are some general guidelines, but best practice is still to experiment with various layouts. 
+
+When fitting the models we also include a range of fixed covariates. To account for seasonal effects we include z-scored year day as a covariate. To account for differences in tow length (the average high seas tow was substantially longer), I fit the models to catch and included tow duration as an offset. The data are not log transformed prior because the negative binomial is intended for positive integer data and can account for a relatively large number of zeros. Note that the run time for these models can be pretty long so I've included the RDS files that you can simply load once you move them to the appropriate location.
 
 ```{r annual_index_fit}
 # Make mesh representing survey area for each dataset

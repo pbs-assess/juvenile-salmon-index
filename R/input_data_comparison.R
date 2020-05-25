@@ -51,7 +51,7 @@ library(glmmTMB)
 #fit various models with distributions appropriate for zero-inflated integer 
 #data
 fit_zibin <- glmmTMB(ck_juv ~ time_f + (1|year), data = ipes_only, 
-                     ziformula = ~1, family = nbinom2)
+                     ziformula = ~1 + (1|year), family = nbinom2)
 fit_pois <- glmmTMB(ck_juv ~ time_f + (1|year), data = ipes_only, 
                      ziformula = ~1, family = poisson)
 summary(fit_zibin)
@@ -84,19 +84,23 @@ fit_zibinB <- brm(ck_juv ~ time_f + (1|year), data = ipes_only,
 plot(marginal_effects(fit_zibinB))
 summary(fit_zibinB)
 
+predsB <- predict(fit_zibinB,
+                 newdata = data.frame(time_f = unique(ipes_only$time_f),
+                                      year = NA),
+                 se.fit = TRUE,
+                 type = "response")
+
+data.frame(time_f = unique(ipes_only$time_f),
+           fit = predsB[ , "Estimate"],
+           se = predsB[ , "Est.Error"]) %>% 
+  mutate(low = fit + qnorm(0.025) * se,
+         up = fit + qnorm(0.975) * se) %>% 
+  ggplot(.) +
+  geom_pointrange(aes(x = time_f, y = fit, ymin = low, ymax = up)) +
+  labs(x = "Sampling Time", y = "Predicted Abundance Per Tow") +
+  ggsidekick::theme_sleek()
 
 
-zinb <- read.csv("http://stats.idre.ucla.edu/stat/data/fish.csv")
-
-## fit a model with constant zero inflation
-fit_zinb1 <- brm(count ~ s(persons, k = 4) + s(child, k = 4) + camper, 
-                 data = zinb, family = zero_inflated_negbinomial(),
-                 chains = 4, cores = 4,
-                 control = list(adapt_delta = 0.999))
-## plot the marginal effects
-plot(marginal_effects(fit_zinb1))
-## model summary
-summary(fit_zinb1, WAIC = FALSE)
 
 # ------------------------------------------------------------------------------
 ## Test for spatial stratification impacts

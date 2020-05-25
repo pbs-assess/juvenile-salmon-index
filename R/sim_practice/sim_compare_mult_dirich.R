@@ -62,6 +62,10 @@ f_sim <- function(trial = 1, scalar = 100) {
   pi = apply(Gamma, 2, function(x) {x / theta})
   pi_prob = pi / rowSums(pi)
   
+  ### TRY NEW DISTRIBUTION
+  # set.seed(123)
+  # dirmult::rdirichlet(1, pi[1, ] * (1 - theta[1]) / theta[1])
+  
   #number of values to simulate per row of input
   # N <- sample(c(1:1000), n, replace = T)
   N <- rep(100, n)
@@ -71,7 +75,8 @@ f_sim <- function(trial = 1, scalar = 100) {
   # set.seed(123 + trial)
   Y = simPop(J = 1, n = N[1], pi = pi_prob[1,], theta = theta[1])$data
   for(jj in c(2:n)){
-    Y = rbind(Y, simPop(J = 1, n = N[jj], pi = pi_prob[jj,], theta = theta[jj])$data)
+    Y = rbind(Y, simPop(J = 1, n = N[jj], pi = pi_prob[jj,], 
+                        theta = theta[jj])$data)
   }
   
   #switch to proportions and add small value
@@ -148,7 +153,7 @@ make_coef_df <- function(betas, est_betas, tran, trial) {
 
 
 fit_list <- map(sim_list, function(sims_in) {
-  ## Fit dirichlet TMB wtih raw data
+  ## Fit dirichlet TMB wtih raw data (i.e. integers for each category)
   Y_d1 <- sims_in$raw$obs
   obj <- MakeADFun(data=list(fx_cov = fix_mm,
                              y_obs = Y_d1,
@@ -163,7 +168,7 @@ fit_list <- map(sim_list, function(sims_in) {
                                tran = sims_in$raw$trans,
                                trial = sims_in$raw$trial)
   
-  ## Fit dirichlet TMB with adjusted data (proportions multiplied by scalar)
+  ## Fit dirichlet TMB with adjusted data (i.e. proportions multiplied by scalar)
   Y_d2 <- sims_in$adj$obs
   obj <- MakeADFun(data=list(fx_cov = fix_mm,
                              y_obs = Y_d2,
@@ -221,10 +226,12 @@ fit_list <- map(sim_list, function(sims_in) {
                     )
   return(list(obs = obs_list, fits = fits_list, coefs = coef_list))
 })
+saveRDS(fit_list, here::here("data", "modelFits", "multi_dir_comp.RDS"))
 
 
 # Compare coefficient estimates ------------------------------------------------
 ## excludes multinomial because estimated parameters are different
+fit_list <- readRDS(here::here("data", "modelFits", "multi_dir_comp.RDS"))
 
 coef_dat <- map(fit_list, function (x) {
   x$coefs %>% 
