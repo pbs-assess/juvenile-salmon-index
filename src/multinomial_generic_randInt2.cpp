@@ -6,7 +6,8 @@ Type objective_function<Type>::operator()()
   DATA_MATRIX(fx_cov);   // model matrix for fixed effects
   DATA_IVECTOR(rfac);    // vector of random factor levels
   DATA_INTEGER(n_rfac);  // number of random factor levels
-  DATA_IVECTOR(all_fac); // vector of combined factor levels (fix and rand.)
+  // NOTE ONLY NECESSARY TO CHECK RANDOM EFF PREDS
+  DATA_IVECTOR(all_fac); // vector of combined factor levels (fix and rand.); 
   DATA_IVECTOR(fac_key); // vector of unique combined factor levels (fix and rand.)
 
   int n_obs = y_obs.rows();           // number of observations

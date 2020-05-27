@@ -244,6 +244,18 @@ ggplot(coef_dat) +
   geom_hline(aes(yintercept = true)) +
   facet_wrap(~beta, scales = "free_y")
 
+# look at rmse of different transformation
+coef_dat  %>% 
+  mutate(
+    sq_err = (true - est)^2
+  ) %>% 
+  group_by(beta, tran) %>% 
+  mutate(rmse = sqrt(mean(sq_err))) %>% 
+  ungroup() %>% 
+  ggplot(.) +
+  geom_boxplot(aes(x = tran, y = rmse)) +
+  ggsidekick::theme_sleek() #+
+  # facet_wrap(~beta, scales = "free")
 
 # Compare predictions ----------------------------------------------------------
 

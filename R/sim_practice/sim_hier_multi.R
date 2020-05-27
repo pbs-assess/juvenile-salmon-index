@@ -179,8 +179,8 @@ obs_dat <- dumm %>%
 logit_probs_mat <- ssdr[rownames(ssdr) %in% "logit_probs_out", ]
 pred_ci_pool <- data.frame(cat = as.character(rep(1:(k + 1), 
                                                 each = length(unique(fac_key$facs_n)))), 
-                         logit_prob_est = logit_probs_mat_fe[ , "Estimate"],
-                         logit_prob_se =  logit_probs_mat_fe[ , "Std. Error"]) %>% 
+                         logit_prob_est = logit_probs_mat[ , "Estimate"],
+                         logit_prob_se =  logit_probs_mat[ , "Std. Error"]) %>% 
   mutate(ests = "pool",
          facs_n = rep(fac_key$facs_n, times = k + 1))
 logit_probs_mat_fe <- ssdr[rownames(ssdr) %in% "logit_probs_out_fe", ]

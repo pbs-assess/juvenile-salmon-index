@@ -1,6 +1,8 @@
-# Simulate and fit unordered dirichlet response models with addition of 
-# random intercepts; based on models from following repo:
+# Simulate and fit unordered dirichlet response models; based on models from 
+# following repo:
 # https://github.com/carriegu/STAT-840/tree/master/DMRegression
+# Also includes comparison with DirichletReg package which has been used in 
+# published papers, but is now deprecated
 
 library(dirmult)
 library(TMB)
@@ -25,7 +27,7 @@ fix_mm <- model.matrix(~ (reg + fac), reg_dat)
 
 # fixed intercepts (P x K)
 P <- ncol(fix_mm) - 1
-K <- 3
+K <- 4
 betas <- matrix(rnorm((P+1)*K), (P+1), K)
 
 # function to simulate dirichlet data based on parameters and matrix
@@ -34,8 +36,8 @@ f_sim <- function(trial = 1, scalar = 100) {
   #calculate fixed effects using parameter matrix and model matrix
   n_fix_cov <- P
   fix_eff <- fix_mm %*% betas
-  colnames(fix_eff) <- paste("k", seq(1, K, by = 1), sep = "")
-
+  sum_fix_eff <- apply(fix_eff, 1, sum)
+  
   # generate random effects, then combine with fixed
   site_mean_a <- rnorm(mean = 0,
                        sd = sd_site,
@@ -49,12 +51,11 @@ f_sim <- function(trial = 1, scalar = 100) {
                          site_obs = site_obs_ia,
                          sd_site = sd_site
   ) %>%
-    cbind(., reg_dat) %>%  #bind regional fixed effects data
-    cbind(., fix_eff)
+    cbind(., reg_dat, sum_fix_eff)  #bind regional fixed effects data
   
   #calc gamma
-  Gamma = exp(fix_eff + site_obs_ia) #fixed effects and random effects
-  Gamma_plus = apply(Gamma, 1, sum) #sum of effects
+  Gamma = exp(fix_eff) #fixed effects
+  Gamma_plus = apply(Gamma, 1, sum) #sum of fixed_effects
   theta = 1 / (Gamma_plus + 1)
   pi = apply(Gamma, 2, function(x) {x / theta})
   
@@ -77,24 +78,25 @@ f_sim <- function(trial = 1, scalar = 100) {
   datf <- cbind(site_dat, Y_adj)
   
   return(list("trial" = trial, "obs" = Y, "obs_adj" = Y_adj,
-              "fixed_fac" = datf$reg, "rand_fac" = datf$site, 
-              "full_data" = datf
+              "fixed_fac" = datf$reg, "full_data" = datf
   ))
 }
 
-n_trials <- 100
+n_trials <- 5
 sims <- vector(mode = "list", length = n_trials)
 sims_100 <- vector(mode = "list", length = n_trials)
 for (i in 1:n_trials) {
-  sims_dat <- f_sim(trial = i, scalar = 1000)
+  sims_dat <- f_sim(trial = i, scalar = 100)
   sims[[i]] <- list(trial = i, obs = sims_dat$obs,
-                    full_dat = sims_dat$full_data, trans = "raw",
-                    rand_fac = sims_dat$rand_fac)
-  # sims_100[[i]] <- list(trial = i, obs = sims_dat$obs_adj,
-  #                       full_dat = sims_dat$full_data, trans = "adj100")
+                    full_dat = sims_dat$full_data, trans = "raw")
+  sims_100[[i]] <- list(trial = i, obs = sims_dat$obs_adj,
+                        full_dat = sims_dat$full_data, trans = "adj100")
 }
 
-# sim_list <- c(sims, sims_100)
+sim_list <- c(sims, sims_100)
+
+#initial parameter values
+beta_in <- matrix(rnorm(n = (P+1)*K, mean = 0), (P+1), K)
 
 #prediction model matrix
 pred_dat <- reg_dat %>%
@@ -103,92 +105,40 @@ pred_dat <- reg_dat %>%
   arrange(reg, fac)
 pred_mm <- model.matrix(~ reg + fac, pred_dat)
 
-compile(here::here("src", "dirichlet_randInt.cpp"))
-dyn.load(dynlib(here::here("src", "dirichlet_randInt")))
-
-# compile(here::here("src", "dirichlet_fixInt.cpp"))
-# dyn.load(dynlib(here::here("src", "dirichlet_fixInt")))
-
-sims_in <- sims[[2]]
+compile(here::here("src", "dirichlet_fixInt.cpp"))
+dyn.load(dynlib(here::here("src", "dirichlet_fixInt")))
+# dyn.load(dynlib(here::here("src", "DMRegressionFreq")))
 
 #fit models with all data
-fit_list_hier <- map(sim_list, function(sims_in) {
+fit_list <- map(sim_list, function(sims_in) {
   Y_in <- sims_in$obs
-  rfac <- as.numeric(sims_in$rand_fac) - 1 #subtract 1 for indexing in c++
-  n_rfac <- length(unique(rfac))
   
-  #initial parameter values
-  beta_in <- matrix(rnorm(n = (P+1) * K, mean = 0), (P + 1), K)
-  rand_int_in <- rep(0, times = length(unique(rfac)))
-  
-  obj <- MakeADFun(data = list(fx_cov = fix_mm,
-                               y_obs = Y_in,
-                               pred_cov = pred_mm,
-                               rfac = rfac,
-                               n_rfac = n_rfac
-  ),
-  parameters = list(z_ints = beta_in,
-                    z_rfac = rand_int_in,
-                    log_sigma_rfac = 0
-  ),
-  random = c("z_rfac"),
-  DLL = "dirichlet_randInt")
-  
+  obj <- MakeADFun(data=list(fx_cov = fix_mm,
+                             y_obs = Y_in,
+                             pred_cov = pred_mm),
+                   parameters=list(z_ints = beta_in),
+                   DLL="dirichlet_fixInt")
   opt <- nlminb(obj$par, obj$fn, obj$gr)
   sdr <- sdreport(obj)
   ssdr <- summary(sdr)
-  fix_eff <- data.frame(
-    par = "beta",
-    par_n = seq(1, length(betas), by = 1),
+  data.frame(
+    beta = seq(1, length(betas), by = 1),
     est = ssdr[rownames(ssdr) %in% "z_ints" , 1],
-    true = as.vector(betas)
+    true = as.vector(betas),
+    tran = sims_in$trans,
+    trial = sims_in$trial
   )
-  rand_eff <- data.frame(
-    par = c(rep("alpha", n_rfac), "sigma_a"),
-    par_n = c(seq(1, n_rfac, by = 1), 1),
-    est = c(ssdr[rownames(ssdr) %in% "z_rfac" , 1], 
-            ssdr[rownames(ssdr) %in% "sigma_rfac" , 1]),
-    true = c(unique(sims_in$full_dat$site_mean), sd_site)
-  )
-  
-  rbind(fix_eff, rand_eff) %>% 
-    mutate(tran = sims_in$trans,
-           trial = sims_in$trial)  
 })
 
+coef_dat <- fit_list %>%
+  bind_rows()
 
-saveRDS(fit_list_hier, here::here("data", "modelFits", "hier_dir_sim_fits.RDS"))
-fit_list_hier <- readRDS(here::here("data", "modelFits", "hier_dir_sim_fits.RDS"))
-
-# plot coefficient estimates
-coef_dat_hier <- fit_list_hier %>%
-  bind_rows() %>% 
-  mutate(
-    par_n = case_when(
-      par == "sigma_a" ~ 1,
-      TRUE ~ par_n),
-    sq_err = (true - est)^2
-    ) %>% 
-  group_by(par, par_n) %>% 
-  mutate(rmse = sqrt(mean(sq_err))) %>% 
-  ungroup()
-
-par_est_box <- ggplot(coef_dat_hier) +
-  geom_boxplot(aes(x = as.factor(par_n), y = est)) +
-  geom_point(aes(x = as.factor(par_n), y = true), color = "red", shape = 21) +
+ggplot(coef_dat) +
+  geom_boxplot(aes(x = tran, y = est)) +
+  geom_hline(aes(yintercept = true), color = "red") +
+  # geom_point(aes(x = tran, y = true), shape = 21, fill = "red") +
   ggsidekick::theme_sleek() +
-  facet_wrap(~par, scales = "free")
-
-par_rmse_box <- ggplot(coef_dat_hier) +
-  geom_boxplot(aes(x = as.factor(par_n), y = rmse)) +
-  ggsidekick::theme_sleek() +
-  facet_wrap(~par, scales = "free")
-
-pdf(here::here("figs", "hier_dirich_performance.pdf")) 
-par_est_box
-par_rmse_box
-dev.off()
-
+  facet_wrap(~beta, scales = "free_y")
 
 # look at one sims predictions
 ssdr_out <- fit_list[[1]]$est
@@ -204,7 +154,7 @@ pred_pi_prop
 cbind(pred_dat, probs = ssdr[rownames(ssdr) %in% "pred_pi_prop" , 1])
 
 datf <- sims_in$full_dat
-  
+
 datf %>%
   pivot_longer(., cols = `1`:`4`, names_to = "cat", values_to = "prob") %>% 
   group_by(reg, fac, cat) %>%
