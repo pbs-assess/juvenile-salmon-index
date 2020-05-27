@@ -104,7 +104,7 @@ f_sim <- function(trial = 1) {
               "full_data" = datf))
 }
 
-dat_list <- vector(mode = "list", length = 10)
+dat_list <- vector(mode = "list", length = 100)
 for (i in seq_along(dat_list)) {
   dat_list[[i]] <- f_sim(trial = i)
 }
@@ -210,10 +210,21 @@ ggplot(pred_ci %>% filter(fac == "1", reg == "1")) +
 ests <- map(dat_list, function(x) {
   y_obs <- x$obs
   rfac <- as.numeric(x$rand_fac) - 1 #subtract for indexing by 0
+  n_rfac <- length(unique(rfac))
+  fac_dat <- x$full_data %>% 
+    mutate(facs = as.factor(paste(reg, fac, site, sep = "_")),
+           facs_n = (as.numeric(facs) - 1)) %>% #subtract for indexing by 0 
+    select(reg, fac, site, facs, facs_n)
+  fac_key <- fac_dat %>% 
+    distinct() %>% 
+    arrange(facs_n)
+  
   data <- list(y_obs = y_obs,
                rfac = rfac,
                fx_cov = fix_mm, #model matrix from above
-               n_rfac = length(unique(rfac))
+               n_rfac = n_rfac,
+               all_fac = fac_dat$facs_n, # vector of factor combinations
+               fac_key = fac_key$facs_n #ordered unique factor combos in fac_vec
   )
   parameters <- list(z_rfac = rep(0, times = length(unique(rfac))),
                      z_ints = matrix(0, nrow = ncol(fix_mm),
@@ -221,7 +232,7 @@ ests <- map(dat_list, function(x) {
                      log_sigma_rfac = 0)
   ## Make a function object
   obj <- MakeADFun(data, parameters, random = c("z_rfac"),
-                   DLL = "multinomial_generic_randInt_fixInt")
+                   DLL = "multinomial_generic_randInt2")
   
   ## Call function minimizer
   opt <- nlminb(obj$par, obj$fn, obj$gr)
@@ -229,39 +240,72 @@ ests <- map(dat_list, function(x) {
   ## Get parameter uncertainties and convergence diagnostics
   sdr <- sdreport(obj)
   ssdr <- summary(sdr) 
-  trim_ssdr <- ssdr[!rownames(ssdr) %in% "logit_probs", ]
   
-  fac_seq <- paste("z_rfac", seq(1, length(unique(rfac)), by = 1),
-                   sep = "_")
-  as.data.frame(trim_ssdr) %>% 
-    mutate(par = c("g1_int", "g2_int", "reg2_g1", "reg2_g2", "reg3_g1", 
-                   "reg3_g2", "fac2_g1", "fac2_g2", "log_sigma_rfac", 
-                   fac_seq, "sigma_fac1"),
-           trial = x$trial,
-           vals = x$trim_data)
+  fix_eff <- data.frame(
+    par = "beta",
+    par_n = seq(1, length(fix_ints), by = 1),
+    est = ssdr[rownames(ssdr) %in% "z_ints" , 1],
+    true = as.vector(fix_ints)
+  )
+  rand_eff <- data.frame(
+    par = c(rep("alpha", n_rfac), "sigma_a"),
+    par_n = c(seq(1, n_rfac, by = 1), 1),
+    est = c(ssdr[rownames(ssdr) %in% "z_rfac" , 1], 
+            ssdr[rownames(ssdr) %in% "sigma_rfac" , 1]),
+    true = c(unique(x$full_data$site_mean), sd_site)
+  )
+  
+  rbind(fix_eff, rand_eff) %>% 
+    mutate(trial = x$trial) 
 }) %>% 
   bind_rows()
 
-ests %>% 
-  filter(par %in% c("g1_int", "g2_int", "reg2_g1", "reg2_g2", "reg3_g1", 
-                    "reg3_g2", "fac2_g1", "fac2_g2", "sigma_fac1")) %>%
-  ggplot(.) +
-  geom_boxplot(aes(x = par, y = Estimate)) +
-  geom_point(aes(x = par, y = vals), colour = "red")
+coef_dat_hier_m <- ests %>%
+  bind_rows() %>% 
+  mutate(
+    sq_err = (true - est)^2
+  ) %>% 
+  group_by(par, par_n) %>% 
+  mutate(rmse = sqrt(mean(sq_err))) %>% 
+  ungroup()
 
-r_effs <- ests %>% 
-  filter(grepl("z_rfac", par)) %>%
-  mutate(p_err = (Estimate - vals) / vals) 
+par_est_box <- ggplot(coef_dat_hier_m) +
+  geom_boxplot(aes(x = as.factor(par_n), y = est)) +
+  geom_point(aes(x = as.factor(par_n), y = true), color = "red", shape = 21) +
+  ggsidekick::theme_sleek() +
+  facet_wrap(~par, scales = "free")
 
-r_effs %>% 
-  select(par, est = Estimate, true = vals) %>% 
-  pivot_longer(-par, names_to = "type", values_to = "value") %>% 
-  ggplot(.) +
-  geom_boxplot(aes(x = type, y = value)) +
-  facet_wrap(~par)
+par_rmse_box <- ggplot(coef_dat_hier_m) +
+  geom_boxplot(aes(x = as.factor(par_n), y = rmse)) +
+  ggsidekick::theme_sleek() +
+  facet_wrap(~par, scales = "free")
 
-ggplot(r_effs) +
-  geom_boxplot(aes(x = par, y = p_err))
+pdf(here::here("figs", "hier_multi_performance.pdf")) 
+par_est_box
+par_rmse_box
+dev.off()
+
+
+# ests %>% 
+#   filter(par %in% c("g1_int", "g2_int", "reg2_g1", "reg2_g2", "reg3_g1", 
+#                     "reg3_g2", "fac2_g1", "fac2_g2", "sigma_fac1")) %>%
+#   ggplot(.) +
+#   geom_boxplot(aes(x = par, y = Estimate)) +
+#   geom_point(aes(x = par, y = vals), colour = "red")
+# 
+# r_effs <- ests %>% 
+#   filter(grepl("z_rfac", par)) %>%
+#   mutate(p_err = (Estimate - vals) / vals) 
+# 
+# r_effs %>% 
+#   select(par, est = Estimate, true = vals) %>% 
+#   pivot_longer(-par, names_to = "type", values_to = "value") %>% 
+#   ggplot(.) +
+#   geom_boxplot(aes(x = type, y = value)) +
+#   facet_wrap(~par)
+# 
+# ggplot(r_effs) +
+#   geom_boxplot(aes(x = par, y = p_err))
 
 
 # MISC -------------------------------------------------------------------------
