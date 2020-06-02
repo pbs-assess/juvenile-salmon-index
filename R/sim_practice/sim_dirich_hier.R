@@ -86,12 +86,12 @@ n_trials <- 100
 sims <- vector(mode = "list", length = n_trials)
 sims_100 <- vector(mode = "list", length = n_trials)
 for (i in 1:n_trials) {
-  sims_dat <- f_sim(trial = i, scalar = 1000)
+  sims_dat <- f_sim(trial = i, scalar = 100)
   sims[[i]] <- list(trial = i, obs = sims_dat$obs,
                     full_dat = sims_dat$full_data, trans = "raw",
                     rand_fac = sims_dat$rand_fac)
-  # sims_100[[i]] <- list(trial = i, obs = sims_dat$obs_adj,
-  #                       full_dat = sims_dat$full_data, trans = "adj100")
+  sims_100[[i]] <- list(trial = i, obs = sims_dat$obs_adj,
+                        full_dat = sims_dat$full_data, trans = "adj100")
 }
 
 # sim_list <- c(sims, sims_100)
@@ -109,11 +109,11 @@ dyn.load(dynlib(here::here("src", "dirichlet_randInt")))
 # compile(here::here("src", "dirichlet_fixInt.cpp"))
 # dyn.load(dynlib(here::here("src", "dirichlet_fixInt")))
 
-sims_in <- sims[[2]]
+sims_in <- sims_100[[1]]
 
 #fit models with all data
 fit_list_hier <- map(sim_list, function(sims_in) {
-  Y_in <- sims_in$obs
+  Y_in <- round(sims_in$obs, 0)
   rfac <- as.numeric(sims_in$rand_fac) - 1 #subtract 1 for indexing in c++
   n_rfac <- length(unique(rfac))
   
