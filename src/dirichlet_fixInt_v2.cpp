@@ -3,8 +3,8 @@ template<class Type>
 Type objective_function<Type>::operator() () 
 {
   // data inputs
-  DATA_MATRIX(y_obs);    // response matrix (a n-by-k matrix)
-  DATA_MATRIX(fx_cov);   // covariate matrix (a n-by-j matrix, first column is 1 to account for intercept)
+  DATA_MATRIX(y_obs);    // response matrix (n-by-k matrix)
+  DATA_MATRIX(fx_cov);   // model matrix for covariates
   DATA_MATRIX(pred_cov);    // model matrix of predictions
 
   // parameter inputs
