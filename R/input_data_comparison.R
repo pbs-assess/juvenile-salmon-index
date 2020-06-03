@@ -52,8 +52,8 @@ library(glmmTMB)
 #data
 fit_zibin <- glmmTMB(ck_juv ~ time_f + (1|year), data = ipes_only, 
                      ziformula = ~1 + (1|year), family = nbinom2)
-fit_pois <- glmmTMB(ck_juv ~ time_f + (1|year), data = ipes_only, 
-                     ziformula = ~1, family = poisson)
+# fit_pois <- glmmTMB(ck_juv ~ time_f + (1|year), data = ipes_only, 
+#                      ziformula = ~1, family = poisson)
 summary(fit_zibin)
 summary(fit_pois)
 AIC(fit_zibin, fit_pois)
@@ -80,9 +80,17 @@ library(brms)
 
 fit_zibinB <- brm(ck_juv ~ time_f + (1|year), data = ipes_only, 
                   family = zero_inflated_negbinomial(),
-                  chains = 4, cores = 4, control = list(adapt_delta = 0.97))
+                  chains = 4, cores = 4, control = list(adapt_delta = 0.99),
+                  iter = 4000)
 plot(marginal_effects(fit_zibinB))
 summary(fit_zibinB)
+
+fit_zibinB2 <- brm(ck_juv ~ time_f, data = ipes_only, 
+                  family = zero_inflated_negbinomial(),
+                  chains = 4, cores = 4, control = list(adapt_delta = 0.97))
+plot(marginal_effects(fit_zibinB2))
+summary(fit_zibinB2)
+
 
 predsB <- predict(fit_zibinB,
                  newdata = data.frame(time_f = unique(ipes_only$time_f),

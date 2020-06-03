@@ -36,7 +36,7 @@ f_sim <- function(trial = 1) {
   #calculate fixed effects using parameter matrix and model matrix
   n_fix_cov <- P
   fix_eff <- fix_mm %*% betas
-  colnames(fix_eff) <- paste("beta_k", seq(2, K+1, by = 1), sep = "")
+  colnames(fix_eff) <- paste("beta_k", seq(2, K + 1, by = 1), sep = "")
   
   # generate random effects, then combine with fixed
   site_mean_a <- rnorm(mean = 0,
@@ -108,6 +108,7 @@ obj <- MakeADFun(data=list(fx_cov = fix_mm,
                                  log_phi = runif(1, 1, 10),
                                  z_rfac = rfac_in,
                                  log_sigma_rfac = runif(1, 1, 10)),
+                 random = c("z_rfac"),
                  DLL="dirichlet_randInt_v2")
 opt <- nlminb(obj$par, obj$fn, obj$gr)
 sdr <- sdreport(obj)
