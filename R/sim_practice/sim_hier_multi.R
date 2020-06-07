@@ -2,6 +2,9 @@
 # random intercepts; adjustment of sim_hier_multi_old.
 # June 3, 2020
 
+library(tidyverse)
+library(TMB)
+
 set.seed(42)
 
 # random intercepts for groups (e.g. sites)
@@ -37,7 +40,7 @@ f_sim <- function(trial = 1) {
                        n = n_sites)
   site_obs_ia <- rnorm(mean = rep(site_mean_a, each = n_obs_per_site),
                        sd = 0, 
-                       n = N)
+                       n = n)
   total_eff <- fix_eff + site_obs_ia
   
   datf <- data.frame(site = as.factor(rep(seq(1, 5, by = 1),
@@ -64,13 +67,13 @@ f_sim <- function(trial = 1) {
   datf <- cbind(datf, y)
 
   # matrix version for dmultinom():
-  Y <- matrix(ncol = 3, nrow = N, data = 0)
+  Y <- matrix(ncol = 3, nrow = n, data = 0)
   for (i in seq_along(y)) Y[i, y[i]] <- 1
   
   # true values vector
-  tv <- c(as.vector(fix_ints), log(sd_site), site_mean_a, sd_site)
+  tv <- c(as.vector(betas), log(sd_site), site_mean_a, sd_site)
   
-  return(list("trial" = trial, "obs" = Y, "fixed_fac" = site_dat$reg, 
+  return(list("trial" = trial, "obs" = Y, "fixed_fac" = datf$reg, 
               "rand_fac" = datf$site, "trim_data" = tv, 
               "full_data" = datf))
 }
@@ -83,34 +86,42 @@ for (i in seq_along(dat_list)) {
 
 # PREP MODEL INPUTS ------------------------------------------------------------
 
-compile("src/multinomial_generic_randInt2.cpp")
-dyn.load(dynlib("src/multinomial_generic_randInt2"))
+compile("src/multinomial_randInt_v2.cpp")
+dyn.load(dynlib("src/multinomial_randInt_v2"))
 
 ## Data and parameters
-y_obs <- dat_list[[1]]$obs
+y_obs <- dat_list[[2]]$obs
 #vector of random intercept ids
-rfac <- as.numeric(dat_list[[1]]$rand_fac) - 1 #subtract for indexing by 0
-fac_dat <- dat_list[[1]]$full_data %>% 
+rfac <- as.numeric(dat_list[[2]]$rand_fac) - 1 #subtract for indexing by 0
+fac_dat <- dat_list[[2]]$full_data %>%
   mutate(facs = as.factor(paste(reg, fac, site, sep = "_")),
-         facs_n = (as.numeric(facs) - 1)) %>% #subtract for indexing by 0 
+         facs_n = (as.numeric(facs) - 1)) %>% #subtract for indexing by 0
   select(reg, fac, site, facs, facs_n)
-fac_key <- fac_dat %>% 
-  distinct() %>% 
+fac_key <- fac_dat %>%
+  distinct() %>%
   arrange(facs_n)
+
+pred_dat <- reg_dat %>%
+  select(reg, fac) %>%
+  distinct() %>%
+  arrange(reg, fac)
+pred_mm <- model.matrix(~ reg + fac, pred_dat)
 
 data <- list(y_obs = y_obs,
              rfac = rfac,
              fx_cov = fix_mm, #model matrix from above
              n_rfac = length(unique(rfac)),
-             all_fac = fac_dat$facs_n, # vector of factor combinations
-             fac_key = fac_key$facs_n #ordered unique factor combos in fac_vec
+             pred_cov = pred_mm
+             # ,
+             # all_fac = fac_dat$facs_n, # vector of factor combinations
+             # fac_key = fac_key$facs_n #ordered unique factor combos in fac_vec
 )
 parameters <- list(z_rfac = rep(0, times = length(unique(rfac))),
                    z_ints = matrix(0, nrow = ncol(fix_mm),
                                    ncol = ncol(y_obs) - 1),
                    log_sigma_rfac = 0)
 obj <- MakeADFun(data, parameters, random = c("z_rfac"),
-                 DLL = "multinomial_generic_randInt2")
+                 DLL = "multinomial_randInt_v2")
 
 ## Call function minimizer
 opt <- nlminb(obj$par, obj$fn, obj$gr)
@@ -123,37 +134,32 @@ ssdr <- summary(sdr)
 ## PLOT PREDICTIONS ------------------------------------------------------------
 
 # make dataframe of true predictions and covariates
-dumm <- dat_list[[1]]$full_data %>% 
-  mutate(facs = as.factor(paste(reg, fac, site, sep = "_")))
+dumm <- dat_list[[1]]$full_data 
 obs_dat <- dumm %>% 
   pivot_longer(p1:p3, names_to = "cat", names_prefix = "p",
                values_to = "true_prob") %>% 
-  select(cat, site, reg, fac, facs, true_prob) %>%
-  distinct() %>% 
-  left_join(., fac_key %>% select(facs, facs_n), by = "facs") %>% 
-  arrange(facs_n) %>% 
-  rbind(., .)
+  select(cat, site, reg, fac, true_prob) %>%
+  distinct()
 
+pred_mat <- ssdr[rownames(ssdr) %in% "pred_probs", ]
+pred_ci <- data.frame(cat = as.character(rep(1:(K + 1), 
+                                             each = nrow(pred_dat))), 
+                      pred_prob_est = pred_mat[ , "Estimate"],
+                      pred_prob_se =  pred_mat[ , "Std. Error"]) %>% 
+  # distinct() %>% 
+  mutate(pred_prob_low = pred_prob_est + (qnorm(0.025) * pred_prob_se),
+         pred_prob_up = pred_prob_est + (qnorm(0.975) * pred_prob_se),
+         reg = rep(pred_dat$reg, times = K + 1),
+         fac = rep(pred_dat$fac, times = K + 1)) 
 
-logit_probs_mat <- ssdr[rownames(ssdr) %in% "logit_probs_out", ]
-pred_ci <- data.frame(cat = as.character(rep(1:(k + 1), 
-                                                  each = length(unique(fac_key$facs_n)))), 
-                           logit_prob_est = logit_probs_mat[ , "Estimate"],
-                           logit_prob_se =  logit_probs_mat[ , "Std. Error"]) %>% 
-  mutate(facs_n = rep(fac_key$facs_n, times = k + 1),
-         pred_prob = plogis(logit_prob_est),
-         pred_prob_low = plogis(logit_prob_est +
-                                  (qnorm(0.025) * logit_prob_se)),
-         pred_prob_up = plogis(logit_prob_est +
-                                 (qnorm(0.975) * logit_prob_se))) %>%
-  left_join(., obs_dat, by = c("cat", "facs_n")) %>% 
-  select(-logit_prob_est, -logit_prob_se) 
-
-ggplot(pred_ci %>% filter(fac == "1", reg == "1")) +
-  geom_boxplot(aes(x = as.factor(cat), y = true_prob)) +
-  geom_pointrange(aes(x = as.factor(cat), y = pred_prob, ymin = pred_prob_low,
+ggplot() +
+  geom_boxplot(data = obs_dat,
+               aes(x = as.factor(cat), y = true_prob)) +
+  geom_pointrange(data = pred_ci, aes(x = as.factor(cat), y = pred_prob_est, 
+                                      ymin = pred_prob_low,
                       ymax = pred_prob_up), col = "red") +
-  ggsidekick::theme_sleek()
+  ggsidekick::theme_sleek() +
+  facet_grid(reg ~ fac)
 
 
 ## Examine error in coefficient estimates

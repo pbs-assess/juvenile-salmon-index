@@ -6,22 +6,18 @@ Type objective_function<Type>::operator()()
   DATA_MATRIX(fx_cov);   // model matrix for fixed effects
   DATA_IVECTOR(rfac);    // vector of random factor levels
   DATA_INTEGER(n_rfac);  // number of random factor levels
-  // NOTE ONLY NECESSARY TO CHECK RANDOM EFF PREDS
-  DATA_IVECTOR(all_fac); // vector of combined factor levels (fix and rand.); 
-  DATA_IVECTOR(fac_key); // vector of unique combined factor levels (fix and rand.)
-
+  DATA_MATRIX(pred_cov);    // model matrix of predictions
+  
   int n_obs = y_obs.rows();           // number of observations
   int n_cat = y_obs.cols();           // number of categories
-  int n_fix_cov = fx_cov.cols();      // number of types of fixed covariates in mm
-  int n_fac_comb = fac_key.size();    // number of unique factor combinations
-
+  int n_preds = pred_cov.rows();         // number of predictions
+  
   // Parameters
   PARAMETER_VECTOR(z_rfac);  // vector of random intercepts
   PARAMETER_MATRIX(z_ints);  // matrix of fixed intercepts (rows = fixed cov, cols = k-1)
   PARAMETER(log_sigma_rfac); // among random intercept SD
 
   // Matrices for storing intermediate objects
-  // matrix<Type> fx_eff(n_obs, n_fix_cov);
   matrix<Type> log_odds(n_obs, (n_cat - 1));
   matrix<Type> exp_log_odds(n_obs, (n_cat - 1));
   vector<Type> denom(n_obs);
@@ -32,7 +28,7 @@ Type objective_function<Type>::operator()()
   matrix<Type> fx_eff = fx_cov * z_ints;
   for (int k = 0; k < (n_cat - 1); ++k) {
     for (int i = 0; i < n_obs; ++i) {
-      log_odds(i, k) = fx_eff + z_rfac(rfac(i)); // add random intercept here
+      log_odds(i, k) = fx_eff(i, k) + z_rfac(rfac(i)); // add random intercept here
       exp_log_odds(i, k) = exp(log_odds(i, k)); 
     }
   }
@@ -44,22 +40,6 @@ Type objective_function<Type>::operator()()
     }
     denom(i) = 1. + sum_exp_log_odds;
   }
-
-  // for (int k = 0; k < (n_cat - 1); ++k) {
-  //   for (int j = 0; j < n_fix_cov; ++j) {
-  //     for (int i = 0; i < n_obs; ++i) {
-  //       fx_eff(i, j) = z_ints(j, k) * fx_cov(i, j); // calculate fixed effects
-  //     }
-  //   }
-  //   for (int i = 0; i < n_obs; ++i) {
-  //     Type sum_fix_eff = 0;
-  //     for (int j = 0; j < n_fix_cov; ++j) {
-  //       sum_fix_eff += fx_eff(i, j);
-  //     }
-  //     log_odds(i, k) = sum_fix_eff + z_rfac(rfac(i)); // add random intercept here
-  //     exp_log_odds(i, k) = exp(log_odds(i, k));
-  //   }
-  // }
 
   for (int g = 0; g < n_cat; ++g) {
     if (g < (n_cat - 1)) {
@@ -95,26 +75,37 @@ Type objective_function<Type>::operator()()
   Type sigma_rfac = exp(log_sigma_rfac);
   ADREPORT(sigma_rfac);
 
-  // Populate output matrix with unique combinations of factor levels for 
-  // predictions
-  // matrix<Type> logit_probs_out(n_fac_comb, n_cat);
-  // matrix<Type> logit_probs_out_fe(n_fac_comb, n_cat);
-  // vector<int> temp_index(n_fac_comb);    
+   // Calculate log-odds, then probabilities for each fixed effects group
+  matrix<Type> pred_log_odds = pred_cov * z_ints;
+  matrix<Type> pred_exp_log_odds = exp(pred_log_odds.array());
+  
+  vector<Type> pred_denom(n_preds);
+  for (int ii = 0; ii < n_preds; ++ii) {
+    Type sum_exp_log_odds = 0.;
+    for (int k = 0; k < (n_cat - 1); ++k) {
+      sum_exp_log_odds += pred_exp_log_odds(ii, k);
+    }
+    pred_denom(ii) = 1. + sum_exp_log_odds;
+  }
 
-  // for (int j = 0; j < n_fac_comb; ++j) {
-  //   for (int i = 0; i < n_obs; ++i) {
-  //     if (all_fac(i) == fac_key(j)) {
-  //       temp_index(j) = i;
-  //       break;
-  //     }
-  //   }
-  //   for (int g = 0; g < n_cat; ++g) {
-  //     logit_probs_out(j, g) = logit_probs(temp_index(j), g);
-  //     logit_probs_out_fe(j, g) = logit_probs_fe(temp_index(j), g);
-  //   }
-  // }
-  // ADREPORT(logit_probs_out);
-  // ADREPORT(logit_probs_out_fe);
+  matrix<Type> pred_probs(n_preds, n_cat);
+  for (int g = 0; g < n_cat; ++g) {
+    if (g < (n_cat - 1)) {
+      for (int ii = 0; ii < n_preds; ++ii) {
+        pred_probs(ii, g) = pred_exp_log_odds(ii, g) / pred_denom(ii);
+      }
+    } else if (g == (n_cat - 1)) {
+      for (int ii = 0; ii < n_preds; ++ii) {
+        Type summed_probs = 0;
+        for (int k = 0; k < (n_cat - 1); ++k) {
+          summed_probs += pred_probs(ii, k);
+        }
+        pred_probs(ii, g) = 1. - summed_probs;
+      }
+    }
+  }
+  REPORT(pred_probs);
+  ADREPORT(pred_probs);
 
   return jnll;
 }

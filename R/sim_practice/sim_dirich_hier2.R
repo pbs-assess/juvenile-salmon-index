@@ -79,6 +79,8 @@ f_sim <- function(trial = 1) {
   ))
 }
 
+## One simulation
+sims <- f_sim(trial = 1)
 
 #prediction model matrix
 pred_dat <- reg_dat %>%
@@ -86,22 +88,17 @@ pred_dat <- reg_dat %>%
   distinct() %>%
   arrange(reg, fac)
 pred_mm <- model.matrix(~ reg + fac, pred_dat)
-rand_fac <- as.numeric(sims[[1]]$full_dat$site) - 1
+rand_fac <- as.numeric(sims$full_dat$site) - 1
 
 #initial parameter values
 beta_in <- matrix(rnorm(n = P * K, mean = 0), P, K)
 rfac_in <- rnorm(length(unique(rand_fac)), 0 , 1)
 
-
-## One simulation
-
-sims <- f_sim(trial = i)
-
 compile(here::here("src", "dirichlet_randInt_v2.cpp"))
 dyn.load(dynlib(here::here("src", "dirichlet_randInt_v2")))
 
 obj <- MakeADFun(data=list(fx_cov = fix_mm,
-                           y_obs = sims[[1]]$obs,
+                           y_obs = sims$obs,
                            pred_cov = pred_mm,
                            rfac = rand_fac),
                  parameters=list(z_ints = beta_in,
@@ -122,21 +119,30 @@ log_phi
 ssdr[rownames(ssdr) %in% "log_sigma_rfac", "Estimate"]
 log(sd_site)
 
-matrix(ssdr[rownames(ssdr) %in% "pred_est", "Estimate"], ncol = n_groups)
-
+pred_dat %>% 
+  cbind(.,
+        matrix(ssdr[rownames(ssdr) %in% "pred_est", "Estimate"], 
+               ncol = n_groups))
+sims$full_data %>% 
+  # pivot_longer(., cols = `1`:`3`, names_to = "cat", values_to = "prop") %>% 
+  group_by(reg, fac) %>% 
+  summarize(mean_1 = mean(`1`),
+            mean_2 = mean(`2`),
+            mean_3 = mean(`3`))
+  
 
 # SIMULATE FULL DATASET --------------------------------------------------------
 
-n_trials <- 50
-sims <- vector(mode = "list", length = n_trials)
+n_trials <- 5
+sims_list <- vector(mode = "list", length = n_trials)
 for (i in 1:n_trials) {
   sims_dat <- f_sim(trial = i)
-  sims[[i]] <- list(trial = i, obs = sims_dat$obs,
+  sims_list[[i]] <- list(trial = i, obs = sims_dat$obs,
                     full_dat = sims_dat$full_data, trans = "raw")
 }
 
 
-ests <- map(sims, function(x) {
+ests <- map(sims_list, function(x) {
   y_obs <- x$obs
   
   rand_fac <- as.numeric(x$full_dat$site) - 1
