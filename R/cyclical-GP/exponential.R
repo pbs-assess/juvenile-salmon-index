@@ -12,16 +12,16 @@ GP_sq_exp <- function(x, b0 = 0, sigma = 0.1, gp_sigma = 0.1, gp_theta = 2) {
   list(x = x, y = y, eta = eta)
 }
 
-set.seed(108)
-out <- GP_sq_exp(1:30, b0 = 0, sigma = 0.1, gp_sigma = 0.4, gp_theta = 2.5)
-plot(out$x, out$eta, type = "l")
-points(out$x, out$y)
-
 library(TMB)
 compile("exponential.cpp")
 dyn.load(dynlib("exponential"))
 
-data <- list(x = out$x, y = out$y)
+set.seed(108)
+out <- GP_sq_exp(1:40, b0 = 0, sigma = 0.2, gp_sigma = 0.4, gp_theta = 1.5)
+plot(out$x, out$eta, type = "l")
+points(out$x, out$y)
+
+data <- list(x = out$x, y = out$y, flag = 1)
 parameters <- list(
   b0 = 0,
   log_gp_sigma = log(0.5), 
@@ -31,6 +31,7 @@ parameters <- list(
 )
 obj <- TMB::MakeADFun(data, parameters, DLL="exponential",
   random = "eta")
+obj <- normalize(obj, flag="flag")
 opt <- stats::nlminb(obj$par, obj$fn, obj$gr)
 sdr <- TMB::sdreport(obj)
 sdr

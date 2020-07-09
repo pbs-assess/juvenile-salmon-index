@@ -10,6 +10,7 @@ Type objective_function<Type>::operator() ()
   PARAMETER(log_gp_theta);
   PARAMETER(log_sigma);
   PARAMETER_VECTOR(eta)
+  DATA_INTEGER(flag);
   
   int n = y.size(); 
   
@@ -28,7 +29,8 @@ Type objective_function<Type>::operator() ()
       C(i, j) = gp_sigma*gp_sigma * exp(- 1 / (2 * gp_theta * gp_theta) * dist_sq);
     }
     
-  Type jnll = density::MVNORM(C)(eta); 
+  Type jnll = density::MVNORM(C)(eta);
+  if (flag == 0) return jnll;
   jnll-= dnorm(y, vector<Type>(b0 + eta), sigma, true).sum();
   
   jnll-= dnorm(gp_sigma, Type(0), Type(2));
