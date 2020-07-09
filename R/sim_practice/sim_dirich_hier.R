@@ -30,6 +30,12 @@ dat <- data.frame(strata = sample(1:P, n, replace = T)) %>%
 # fixed effects
 X <- model.matrix(~strata_f, dat)
 beta0 <- matrix(rnorm((ncol(X)) * J), ncol(X), J)
+# model matrix for predictions
+pred_dat <- dat %>% 
+  arrange(strata_f) %>% 
+  select(strata_f) %>% 
+  distinct()
+pred_cov <- model.matrix(~strata_f, pred_dat)
 
 # function to simulate dirichlet data based on parameters and matrix
 f_sim <- function(trial = 1) {
@@ -92,7 +98,7 @@ fit_list_hier <- map(sims, function(sims_in) {
   obj <- MakeADFun(
     data = list(fx_cov = X,
                 y_obs = Y_in,
-                pred_cov = X,
+                pred_cov = pred_cov,
                 rfac = rfac,
                 n_rfac = n_rfac
     ),
@@ -162,21 +168,17 @@ dev.off()
 
 
 # look at one sims predictions
-ssdr_out <- fit_list[[1]]$est
-est_beta <- matrix(ssdr_out, nrow = P+1, ncol = K)
-pred_eff <- pred_mm %*% est_beta
-pred_Gamma = exp(pred_eff) #fixed effects
-pred_Gamma_plus = apply(pred_Gamma, 1, sum) #sum of fixed_effects
-pred_theta = 1 / (pred_Gamma_plus + 1)
-pred_pi = apply(pred_Gamma, 2, function(x) {x / pred_theta})
-pred_pi_prop <- pred_pi / rowSums(pred_pi)
+# ssdr_out <- fit_list[[1]]$est
+# est_beta <- matrix(ssdr_out, nrow = P+1, ncol = K)
+# pred_eff <- pred_mm %*% est_beta
+# pred_Gamma = exp(pred_eff) #fixed effects
+# pred_Gamma_plus = apply(pred_Gamma, 1, sum) #sum of fixed_effects
+# pred_theta = 1 / (pred_Gamma_plus + 1)
+# pred_pi = apply(pred_Gamma, 2, function(x) {x / pred_theta})
+# pred_pi_prop <- pred_pi / rowSums(pred_pi)
 
-pred_pi_prop
-cbind(pred_dat, probs = ssdr[rownames(ssdr) %in% "pred_pi_prop" , 1])
-
-datf <- sims_in$full_dat
-
-datf %>%
+ssdr[rownames(ssdr) %in% "pred_pi_prop" , ]
+sims_in$full_dat %>%
   pivot_longer(., cols = `1`:`4`, names_to = "cat", values_to = "count") %>% 
-  group_by(strata_f, cat) %>%
+  group_by(cat, strata_f) %>%
   summarize(ppn = mean(count) / mean(N)) 
