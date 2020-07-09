@@ -31,7 +31,6 @@ m <- gam(Temperature ~ s(nMonth, bs = "cc", k = 12),
 plot(m)
 
 
-
 sm <- smoothCon(s(nMonth,bs = "cc", k=12), data=cet,knots=NULL)[[1]]
 
 ## use it to fit a regression spline model...
@@ -42,19 +41,11 @@ nMonths <- seq(1,12, length=200)  ## create prediction times
 Xp <- PredictMat(sm, data.frame(nMonth = nMonths))
 plot(nMonths, Xp%*%beta, type = "l") ## add smooth to plot
 
-bs <- list(
-  smoothCon(s(nMonth), data = cet),
-  smoothCon(s(Time), data = cet)
-)
 
-beta <- c
-
-
-require(mgcv)
 n <- 15
 x <- runif(n)
 y <- sin(x*2*pi) + rnorm(n)*.2
-mod <- gam(y~s(x,bs="cc",k=6),knots=list(x=seq(0,1,length=6)), fit = FALSE)
+mod <- gam(y~s(x,bs="cc",k=6),knots=list(x=seq(0,1,length=6)), fit = TRUE)
 mm <- model.matrix(mod)
 mm <- as.data.frame(mm)
 names(mm) <- c("b0", "b1", "b2", "b3", "b4")
