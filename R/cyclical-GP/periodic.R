@@ -30,7 +30,7 @@ plot(out$x, out$eta, type = "l", ylim = range(union(out$y, out$eta)))
 points(out$x, out$y)
 abline(v = seq(1, 36, 6))
 
-data <- list(x = out$x, y = out$y, gp_T = 6, flag = 1, Sigma = out$Sigma)
+data <- list(x = out$x, y = out$y, gp_T = 6, flag = 1)
 parameters <- list(
   b0 = 0,
   log_gp_sigma = log(0.5), 
