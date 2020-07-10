@@ -58,6 +58,7 @@ sm[[2]]$X
 
 # not a list!
 mm <- gam(y ~ s(x, bs = "tp", by = f, k = 5), data=d, fit = FALSE)
+mm$X
 
 # just need to figure out how to make the prediction matrix...
 
