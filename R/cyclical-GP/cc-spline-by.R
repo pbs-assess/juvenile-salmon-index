@@ -55,6 +55,12 @@ sm <- smoothCon(s(x, bs = "tp", by = f, k = 5), data=d)
 # list elements!
 sm[[1]]$X
 sm[[2]]$X
+
+# not a list!
+mm <- gam(y ~ s(x, bs = "tp", by = f, k = 5), data=d, fit = FALSE)
+
+# just need to figure out how to make the prediction matrix...
+
 # 
 # y <- d$y
 # beta <- coef(lm(y ~ cbind(sm[[1]]$X, sm[[2]]$X) + 0))
