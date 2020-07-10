@@ -50,17 +50,21 @@ plot(d2$x, d2$y, xlim = c(1, 12))
 lines(nd$x, p)
 
 # cc; by; all data
-sm <- smoothCon(s(x, bs = "tp", by = f, k = 5), data=d)[[1]]
-sm$X
-y <- d$y
-beta <- coef(lm(y ~ sm$X + 0))
-nd1 <- data.frame(x = seq(1, 12, length.out = 200), f = "a")
-nd2 <- data.frame(x = seq(1, 12, length.out = 200), f = "b")
-nd <- rbind(nd1, nd2)
-nd$f <- as.factor(nd$f)
+sm <- smoothCon(s(x, bs = "tp", by = f, k = 5), data=d)
 
-Xp <- PredictMat(sm, nd)
-nd$p <- Xp %*% beta
-ggplot(nd, aes(x, p)) + geom_point() + facet_wrap(~f)
+# list elements!
+sm[[1]]$X
+sm[[2]]$X
+# 
+# y <- d$y
+# beta <- coef(lm(y ~ cbind(sm[[1]]$X, sm[[2]]$X) + 0))
+# nd1 <- data.frame(x = seq(1, 12, length.out = 200), f = "a")
+# nd2 <- data.frame(x = seq(1, 12, length.out = 200), f = "b")
+# nd <- rbind(nd1, nd2)
+# nd$f <- as.factor(nd$f)
+# 
+# Xp <- PredictMat(sm, nd)
+# nd$p <- Xp %*% beta
+# ggplot(nd, aes(x, p)) + geom_point() + facet_wrap(~f)
 
 
