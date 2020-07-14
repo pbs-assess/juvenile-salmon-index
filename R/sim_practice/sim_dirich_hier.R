@@ -87,7 +87,7 @@ dyn.load(dynlib(here::here("src", "dirichlet_randInt")))
 
 #fit models with all data
 fit_list_hier <- map(sims, function(sims_in) {
-  Y_in <- round(sims_in$obs, 0)
+  Y_in <- sims_in$obs #+ runif(length(sims_in$obs), 0, 1)#round(sims_in$obs, 0)
   rfac <- as.numeric(sims_in$rand_fac) - 1 #subtract 1 for indexing in c++
   n_rfac <- length(unique(rfac))
   

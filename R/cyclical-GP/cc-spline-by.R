@@ -7,8 +7,8 @@ y1 <- sin(x*2*pi) + rnorm(n)*.2
 y2 <- sin(x*2*pi) + rnorm(n)*.2
 d <- data.frame(x = rep(x * n, 2), y = c(y1, y2), f = rep(c("a", "b"), each = 12))
 d <- d[-c(13:14, 24), ]
-d2 <- d[d$f == 2, ]
 d$f <- as.factor(d$f)
+d2 <- d[d$f == "b", ]
 
 ggplot(d, aes(x, y, colour = f)) + geom_point() +
   facet_wrap(~f)
@@ -61,6 +61,9 @@ mm <- gam(y ~ s(x, bs = "tp", by = f, k = 5), data=d, fit = FALSE)
 mm$X
 
 # just need to figure out how to make the prediction matrix...
+
+
+
 
 # 
 # y <- d$y
