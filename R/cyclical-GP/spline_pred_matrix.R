@@ -1,21 +1,31 @@
 library(mgcv)
 library(tidyverse)
 
+set.seed(123)
 n <- 12
 x <- seq(1/n, 1, length.out = n)
-y1 <- sin(x*2*pi) + rnorm(n)*.2
-y2 <- sin(x*2*pi) + rnorm(n)*.2
-d <- data.frame(x = rep(x * n, 2), y = c(y1, y2), f = rep(c("a", "b"), each = 12)) %>% 
+x2 <- seq(1, 12, length.out = n)
+y1 <- sin(x*2*pi) + rnorm(n)*.2 + (0.1 * x2)
+y2 <- sin(x*2*pi) + rnorm(n)*.2 + (0.1 * x2)
+d <- data.frame(
+  x = rep(x * n, 2), 
+  x2 = rep(x2, 2),
+  y = c(y1, y2), 
+  f = rep(c("a", "b"), each = 12)
+  ) %>% 
   mutate(y_2 = sin(x*2*pi) + rnorm(n * 2)*.2)
 d <- d[-c(16, 18, 20), ]
 d$f <- as.factor(d$f)
 d_sub <- d[d$f == "b", ]
 
+ggplot(d) +
+  geom_point(aes(x = x, y = y, col = f))
+
 kk <- 4
 
 ## 1) Are splines sensitive to response?
-m1 <- gam(y ~ s(x, bs = "tp", by = f, k = kk), data=d, fit = F)
-m2 <- gam(y_2 ~ s(x, bs = "tp", by = f, k = kk), data=d, fit = F)
+m1 <- gam(y ~ s(x, bs = "tp", by = f, k = kk) + x2, data=d, fit = F)
+m2 <- gam(y_2 ~ s(x, bs = "tp", by = f, k = kk) + x2, data=d, fit = F)
 
 identical(m1$X, m2$X)
 
@@ -78,10 +88,13 @@ ggplot() +
 # as above but with smoothcon and list
 sm <- smoothCon(s(x, bs = "tp", k = 4), knots = list(x = c(1, 12)), 
                 data=d_sub)[[1]]
+sm2 <- smoothCon(s(x2, bs = "tp", k = 1), data=d_sub)[[1]]
 y <- d_sub$y
-beta <- coef(lm(y ~ sm$X + 0))
-nd <- data.frame(x = seq(1, 12, length.out = 200))
-Xp <- PredictMat(sm, nd)
+beta <- coef(lm(y ~ sm$X + d_sub$x2 + 0))
+nd <- data.frame(x = seq(1, 12, length.out = 200),
+                 x2 = seq(1, 12, length.out = 200))
+Xp <- PredictMat(sm, nd) %>% 
+  cbind(., nd$x2)
 p <- Xp %*% beta
 # par(mfrow = c(2, 1))
 # matplot(sm$X, type = "l", lty = 1)
