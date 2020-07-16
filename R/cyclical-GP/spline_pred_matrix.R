@@ -4,7 +4,7 @@ library(tidyverse)
 set.seed(123)
 n <- 12
 x <- seq(1/n, 1, length.out = n)
-x2 <- seq(1, 12, length.out = n)
+x2 <- rnorm(12, 0, 1)#seq(1, 12, length.out = n)
 y1 <- sin(x*2*pi) + rnorm(n)*.2 + (0.1 * x2)
 y2 <- sin(x*2*pi) + rnorm(n)*.2 + (0.1 * x2)
 d <- data.frame(
@@ -21,86 +21,68 @@ d_sub <- d[d$f == "b", ]
 ggplot(d) +
   geom_point(aes(x = x, y = y, col = f))
 
-kk <- 4
+kk <- 5
 
-## 1) Are splines sensitive to response?
-m1 <- gam(y ~ s(x, bs = "tp", by = f, k = kk) + x2, data=d, fit = F)
-m2 <- gam(y_2 ~ s(x, bs = "tp", by = f, k = kk) + x2, data=d, fit = F)
+# One factor level
+# use predict, type = lpmatrix, not gam fit = false
+# m1 <- gam(rep(0, length.out = nrow(nd)) ~ s(x, bs = "tp", k = 6),
+#               knots = list(x = c(1, 12)), 
+#               data=nd, 
+#           fit = FALSE)
+m1_fit <- gam(y ~ s(x, bs = "tp", k = 6) + x2,
+              knots = list(x = c(1, 12)), 
+              data=d_sub)
+nd <- expand.grid(x = seq(1, 12, length.out = 50),
+                  x2 = mean(d$x2))
 
-identical(m1$X, m2$X)
+Xp <- predict(m1_fit, nd, type = "lpmatrix")
+p <- Xp %*% coef(m1_fit)
+p2 <- predict(m1_fit, nd)
+# p3 <- m1$X %*% coef(m1_fit)
+plot(d_sub$x, d_sub$y)
+lines(nd$x, p)
+lines(nd$x, p2, col = "red")
+# lines(nd$x, p3, col = "blue")
 
-# Not sensitive
 
+# Multiple factor levels
+m2_fit <- gam(y ~ s(x, bs = "tp", k = 6, by = f) + x2,
+              knots = list(x = c(1, 12)), 
+              data=d)
+nd2 <- expand.grid(
+  x = seq(1, 12, length.out = 50),
+  x2 = mean(d$x2),
+  f = unique(d$f)
+  )
 
-## 2) Are splines sensitive to explanatory?
-n_2 <- n * 2
-x_2 <- seq(1/n_2, 1, length.out = n_2)
-y1_2 <- sin(x_2*2*pi) + rnorm(n_2)*.2
-y2_2 <- sin(x_2*2*pi) + rnorm(n_2)*.2
-d2 <-  data.frame(x = rep(x_2 * n, 2),
-                  y = c(y1_2, y2_2),
-                  f = rep(c("a", "b"), each = n_2))
-
-m1 <- gam(y ~ s(x, bs = "tp", by = f, k = kk), 
-          knots = list(x = c(1, 12)), 
-          data=d, fit = F)
-m2 <- gam(y ~ s(x, bs = "tp",  by = f, k = kk), 
-          knots = list(x = c(1, 12)), 
-          data=d2, fit = F)
-
-m1$X[1, ]
-m2$X[1, ]
-# different
-
-m1_fit <- gam(y ~ s(x, bs = "tp", by = f, 
-                    k = kk), knots = list(x = c(1, 12)), 
-              data = d)
-nd1 <- d %>% select(-y)
-nd1$pred_y <- m1$X %*% coef(m1_fit) #predict.gam(m1_fit, nd1)
-# nd2 <- d2 %>% select(-y)
-# nd2$pred_y <- m2$X %*% coef(m1_fit) #predict.gam(m1_fit, nd2)
+Xp <- predict(m2_fit, nd2, type = "lpmatrix")
+nd2$p <- as.vector(Xp %*% coef(m1_fit))
+nd2$p2 <- as.vector(predict(m2_fit, nd2))
 
 ggplot() +
-  geom_point(data = d, aes(x, y, colour = f)) + 
-  geom_line(data = nd1, aes(x, pred_y, colour = f))
-# ggplot() +
-#   geom_point(data = d2, aes(x, y, colour = f)) + 
-#   geom_line(data = nd2, aes(x, pred_y, colour = f))
-
-# multiplying GAM model matrix by predictors non-sensical with gams
-
-# try predicting across gaps
-nd3 <- expand.grid(x = seq(1, 12, length.out = 50), 
-                   f = unique(d$f), 
-                   y = 0)
-m3 <- gam(y ~ s(x, bs = "tp", by = f, k = kk), knots = list(x = c(1, 12)), 
-          data = nd3, fit = F)
-m3_fit <- gam(y ~ s(x, bs = "tp", by = f, k = kk), knots = list(x = c(1, 12)), 
-              data = nd3)
-nd3$pred_y <- m3$X %*% coef(m1_fit)
-
-# still buggy when knots exceed certain values
-ggplot() +
-  geom_point(data = d, aes(x, y, colour = f)) + 
-  geom_line(data = nd3, aes(x, pred_y, colour = f))
+  geom_point(data = d, aes(x = x, y = y, colour = f)) +
+  geom_line(data = nd2, aes(x = x, y = p, colour = f)) +
+  geom_line(data = nd2, aes(x = x, y = p2, colour = f), linetype = 2)
+  
 
 
-# as above but with smoothcon and list
+# Use smoothcon and list (INCOMPLETE AFTER SWITCHING BACK TO GAM)
 sm <- smoothCon(s(x, bs = "tp", k = 4), knots = list(x = c(1, 12)), 
                 data=d_sub)[[1]]
-sm2 <- smoothCon(s(x2, bs = "tp", k = 1), data=d_sub)[[1]]
+gam_sm <- gam(y ~ s(x, bs = "tp", k = 4) + x2, 
+              knots = list(x = c(1, 12)), 
+              data = d_sub)
 y <- d_sub$y
 beta <- coef(lm(y ~ sm$X + d_sub$x2 + 0))
 nd <- data.frame(x = seq(1, 12, length.out = 200),
-                 x2 = seq(1, 12, length.out = 200))
-Xp <- PredictMat(sm, nd) %>% 
-  cbind(., nd$x2)
-p <- Xp %*% beta
-# par(mfrow = c(2, 1))
-# matplot(sm$X, type = "l", lty = 1)
+                 x2 = 0)
+Xp <- PredictMat(sm, nd)
+p <- Xp %*% beta[1:4] + (nd$x2 * beta[5]) 
+p2 <- predict(gam_sm, nd)
+
 plot(d$x, d$y)
 lines(nd$x, p)
-
+lines(nd$x, p2, col = "red")
 
 # incorporate factors
 d_sub2 <- d[-c(3, 11), ]
@@ -152,3 +134,6 @@ p <- ttt %*% betaT
 plot(d_sub2$x, d_sub2$y)
 lines(nd$x[1:100], p[1:100])
 lines(nd$x[101:200], p[101:200])
+
+## Unsure how to incorporate covariates...
+
