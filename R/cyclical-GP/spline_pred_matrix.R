@@ -25,16 +25,13 @@ kk <- 5
 
 # One factor level
 # use predict, type = lpmatrix, not gam fit = false
-m1 <- gam(y ~ s(x, bs = "tp", k = 6) + x2,
-              knots = list(x = c(1, 12)),
-              data=d_sub,
-          fit = FALSE)
 m1_fit <- gam(y ~ s(x, bs = "tp", k = 6) + x2,
               knots = list(x = c(1, 12)), 
               data=d_sub)
 nd <- expand.grid(x = seq(1, 12, length.out = 50),
                   x2 = mean(d$x2))
 
+Xb <- predict(m1_fit, type = "lpmatrix")
 Xp <- predict(m1_fit, nd, type = "lpmatrix")
 p <- Xp %*% coef(m1_fit)
 p2 <- predict(m1_fit, nd)
@@ -42,7 +39,6 @@ p3 <- m1$X %*% coef(m1_fit)
 plot(d_sub$x, d_sub$y)
 lines(nd$x, p)
 lines(nd$x, p2, col = "red")
-lines(d_sub$x, p3, col = "blue")
 
 
 # Multiple factor levels
@@ -56,7 +52,7 @@ nd2 <- expand.grid(
   )
 
 Xp <- predict(m2_fit, nd2, type = "lpmatrix")
-nd2$p <- as.vector(Xp %*% coef(m1_fit))
+nd2$p <- as.vector(Xp %*% coef(m2_fit))
 nd2$p2 <- as.vector(predict(m2_fit, nd2))
 
 ggplot() +
@@ -65,6 +61,26 @@ ggplot() +
   geom_line(data = nd2, aes(x = x, y = p2, colour = f), linetype = 2)
   
 
+# Check TMB performance
+library(TMB)
+
+compile(here::here("src", "norm_fe.cpp"))
+dyn.load(dynlib(here::here("src", "norm_fe")))
+
+dat_in <- list(y1_i = d_sub$y,
+               X1_ij = Xb)
+pars_in <- list(
+  b1_j = coef(m1_fit) + rnorm(length(coef(m1_fit)), 0, 0.01),
+  log_sigma = log(1.5)
+)
+
+obj <- MakeADFun(dat_in, pars_in,  
+                 DLL = "norm_fe")
+opt <- nlminb(obj$par, obj$fn, obj$gr)
+
+sdr <- sdreport(obj)
+coef(m1_fit)
+# coefficients aren't identical, but perhaps driven by lack of penalizing?
 
 # Use smoothcon and list (INCOMPLETE AFTER SWITCHING BACK TO GAM)
 sm <- smoothCon(s(x, bs = "tp", k = 4), knots = list(x = c(1, 12)), 
