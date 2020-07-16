@@ -25,10 +25,10 @@ kk <- 5
 
 # One factor level
 # use predict, type = lpmatrix, not gam fit = false
-# m1 <- gam(rep(0, length.out = nrow(nd)) ~ s(x, bs = "tp", k = 6),
-#               knots = list(x = c(1, 12)), 
-#               data=nd, 
-#           fit = FALSE)
+m1 <- gam(y ~ s(x, bs = "tp", k = 6) + x2,
+              knots = list(x = c(1, 12)),
+              data=d_sub,
+          fit = FALSE)
 m1_fit <- gam(y ~ s(x, bs = "tp", k = 6) + x2,
               knots = list(x = c(1, 12)), 
               data=d_sub)
@@ -38,11 +38,11 @@ nd <- expand.grid(x = seq(1, 12, length.out = 50),
 Xp <- predict(m1_fit, nd, type = "lpmatrix")
 p <- Xp %*% coef(m1_fit)
 p2 <- predict(m1_fit, nd)
-# p3 <- m1$X %*% coef(m1_fit)
+p3 <- m1$X %*% coef(m1_fit)
 plot(d_sub$x, d_sub$y)
 lines(nd$x, p)
 lines(nd$x, p2, col = "red")
-# lines(nd$x, p3, col = "blue")
+lines(d_sub$x, p3, col = "blue")
 
 
 # Multiple factor levels
