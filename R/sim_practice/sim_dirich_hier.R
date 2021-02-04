@@ -65,17 +65,32 @@ f_sim <- function(trial = 1) {
     Y = rbind(Y, simPop(J = 1, n = N[jj], pi = pi[jj,], theta = theta[jj])$data)
   }
   
+  # Switch Y to non-integer
+  add_noise <- function(nn) {
+    out <- nn
+    keep <- which(nn > 1)
+    xx <- rnorm(length(nn[keep]), 0, 1)
+    noise = xx - mean(xx)
+    out[keep] = out[keep] + noise
+    return(out)
+  }
+  Y2 = matrix(NA, nrow = nrow(Y), ncol = ncol(Y))
+  for (i in seq_len(nrow(Y))) {
+    Y2[i, ] <- add_noise(Y[i, ])
+  }
+  
   # create the observations:
   dat3 <- cbind(dat2, Y)
   
-  return(list("trial" = trial, "obs" = Y, "fixed_fac" = dat3$strata_f, 
+  return(list("trial" = trial, "obs" = Y, "noisey_obs" = Y2, 
+              "fixed_fac" = dat3$strata_f, 
               "rand_mean" = site_dat$site_mean, "rand_fac" = dat3$site_f, 
               "full_data" = dat3
   ))
 }
 
 # simulate
-n_trials <- 100
+n_trials <- 40
 sims <- vector(mode = "list", length = n_trials)
 for (i in 1:n_trials) {
   sims[[i]] <- f_sim(trial = i)
@@ -133,12 +148,62 @@ fit_list_hier <- map(sims, function(sims_in) {
            trial = sims_in$trial)  
 })
 
-
 saveRDS(fit_list_hier, here::here("data", "modelFits", "hier_dir_sim_fits.RDS"))
 fit_list_hier <- readRDS(here::here("data", "modelFits", "hier_dir_sim_fits.RDS"))
 
+
+
+# as above but with noisy data
+fit_list_hier_noisey <- map(sims, function(sims_in) {
+  Y_in <- sims_in$noisey_obs #+ runif(length(sims_in$obs), 0, 1)#round(sims_in$obs, 0)
+  rfac <- as.numeric(sims_in$rand_fac) - 1 #subtract 1 for indexing in c++
+  n_rfac <- length(unique(rfac))
+  
+  #initial parameter values
+  beta_in <- matrix(rnorm((ncol(X)) * J), ncol(X), J)
+  rand_int_in <- rep(0, times = length(unique(rfac)))
+  
+  obj <- MakeADFun(
+    data = list(fx_cov = X,
+                y_obs = Y_in,
+                pred_cov = pred_cov,
+                rfac = rfac,
+                n_rfac = n_rfac
+    ),
+    parameters = list(z_ints = beta_in,
+                      z_rfac = rand_int_in,
+                      log_sigma_rfac = 0
+    ),
+    random = c("z_rfac"),
+    # DLL = "dirichlet_fixInt"
+    DLL = "dirichlet_randInt"
+  )
+  
+  opt <- nlminb(obj$par, obj$fn, obj$gr)
+  sdr <- sdreport(obj)
+  ssdr <- summary(sdr)
+  fix_eff <- data.frame(
+    par = "beta",
+    par_n = seq(1, length(beta0), by = 1),
+    est = ssdr[rownames(ssdr) %in% "z_ints" , 1],
+    true = as.vector(beta0)
+  )
+  rand_eff <- data.frame(
+    par = c(rep("alpha", n_rfac), "sigma_a"),
+    par_n = c(seq(1, n_rfac, by = 1), 1),
+    est = c(ssdr[rownames(ssdr) %in% "z_rfac" , 1], 
+            ssdr[rownames(ssdr) %in% "sigma_rfac" , 1]),
+    true = c(unique(sims_in$rand_mean), sd_site)
+  )
+  
+  rbind(fix_eff, rand_eff) %>% 
+    mutate(tran = sims_in$trans,
+           trial = sims_in$trial)  
+})
+
+
 # plot coefficient estimates
-coef_dat_hier <- fit_list_hier %>%
+coef_dat_hier1 <- fit_list_hier %>%
   bind_rows() %>% 
   mutate(
     par_n = case_when(
@@ -147,14 +212,29 @@ coef_dat_hier <- fit_list_hier %>%
     sq_err = (true - est)^2
   ) %>% 
   group_by(par, par_n) %>% 
-  mutate(rmse = sqrt(mean(sq_err))) %>% 
+  mutate(rmse = sqrt(mean(sq_err)),
+         data_type = "clean") %>% 
   ungroup()
+coef_dat_hier2 <- fit_list_hier_noisey %>%
+  bind_rows() %>% 
+  mutate(
+    par_n = case_when(
+      par == "sigma_a" ~ 1,
+      TRUE ~ par_n),
+    sq_err = (true - est)^2
+  ) %>% 
+  group_by(par, par_n) %>% 
+  mutate(rmse = sqrt(mean(sq_err)),
+         data_type = "noisy") %>% 
+  ungroup()
+
+coef_dat_hier <- rbind(coef_dat_hier1, coef_dat_hier2)
 
 par_est_box <- ggplot(coef_dat_hier) +
   geom_boxplot(aes(x = as.factor(par_n), y = est)) +
   geom_point(aes(x = as.factor(par_n), y = true), color = "red", shape = 21) +
   ggsidekick::theme_sleek() +
-  facet_wrap(~par, scales = "free")
+  facet_grid(data_type~par, scales = "free")
 
 par_rmse_box <- ggplot(coef_dat_hier) +
   geom_boxplot(aes(x = as.factor(par_n), y = rmse)) +
@@ -165,6 +245,8 @@ pdf(here::here("figs", "hier_dirich_performance.pdf"))
 par_est_box
 par_rmse_box
 dev.off()
+
+
 
 
 # look at one sims predictions
