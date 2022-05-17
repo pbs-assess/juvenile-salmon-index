@@ -12,28 +12,26 @@ library(spData)
 
 wCan <- map_data("world", region = "canada") %>%
   filter(long < -110)
-# jchin <- readRDS(here::here("data", "juvCatchGSI_reg4.rds")) %>% 
-#   filter(stableStation == "Y")
-# 
-# dat <- jchin1 %>% 
-#   mutate(xUTM_start = xUTM_start * 10000,
-#          yUTM_start = yUTM_start * 10000)
+
+dat_trim <- readRDS(here::here("data", "chin_catch_sbc.rds"))
+coast_trim <- readRDS(here::here("data", "sbc_sf_utm.rds"))
+
 
 make_pred_grid <- function(dat, file_name_out = "trimmedSurveyGrid.rds") {
   ## Select boundary box based on survey area
-  minLat2 <- min(floor(dat$yUTM_start))
-  maxLat2 <- max(floor(dat$yUTM_start))
-  minLong2 <- min(floor(dat$xUTM_start))
-  maxLong2 <- max(floor(dat$xUTM_start))
+  minLat2 <- min(floor(dat$utm_y))
+  maxLat2 <- max(floor(dat$utm_y))
+  minLong2 <- min(floor(dat$utm_x))
+  maxLong2 <- max(floor(dat$utm_x))
   
   # First generate grid for entire area that just excludes landmass
-  projCRS <- "+proj=utm +zone=9 +datum=WGS84"
+  projCRS <- "+proj=utm +zone=10 +datum=WGS84"
   coast <- rbind(rnaturalearth::ne_states( "United States of America", 
                                            returnclass = "sf"), 
                  rnaturalearth::ne_states( "Canada", returnclass = "sf"))
   coastUTM <- st_transform(coast, crs = projCRS)
   cropR <- raster(extent(minLong2, maxLong2, minLat2, maxLat2),
-                  crs = projCRS, res = 20000)
+                  crs = projCRS, res = 10000)
   g <- fasterize(coastUTM, cropR)
   
   ## fast conversion pixel to polygons
@@ -44,26 +42,28 @@ make_pred_grid <- function(dat, file_name_out = "trimmedSurveyGrid.rds") {
   
   
   # Now subset grid based on whether the cells have contained a set in recent years
-  fullGrid <- subset(p, !layer)$geometry %>% 
-    st_sf(ID = seq(1, length(.), by = 1))
-  sets <- dat %>% 
-    #remove early years that include a large number of offshore and northern sets
-    # filter(!year < 2013) %>%
-    dplyr::select(year, xUTM_start, yUTM_start) %>% 
-    st_as_sf(., coords = c("xUTM_start", "yUTM_start"), crs = projCRS)
-  
-  # Subset spatially
-  subGrid <- fullGrid %>%
-    st_join(., sets, join = st_intersects) %>% 
-    filter(!is.na(year)) %>% 
-    distinct()
-  plot(st_geometry(subGrid))
-  
+  # fullGrid <- subset(p, !layer)$geometry %>% 
+  #   st_sf(ID = seq(1, length(.), by = 1))
+  # sets <- dat %>% 
+  #   #remove early years that include a large number of offshore and northern sets
+  #   dplyr::select(year, utm_x, utm_y) %>% 
+  #   st_as_sf(., coords = c("utm_x", "utm_y"), crs = projCRS)
+  # 
+  # # Subset spatially
+  # subGrid <- fullGrid %>%
+  #   st_join(., sets, join = st_intersects) %>% 
+  #   filter(!is.na(year)) %>% 
+  #   distinct()
+  # plot(st_geometry(subGrid))
+  # 
   # Extract just the coordinates and export
-  subGridCoords <- subGrid %>%
-    st_coordinates(.)
-  gridOut <- data.frame(X = subGridCoords[, "X"],
-                        Y = subGridCoords[, "Y"])
+  # subGridCoords <- subGrid %>%
+  #   st_coordinates(.)
+  
+  grid_coords <- st_coordinates(p)
+  
+  gridOut <- data.frame(X = grid_coords[, "X"],
+                        Y = grid_coords[, "Y"])
   return(gridOut)
 }
 
