@@ -107,4 +107,4 @@ ggplot() +
 
 # export subsetted version to use for initial fitting
 saveRDS(dat_trim, here::here("data", "chin_catch_sbc.rds"))
-saveRDS(coast, here::here("data", "sbc_sf_utm.rds"))
+saveRDS(coast, here::here("data", "spatial", "sbc_sf_utm.rds"))
