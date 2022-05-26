@@ -66,7 +66,7 @@ dat <- bridge %>%
 
 ## PREP SPATIAL ----------------------------------------------------------------
 
-# NOTE full dataset spans many UTM zones so 
+# NOTE full dataset spans many UTM zones so only apply to southern regions
 get_utm <- function(x, y, zone, loc){
   points = SpatialPoints(cbind(x, y),
                          proj4string = CRS("+proj=longlat +datum=WGS84"))

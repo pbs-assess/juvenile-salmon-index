@@ -1,5 +1,6 @@
 ## Make predictive grid for sdmTMB models
-# 1) Prep bathymetric data based on chinTagging/R/prep_bathymetry
+# 1) Prep bathymetric data based on chinTagging/R/prep_bathymetry 
+# (ignore American data for now)
 # Updated May 17, 2022
 
 
@@ -63,53 +64,58 @@ dep_dat_bc2 <- dep_dat_bc %>%
          # !depth < -1000
          ) %>% 
   mutate(depth = -1 * depth)
-dep_dat_us <- dep_dat_f(dep_list_us)
-#trim US data
-dep_dat_us2 <- dep_dat_us %>%
-  filter(lat <= min(dep_dat_bc$lat),
-         lon >= floor(min(dat_trim$mean_lon)),
-         !is.na(depth),
-         !depth > 0.00#,
-         # !depth < -1000
-         ) %>% 
-  mutate(depth = -1 * depth)
+# dep_dat_us <- dep_dat_f(dep_list_us)
+# #trim US data
+# dep_dat_us2 <- dep_dat_us %>%
+#   filter(lat <= 48, #min(dep_dat_bc$lat),
+#          # lon >= floor(min(dat_trim$mean_lon)),
+#          !is.na(depth),
+#          !depth > 0.00#,
+#          # !depth < -1000
+#          ) %>% 
+#   mutate(depth = -1 * depth)
 
 # convert each to raster, downscale, and add terrain data to both
 # then convert back to dataframes
 bc_raster <- rasterFromXYZ(dep_dat_bc2, 
                            crs = sp::CRS("+proj=longlat +datum=WGS84"))
-us_raster <- rasterFromXYZ(dep_dat_us2, 
-                           crs = sp::CRS("+proj=longlat +datum=WGS84"))
+bc_raster_utm <- projectRaster()
 
-# merge and add aspect/slope
-coast_raster <- merge(bc_raster, us_raster)
-coast_raster_slope <- terrain(coast_raster, opt = 'slope', unit = 'degrees',
+# # merge and add aspect/slope
+# coast_raster <- merge(bc_raster, us_raster)
+bc_raster_slope <- terrain(bc_raster, opt = 'slope', unit = 'degrees',
                               neighbors = 8)
-coast_raster_aspect <- terrain(coast_raster, opt = 'aspect', unit = 'degrees',
+bc_raster_aspect <- terrain(bc_raster, opt = 'aspect', unit = 'degrees',
                                neighbors = 8)
-coast_raster_list <- list(depth = coast_raster,
-                          slope = coast_raster_slope,
-                          aspect = coast_raster_aspect)
+bc_raster_list <- list(depth = bc_raster,
+                          slope = bc_raster_slope,
+                          aspect = bc_raster_aspect)
 # downscaled version
-low_coast_raster_list <- purrr::map(coast_raster_list,
-                                    aggregate, 
-                                    fac = 20, fun = mean)
+low_bc_raster_list <- purrr::map(bc_raster_list,
+                                 aggregate, 
+                                 fac = 20, fun = mean)
+low_bc_raster_list2 <- purrr::map(bc_raster_list,
+                                 aggregate, 
+                                 fac = 40, fun = mean)
 
 # check plots
 par(mfrow = c(1, 3))
-purrr::map(coast_raster_list, plot)
-purrr::map(low_coast_raster_list, plot)
+purrr::map(bc_raster_list, plot)
+purrr::map(low_bc_raster_list, plot)
+purrr::map(low_bc_raster_list2, plot)
 
 
-saveRDS(low_coast_raster_list,
-        here::here("data", "spatial", "bathy_lowres_rasters.RDS"))
+# saveRDS(low_coast_raster_list,
+#         here::here("data", "spatial", "bathy_lowres_rasters.RDS"))
+saveRDS(low_bc_raster_list,
+        here::here("data", "spatial", "bathy_lowres_bc_rasters.RDS"))
 
 
 ## GENERATE GRID ---------------------------------------------------------------
 
 # lower resolution raster list generated above
-low_coast_raster_list <- readRDS(
-  here::here("data", "spatial", "bathy_lowres_rasters.RDS"))
+low_bc_raster_list <- readRDS(
+  here::here("data", "spatial", "bathy_lowres_bc_rasters.RDS"))
 
 
 # boundary box for receiver locations
@@ -120,8 +126,8 @@ max_lon <- max(dat_trim$mean_lon + 0.1)
 
 
 bathy_low_sf_list <- purrr::map2(
-  low_coast_raster_list,
-  names(low_coast_raster_list),
+  low_bc_raster_list,
+  names(low_bc_raster_list),
   function (x, y) {
     as(x, 'SpatialPixelsDataFrame') %>%
       as.data.frame() %>%
@@ -134,11 +140,7 @@ bathy_low_sf_list <- purrr::map2(
 )
 
 # join depth and slope data
-bathy_low_sf <- st_join(bathy_low_sf_list$depth, bathy_low_sf_list$slope) %>% 
-  #crop to make predictions in grid
-  sf::st_crop(., 
-              xmin = min_lon, ymin = min_lat, xmax = max_lon, ymax = max_lat)
-
+bathy_low_sf <- st_join(bathy_low_sf_list$depth, bathy_low_sf_list$slope) 
 
 # coast sf for plotting and calculating distance to coastline 
 # (has to be lat/lon for dist2Line)
@@ -146,7 +148,7 @@ coast <- rbind(rnaturalearth::ne_states( "United States of America",
                                          returnclass = "sf"), 
                rnaturalearth::ne_states( "Canada", returnclass = "sf")) %>% 
   sf::st_crop(., 
-              xmin = min_lon, ymin = min_lat, xmax = max_lon, ymax = max_lat)
+              xmin = min_lon, ymin = 48, xmax = max_lon, ymax = max_lat)
 # saveRDS(coast, 
 #         here::here("data", "spatial_data",
 #                    "crop_coast_sf.RDS"))
@@ -156,24 +158,30 @@ coast_dist <- geosphere::dist2Line(p = sf::st_coordinates(bathy_low_sf),
 
 bathy_dat <- data.frame(
   st_coordinates(bathy_low_sf[ , 1]),
-  depth = bathy_low_sf$layer,
+  depth = bathy_low_sf$depth,
   slope = bathy_low_sf$slope,
   shore_dist = coast_dist[, "distance"]
-) 
+)
 
-ggplot() + 
-  # geom_sf(data = coast) +
-  geom_raster(data = bathy_dat, aes(x = X, y = Y, fill = depth)) +
-  scale_fill_viridis_c() +
-  ggsidekick::theme_sleek()
 
 ggplot() + 
   geom_sf(data = coast) +
-  geom_sf(data = bathy_low_sf) +
+  geom_raster(data = bathy_dat, aes(x = X, y = Y, fill = shore_dist)) +
   scale_fill_viridis_c() +
+  geom_point(data = dat_trim, aes(x = mean_lon, y = mean_lat), 
+             fill = "white", shape = 21) +
   ggsidekick::theme_sleek()
 
+
 saveRDS(bathy_dat, here::here("data", "spatial", "pred_bathy_grid.RDS"))
+
+
+
+
+
+
+
+
 
 
 ## as above but with UTM 
