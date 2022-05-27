@@ -95,17 +95,17 @@ bc_raster_aspect <- terrain(bc_raster_utm, opt = 'aspect', unit = 'degrees',
 bc_raster_list <- list(depth = bc_raster_utm,
                           slope = bc_raster_slope,
                           aspect = bc_raster_aspect)
+
 # downscaled version
-low_bc_raster_list <- purrr::map(bc_raster_list,
-                                 aggregate, 
-                                 fac = 20, fun = mean)
-
-
-# check plots
-par(mfrow = c(1, 3))
-purrr::map(bc_raster_list, plot)
-purrr::map(low_bc_raster_list, plot)
-purrr::map(low_bc_raster_list2, plot)
+# low_bc_raster_list <- purrr::map(bc_raster_list,
+#                                  aggregate, 
+#                                  fac = 20, fun = mean)
+# 
+# # check plots
+# par(mfrow = c(1, 3))
+# purrr::map(bc_raster_list, plot)
+# purrr::map(low_bc_raster_list, plot)
+# purrr::map(low_bc_raster_list2, plot)
 
 
 saveRDS(bc_raster_list,
@@ -164,9 +164,8 @@ coast <- rbind(rnaturalearth::ne_states( "United States of America",
 coast_dist <- geosphere::dist2Line(p = sf::st_coordinates(bathy_low_sf_deg),
                                    line = as(coast, 'Spatial'))
 
-
 coast_utm <- coast %>% 
-  st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
+  sf::st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
 
 
 
@@ -179,7 +178,7 @@ bathy_dat <- data.frame(
 )
 
 ggplot() + 
-  geom_sf(data = coast_utm) +
+  # geom_sf(data = coast_utm) +
   geom_raster(data = bathy_dat, aes(x = X, y = Y, fill = shore_dist)) +
   scale_fill_viridis_c() +
   geom_point(data = dat_trim, aes(x = utm_x, y = utm_y), 
@@ -189,5 +188,5 @@ ggplot() +
 
 # export grid
 saveRDS(bathy_dat, here::here("data", "spatial", "pred_bathy_grid.RDS"))
-
+saveRDS(coast_utm, here::here("data", "spatial", "coast_trim_utm.RDS"))
 
