@@ -21,7 +21,7 @@ synoptic_stations <- read.csv(here::here("data", "synoptic_stations.csv")) %>%
 
 dat <- bridge %>% 
   left_join(., 
-            depths %>% select(unique_event, depth_mean_m, dist_to_coast_km,
+            depths %>% dplyr::select(unique_event, depth_mean_m, dist_to_coast_km,
                               bridge_dist_km),
             by = "unique_event") %>% 
   left_join(., chin, by = "unique_event") %>% 
@@ -56,7 +56,7 @@ dat <- bridge %>%
     # bridge_dist_km = as.numeric(bridge_dist_km),
     dist_to_coast_km = as.numeric(dist_to_coast_km)
   ) %>% 
-  select(unique_event, date, year, month, day, day_night, season,
+  dplyr::select(unique_event, date, year, month, day, day_night, season,
          stratum:station_name, synoptic_station, mean_lat, mean_lon, 
          vessel_name, distance_travelled, vessel_speed, 
          depth_mean_m, dist_to_coast_km, 
@@ -71,7 +71,7 @@ get_utm <- function(x, y, zone, loc){
   points = SpatialPoints(cbind(x, y),
                          proj4string = CRS("+proj=longlat +datum=WGS84"))
   points_utm = spTransform(
-    points, CRS(paste0("+proj=utm +zone=",zone[1]," +ellps=WGS84"))
+    points, CRS(paste0("+proj=utm +zone=",zone[1]," +units=m"))
   )
   if (loc == "x") {
     return(coordinates(points_utm)[,1])
@@ -82,8 +82,8 @@ get_utm <- function(x, y, zone, loc){
  
 dat_trim <- dat %>%
   filter(synoptic_station == TRUE) %>% 
-  mutate(utm_x = get_utm(mean_lon, mean_lat, "10", loc = "x"),
-         utm_y = get_utm(mean_lon, mean_lat, "10", loc = "y"))
+  mutate(utm_x = get_utm(mean_lon, mean_lat, "9", loc = "x"),
+         utm_y = get_utm(mean_lon, mean_lat, "9", loc = "y"))
 
 
 min_lat <- min(floor(dat_trim$mean_lat) - 0.1)
@@ -95,7 +95,7 @@ coast <- rbind(rnaturalearth::ne_states( "United States of America",
                                          returnclass = "sf"), 
                rnaturalearth::ne_states( "Canada", returnclass = "sf")) %>% 
   st_crop(., xmin = min_lon, ymin = min_lat, xmax = max_lon, ymax = max_lat) %>% 
-  st_transform(., crs = sp::CRS("+proj=utm +zone=10 +ellps=WGS84"))
+  st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
   
 
 ggplot() +
