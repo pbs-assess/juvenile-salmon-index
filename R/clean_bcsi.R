@@ -52,16 +52,31 @@ dat <- bridge %>%
       month %in% c("10", "11", "12") ~ "fa",
       month %in% c("1", "2", "3") ~ "wi"
     ),
-    depth_mean_m = as.numeric(depth_mean_m),
+    # missing bathymetry for a few cases
+    depth_mean_m = ifelse(!is.na(depth_mean_m),
+                          as.numeric(depth_mean_m),
+                          start_bottom_depth),
     # bridge_dist_km = as.numeric(bridge_dist_km),
-    dist_to_coast_km = as.numeric(dist_to_coast_km)
+    dist_to_coast_km = as.numeric(dist_to_coast_km),
+    vessel_name = tolower(vessel_name),
+    vessel = case_when(
+      grepl("crest", vessel_name) ~ "sea crest",
+      grepl("franklin", vessel_name) ~ "franklin",
+      grepl("ricker", vessel_name) ~ "ricker",
+      grepl("viking", vessel_name) ~ "viking storm",
+      grepl("nordic pearl", vessel_name) ~ "nordic pearl",
+      grepl("anita", vessel_name) ~ "anita j",
+      grepl("frosti", vessel_name) ~ "frosti",
+      grepl("columbia", vessel_name) ~ "columbia",
+      grepl("ocean selector", vessel_name) ~ "ocean selector"
+    )
   ) %>% 
   dplyr::select(unique_event, date, year, month, day, day_night, season,
          stratum:station_name, synoptic_station, mean_lat, mean_lon, 
-         vessel_name, distance_travelled, vessel_speed, 
+         vessel, distance_travelled, vessel_speed, 
          depth_mean_m, dist_to_coast_km, 
          mouth_height = mouth_height_use, mouth_width = mouth_width_use,
-         ck_juv = n_juv, ck_ad = n_ad) 
+         ck_juv = n_juv, ck_ad = n_ad)
 
 
 ## PREP SPATIAL ----------------------------------------------------------------
@@ -103,6 +118,20 @@ ggplot() +
   geom_point(data = dat_trim,
              aes(x = utm_x, y = utm_y, fill = year), 
              shape = 21, alpha = 0.4)
+
+
+# some potential issues with limited data for certain vessels (don't assume
+# models will perform well)
+dat_trim %>% 
+  group_by(year, month, vessel) %>% 
+  summarize(n_tows = length(unique_event)) %>% 
+  ungroup() %>% 
+  ggplot(.) +
+  geom_jitter(aes(x = month, y = year, size = n_tows),
+              alpha = 0.3, width = 0.25) +
+  facet_wrap(~vessel) +
+  ggsidekick::theme_sleek()
+
 
 
 # export subsetted version to use for initial fitting

@@ -14,11 +14,14 @@ library(ggplot2)
 # downscale data and predictive grid
 dat_trim <- readRDS(here::here("data", "chin_catch_sbc.rds")) %>% 
   mutate(utm_x_1000 = utm_x / 1000,
-         utm_y_1000 = utm_y / 1000)
+         utm_y_1000 = utm_y / 1000,
+         year_f = as.factor(year)) %>% 
+  filter(!is.na(depth_mean_m),
+         !is.na(dist_to_coast_km))
 
 grid <- readRDS(here::here("data", "spatial", "pred_bathy_grid.RDS")) %>% 
-  mutate(utm_x = X / 1000,
-         utm_y = Y / 1000)
+  mutate(utm_x_1000 = X / 1000,
+         utm_y_1000 = Y / 1000)
 
 coast_utm <- rbind(rnaturalearth::ne_states( "United States of America", 
                                          returnclass = "sf"), 
@@ -61,3 +64,19 @@ plot(dat_trim_spde)
 plot(jchin1_spde_nch)
 plot(jchin1_spde$mesh, main = NA, edge.color = "grey60", asp = 1)
 plot(jchin1_spde_nch$mesh, main = NA, edge.color = "grey60", asp = 1)
+
+
+## FIT SIMPLE MODEL ------------------------------------------------------------
+
+# Include covariates for monthly smooth, year factor, distance travelled, 
+# bathymetry and distance to coast
+fit <- sdmTMB(ck_juv ~ s(depth_mean_m) + s(dist_to_coast_km) + 
+                s(month),
+              data = dat_trim,
+              spde = bspde,
+              # silent = FALSE,
+              # anisotropy = TRUE,
+              # ar1_fields = FALSE,
+              family = nbinom2(link = "log"))
+
+
