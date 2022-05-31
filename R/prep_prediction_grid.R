@@ -8,6 +8,7 @@
 
 library(sf)
 library(raster)
+library(rgdal)
 library(tidyverse)
 library(ncdf4)
 library(maptools)
@@ -17,7 +18,12 @@ library(rnaturalearth)
 library(rnaturalearthdata)
 
 
+# chinook dataset
 dat_trim <- readRDS(here::here("data", "chin_catch_sbc.rds"))
+
+# shapefile for IPES survey grid
+ipes_grid_raw <- readOGR(
+  here::here("data", "spatial", "ipes_shapefiles", "IPES_Grid_UTM9.shp"))
 
 
 # parallelize based on operating system (should speed up some of the spatial
@@ -39,16 +45,16 @@ if (Sys.info()['sysname'] == "Windows") {
 big_bathy_path <- "C:/Users/FRESHWATERC/Documents/drive docs/spatial/BC NetCDF"
 ncin <- nc_open(
   paste(big_bathy_path, "british_columbia_3_msl_2013.nc", sep = "/"))
-ncin_us <- nc_open(
-  paste(big_bathy_path, "usgsCeCrm8_703b_754f_94dc.nc", sep = "/"))
+# ncin_us <- nc_open(
+#   paste(big_bathy_path, "usgsCeCrm8_703b_754f_94dc.nc", sep = "/"))
 
 #specify lat/long
 dep_list_bc <- list(lon = ncvar_get(ncin, "lon"),
                     lat = ncvar_get(ncin, "lat"),
                     dep = ncvar_get(ncin, "Band1"))
-dep_list_us <- list(lon = ncvar_get(ncin_us, "longitude"),
-                    lat = ncvar_get(ncin_us, "latitude"),
-                    dep = ncvar_get(ncin_us, "topo"))
+# dep_list_us <- list(lon = ncvar_get(ncin_us, "longitude"),
+#                     lat = ncvar_get(ncin_us, "latitude"),
+#                     dep = ncvar_get(ncin_us, "topo"))
 
 # function create dataframe
 dep_dat_f <- function(x) {
@@ -58,20 +64,17 @@ dep_dat_f <- function(x) {
     data.frame()
 }
 
-dep_dat_bc <- dep_dat_f(dep_list_bc)
-#trim BC data
-dep_dat_bc2 <- dep_dat_bc %>%
-  filter(lat <= ceiling(max(dat_trim$mean_lat)),
-         lon >= floor(min(dat_trim$mean_lon))#,
-         # !depth < -1000
-         ) %>% 
+dep_dat_bc <- dep_dat_f(dep_list_bc) %>% 
   mutate(depth = -1 * depth)
+
 # dep_dat_us <- dep_dat_f(dep_list_us)
 # #trim US data
 # dep_dat_us2 <- dep_dat_us %>%
 #   filter(lat <= 48, #min(dep_dat_bc$lat),
 #          # lon >= floor(min(dat_trim$mean_lon)),
 #          !is.na(depth),
+# shapefile for IPES survey grid
+
 #          !depth > 0.00#,
 #          # !depth < -1000
 #          ) %>% 
@@ -79,20 +82,29 @@ dep_dat_bc2 <- dep_dat_bc %>%
 
 # convert each to raster, downscale, and add terrain data to both
 # then convert back to dataframes
-bc_raster <- rasterFromXYZ(dep_dat_bc2, 
+bc_raster <- rasterFromXYZ(dep_dat_bc, 
                            crs = sp::CRS("+proj=longlat +datum=WGS84"))
 bc_raster_utm <- projectRaster(bc_raster,
                                crs = sp::CRS("+proj=utm +zone=9 +units=m"),
-                               # convert to 1000 m resolution
-                               res = 1000)
+                               # convert to 2000 m resolution
+                               res = 2000)
+
+plot(bc_raster_utm)
+plot(ipes_grid_raw, 
+     add = T,
+     border = "blue")
+
+# crop to survey grid
+ipes_raster_utm <- crop(bc_raster_utm, ipes_grid_raw) 
+
 
 # # merge and add aspect/slope
 # coast_raster <- merge(bc_raster, us_raster)
-bc_raster_slope <- terrain(bc_raster_utm, opt = 'slope', unit = 'degrees',
+ipes_raster_slope <- terrain(ipes_raster_utm, opt = 'slope', unit = 'degrees',
                               neighbors = 8)
-bc_raster_aspect <- terrain(bc_raster_utm, opt = 'aspect', unit = 'degrees',
+ipes_raster_aspect <- terrain(ipes_raster_utm, opt = 'aspect', unit = 'degrees',
                                neighbors = 8)
-bc_raster_list <- list(depth = bc_raster_utm,
+ipes_raster_list <- list(depth = ipes_raster_utm,
                           slope = bc_raster_slope,
                           aspect = bc_raster_aspect)
 
@@ -108,10 +120,10 @@ bc_raster_list <- list(depth = bc_raster_utm,
 # purrr::map(low_bc_raster_list2, plot)
 
 
-saveRDS(bc_raster_list,
-        here::here("data", "spatial", "bathy_raster_utm_1000m.RDS"))
-saveRDS(low_bc_raster_list,
-        here::here("data", "spatial", "bathy_lowres_bc_rasters.RDS"))
+saveRDS(ipes_raster_list,
+        here::here("data", "spatial", "ipes_raster_utm_2000m.RDS"))
+# saveRDS(low_bc_raster_list,
+#         here::here("data", "spatial", "bathy_lowres_bc_rasters.RDS"))
 
 
 ## GENERATE GRID ---------------------------------------------------------------
@@ -119,8 +131,8 @@ saveRDS(low_bc_raster_list,
 # lower resolution raster list generated above
 # low_bc_raster_list <- readRDS(
 #   here::here("data", "spatial", "bathy_lowres_bc_rasters.RDS"))
-low_bc_raster_list <- readRDS(
-  here::here("data", "spatial", "bathy_raster_utm_1000m.RDS"))
+ipes_raster_list <- readRDS(
+  here::here("data", "spatial", "ipes_raster_utm_2000m.RDS"))
 
 
 # boundary box for receiver locations
@@ -129,10 +141,9 @@ max_lat <- max(dat_trim$mean_lat + 0.1)
 min_lon <- min(dat_trim$mean_lon - 0.1)
 max_lon <- max(dat_trim$mean_lon + 0.1)
 
-
-bathy_low_sf_list <- purrr::map2(
-  low_bc_raster_list,
-  names(low_bc_raster_list),
+ipes_sf_list <- purrr::map2(
+  ipes_raster_list,
+  names(ipes_raster_list),
   function (x, y) {
     as(x, 'SpatialPixelsDataFrame') %>%
       as.data.frame() %>%
@@ -146,10 +157,10 @@ bathy_low_sf_list <- purrr::map2(
 
 
 # join depth and slope data
-bathy_low_sf <- st_join(bathy_low_sf_list$depth, bathy_low_sf_list$slope) 
+ipes_sf <- st_join(ipes_sf_list$depth, ipes_sf_list$slope) 
 
 ## convert to lat/lon for coast distance function 
-bathy_low_sf_deg <- bathy_low_sf %>%
+ipes_sf_deg <- ipes_sf %>%
   st_transform(., crs = sp::CRS("+proj=longlat +datum=WGS84"))
 
 # coast sf for plotting and calculating distance to coastline 
@@ -161,7 +172,7 @@ coast <- rbind(rnaturalearth::ne_states( "United States of America",
               xmin = min_lon, ymin = 48, xmax = max_lon, ymax = max_lat) 
   
 # calculate distance to coastline
-coast_dist <- geosphere::dist2Line(p = sf::st_coordinates(bathy_low_sf_deg),
+coast_dist <- geosphere::dist2Line(p = sf::st_coordinates(ipes_sf_deg),
                                    line = as(coast, 'Spatial'))
 
 coast_utm <- coast %>% 
@@ -170,23 +181,25 @@ coast_utm <- coast %>%
 
 
 # combine all data
-bathy_dat <- data.frame(
-  st_coordinates(bathy_low_sf[ , 1]),
-  depth = bathy_low_sf$depth,
-  slope = bathy_low_sf$slope,
+ipes_grid <- data.frame(
+  st_coordinates(ipes_sf[ , 1]),
+  depth = ipes_sf$layer,
+  slope = ipes_sf$slope,
   shore_dist = coast_dist[, "distance"]
 )
+ipes_grid_trim <- ipes_grid %>% filter(!depth > 500)
 
 ggplot() + 
   # geom_sf(data = coast_utm) +
-  geom_raster(data = bathy_dat, aes(x = X, y = Y, fill = shore_dist)) +
+  geom_raster(data = ipes_grid_trim, aes(x = X, y = Y, fill = shore_dist)) +
   scale_fill_viridis_c() +
-  geom_point(data = dat_trim, aes(x = utm_x, y = utm_y), 
-             fill = "white", shape = 21) +
+  # geom_point(data = dat_trim, aes(x = utm_x, y = utm_y),
+  #            fill = "white",
+  #            shape = 21) +
   ggsidekick::theme_sleek()
 
 
 # export grid
-saveRDS(bathy_dat, here::here("data", "spatial", "pred_bathy_grid.RDS"))
+saveRDS(ipes_grid, here::here("data", "spatial", "pred_ipes_grid.RDS"))
 saveRDS(coast_utm, here::here("data", "spatial", "coast_trim_utm.RDS"))
 
