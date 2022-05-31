@@ -41,8 +41,8 @@ dat <- bridge %>%
     #                           TRUE,
     #                           FALSE),
     synoptic_station = ifelse(
-      mean_lat > 48 & mean_lat < 52 & !grepl("GS", station_name) & 
-        mean_lon > -131,
+      mean_lat > 47 & mean_lat < 56 & !grepl("GS", station_name) & 
+        mean_lon > -135,
       TRUE,
       FALSE
       ),
@@ -73,7 +73,8 @@ dat <- bridge %>%
     )
   ) %>% 
   dplyr::select(unique_event, date, year, month, day, day_night, season,
-         stratum:station_name, synoptic_station, mean_lat, mean_lon, 
+         stratum:station_name, pfma = dfo_stat_area_code,
+         synoptic_station, mean_lat, mean_lon, 
          vessel, distance_travelled, vessel_speed, 
          depth_mean_m, dist_to_coast_km, 
          mouth_height = mouth_height_use, mouth_width = mouth_width_use,
@@ -81,6 +82,8 @@ dat <- bridge %>%
 
 
 ## PREP SPATIAL ----------------------------------------------------------------
+
+# import IPES survey grid to constrain 
 
 # NOTE full dataset spans many UTM zones so only apply to southern regions
 get_utm <- function(x, y, zone, loc){
@@ -97,9 +100,20 @@ get_utm <- function(x, y, zone, loc){
 }
  
 dat_trim <- dat %>%
-  filter(synoptic_station == TRUE) %>% 
+  filter(synoptic_station == TRUE,
+         # exclude SoG and Puget Sound PFMAs
+         ! pfma %in% c("13", "14", "15", "16", "17", "18", "19", "PS")) %>%
   mutate(utm_x = get_utm(mean_lon, mean_lat, "9", loc = "x"),
-         utm_y = get_utm(mean_lon, mean_lat, "9", loc = "y"))
+         utm_y = get_utm(mean_lon, mean_lat, "9", loc = "y"),
+         year_f = as.factor(year),
+         season = case_when(
+           month %in% c("2", "3", "4") ~ "sp",
+           month %in% c("5", "6", "7", "8") ~ "su",
+           month %in% c("9", "10", "11", "12") ~ "wi"
+         ),
+         season_f = as.factor(season),
+         effort = log(distance_travelled)) %>% 
+  droplevels()
 
 
 min_lat <- min(floor(dat_trim$mean_lat) - 0.1)
@@ -117,7 +131,7 @@ coast <- rbind(rnaturalearth::ne_states( "United States of America",
 ggplot() +
   geom_sf(data = coast, color = "black", fill = "white") +
   geom_point(data = dat_trim,
-             aes(x = utm_x, y = utm_y, fill = year), 
+             aes(x = utm_x, y = utm_y, fill = pfma), 
              shape = 21, alpha = 0.4)
 
 
@@ -141,15 +155,13 @@ dat_trim$log_depth <- log(dat_trim$depth_mean_m)
 plot_foo <- function(x_in) {
   ggplot(data = dat_trim) +
     geom_point(aes_string(x = x_in, y = "ck_juv")) +
-    ggsidekick::theme_sleek()
+    ggsidekick::theme_sleek() +
+    facet_wrap(~season_f, scales = "free")
 }
 
-plot_foo("month")
 plot_foo("distance_travelled")
 plot_foo("dist_to_coast_km")
-plot_foo("log_dist_coast")
 plot_foo("depth_mean_m")
-plot_foo("log_depth")
 
 
 # export subsetted version to use for initial fitting

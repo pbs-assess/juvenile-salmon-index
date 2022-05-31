@@ -14,15 +14,7 @@ library(ggplot2)
 # downscale data and predictive grid
 dat_trim <- readRDS(here::here("data", "chin_catch_sbc.rds")) %>% 
   mutate(utm_x_1000 = utm_x / 1000,
-         utm_y_1000 = utm_y / 1000,
-         year_f = as.factor(year),
-         season = case_when(
-           month %in% c("2", "3", "4") ~ "sp",
-           month %in% c("5", "6", "7", "8") ~ "su",
-           month %in% c("9", "10", "11", "12") ~ "wi"
-         ),
-         season_f = as.factor(season),
-         effort = log(distance_travelled)) %>% 
+         utm_y_1000 = utm_y / 1000) %>% 
   filter(!is.na(depth_mean_m),
          !is.na(dist_to_coast_km))
 
