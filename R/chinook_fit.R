@@ -15,7 +15,14 @@ library(ggplot2)
 dat_trim <- readRDS(here::here("data", "chin_catch_sbc.rds")) %>% 
   mutate(utm_x_1000 = utm_x / 1000,
          utm_y_1000 = utm_y / 1000,
-         year_f = as.factor(year)) %>% 
+         year_f = as.factor(year),
+         season = case_when(
+           month %in% c("2", "3", "4") ~ "sp",
+           month %in% c("5", "6", "7", "8") ~ "su",
+           month %in% c("9", "10", "11", "12") ~ "wi"
+         ),
+         season_f = as.factor(season),
+         effort = log(distance_travelled)) %>% 
   filter(!is.na(depth_mean_m),
          !is.na(dist_to_coast_km))
 
@@ -40,7 +47,7 @@ coast_utm <- rbind(rnaturalearth::ne_states( "United States of America",
 # spde <- make_mesh(dat_trim, c("utm_x_1000", "utm_y_1000"), 
 #                            n_knots = 250, type = "kmeans")
 spde <- make_mesh(dat_trim, c("utm_x_1000", "utm_y_1000"), 
-                   cutoff = 5, type = "kmeans")
+                   cutoff = 10, type = "kmeans")
 plot(spde)
 
 
@@ -68,15 +75,26 @@ plot(jchin1_spde_nch$mesh, main = NA, edge.color = "grey60", asp = 1)
 
 ## FIT SIMPLE MODEL ------------------------------------------------------------
 
-# Include covariates for monthly smooth, year factor, distance travelled, 
-# bathymetry and distance to coast
-fit <- sdmTMB(ck_juv ~ s(depth_mean_m) + s(dist_to_coast_km) + 
-                s(month),
+# Fit spatial only model with environmental covariates and no effort offset
+# (month, bathymetry and distance to coast)
+fit <- sdmTMB(ck_juv ~ s(depth_mean_m, by = season_f) + 
+                s(dist_to_coast_km, by = season_f) + 
+                season_f,
+              offset = effort,
               data = dat_trim,
-              spde = bspde,
+              mesh = bspde,
               # silent = FALSE,
-              # anisotropy = TRUE,
-              # ar1_fields = FALSE,
-              family = nbinom2(link = "log"))
+              family = nbinom2(link = "log"),
+              spatial = "on")
 
+fit
+sanity(fit)
+
+visreg::visreg(fit, xvar = "depth_mean_m", by = "season_f", xlim = c(0, 1000))
+visreg::visreg(fit, xvar = "depth_mean_m", by = "season_f", scale = "response", 
+               xlim = c(0, 1000), nn = 200)
+visreg::visreg(fit, xvar = "dist_to_coast_km", by = "season_f", 
+               xlim = c(0, 200))
+visreg::visreg(fit, xvar = "dist_to_coast_km", by = "season_f", 
+               scale = "response", xlim = c(0, 200), nn = 200)
 

@@ -53,9 +53,10 @@ dat <- bridge %>%
       month %in% c("1", "2", "3") ~ "wi"
     ),
     # missing bathymetry for a few cases
-    depth_mean_m = ifelse(!is.na(depth_mean_m),
-                          as.numeric(depth_mean_m),
-                          start_bottom_depth),
+    depth_mean_m = case_when(
+      is.na(depth_mean_m) ~ start_bottom_depth,
+      depth_mean_m < 0 ~ start_bottom_depth,
+      TRUE ~ as.numeric(depth_mean_m)),
     # bridge_dist_km = as.numeric(bridge_dist_km),
     dist_to_coast_km = as.numeric(dist_to_coast_km),
     vessel_name = tolower(vessel_name),
@@ -120,6 +121,8 @@ ggplot() +
              shape = 21, alpha = 0.4)
 
 
+## DATA EXPLORE ----------------------------------------------------------------
+
 # some potential issues with limited data for certain vessels (don't assume
 # models will perform well)
 dat_trim %>% 
@@ -132,6 +135,21 @@ dat_trim %>%
   facet_wrap(~vessel) +
   ggsidekick::theme_sleek()
 
+dat_trim$log_dist_coast <- log(dat_trim$dist_to_coast_km)
+dat_trim$log_depth <- log(dat_trim$depth_mean_m)
+
+plot_foo <- function(x_in) {
+  ggplot(data = dat_trim) +
+    geom_point(aes_string(x = x_in, y = "ck_juv")) +
+    ggsidekick::theme_sleek()
+}
+
+plot_foo("month")
+plot_foo("distance_travelled")
+plot_foo("dist_to_coast_km")
+plot_foo("log_dist_coast")
+plot_foo("depth_mean_m")
+plot_foo("log_depth")
 
 
 # export subsetted version to use for initial fitting
