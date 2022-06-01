@@ -13,3 +13,4 @@ prediction-grids/*
 .DS_Store
 R/hidden/
 *.dll
+defunct/

@@ -14,19 +14,29 @@ library(ggplot2)
 # downscale data and predictive grid
 dat_trim <- readRDS(here::here("data", "chin_catch_sbc.rds")) %>% 
   mutate(utm_x_1000 = utm_x / 1000,
-         utm_y_1000 = utm_y / 1000) %>% 
+         utm_y_1000 = utm_y / 1000,
+         offset = effort) %>% 
   filter(!is.na(depth_mean_m),
-         !is.na(dist_to_coast_km))
+         !is.na(dist_to_coast_km),
+         !is.na(effort))
 
 grid <- readRDS(here::here("data", "spatial", "pred_bathy_grid.RDS")) %>% 
   mutate(utm_x_1000 = X / 1000,
          utm_y_1000 = Y / 1000)
 
+
+# coastline cropped based on survey area
+min_lat <- min(floor(dat_trim$mean_lat) - 1.5)
+max_lat <- max(dat_trim$mean_lat) + 1.5
+min_lon <- min(floor(dat_trim$mean_lon) - 0.1)
+max_lon <- max(dat_trim$mean_lon) + 1.5
+
 coast_utm <- rbind(rnaturalearth::ne_states( "United States of America", 
                                          returnclass = "sf"), 
                rnaturalearth::ne_states( "Canada", returnclass = "sf")) %>% 
-  sf::st_crop(., 
-              xmin = -132, ymin = 47, xmax = -121.25, ymax = 52.5) %>% 
+  sf::st_crop(
+    ., xmin = min_lon, ymin = min_lat, xmax = max_lon, ymax = max_lat
+  ) %>% 
   sf::st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
 
 
@@ -34,12 +44,10 @@ coast_utm <- rbind(rnaturalearth::ne_states( "United States of America",
 ## MAKE MESH -------------------------------------------------------------------
 
 # have to account for landmasses so use predictive grid as baseline 
-# TODO: generate grid without SOG based on BSCI shape file
-
 # spde <- make_mesh(dat_trim, c("utm_x_1000", "utm_y_1000"), 
 #                            n_knots = 250, type = "kmeans")
 spde <- make_mesh(dat_trim, c("utm_x_1000", "utm_y_1000"), 
-                   cutoff = 10, type = "kmeans")
+                   cutoff = 30, type = "kmeans")
 plot(spde)
 
 
@@ -69,10 +77,10 @@ plot(jchin1_spde_nch$mesh, main = NA, edge.color = "grey60", asp = 1)
 
 # Fit spatial only model with environmental covariates and no effort offset
 # (month, bathymetry and distance to coast)
-fit <- sdmTMB(ck_juv ~ s(depth_mean_m, by = season_f) + 
-                s(dist_to_coast_km, by = season_f) + 
+fit <- sdmTMB(ck_juv ~ s(depth_mean_m, by = season_f, k = 3) + 
+                s(dist_to_coast_km, by = season_f, k = 3) + 
                 season_f,
-              offset = effort,
+              # offset = dat_trim$effort,
               data = dat_trim,
               mesh = bspde,
               # silent = FALSE,
@@ -81,6 +89,10 @@ fit <- sdmTMB(ck_juv ~ s(depth_mean_m, by = season_f) +
 
 fit
 sanity(fit)
+
+qqplot <- simulate(fit, nsim = 500) %>% 
+  dharma_residuals(fit)
+
 
 visreg::visreg(fit, xvar = "depth_mean_m", by = "season_f", xlim = c(0, 1000))
 visreg::visreg(fit, xvar = "depth_mean_m", by = "season_f", scale = "response", 

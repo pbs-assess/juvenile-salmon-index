@@ -57,7 +57,7 @@ dat <- bridge %>%
       is.na(depth_mean_m) ~ start_bottom_depth,
       depth_mean_m < 0 ~ start_bottom_depth,
       TRUE ~ as.numeric(depth_mean_m)),
-    # bridge_dist_km = as.numeric(bridge_dist_km),
+    bridge_dist_km = as.numeric(bridge_dist_km),
     dist_to_coast_km = as.numeric(dist_to_coast_km),
     vessel_name = tolower(vessel_name),
     vessel = case_when(
@@ -75,7 +75,7 @@ dat <- bridge %>%
   dplyr::select(unique_event, date, year, month, day, day_night, season,
          stratum:station_name, pfma = dfo_stat_area_code,
          synoptic_station, mean_lat, mean_lon, 
-         vessel, distance_travelled, vessel_speed, 
+         vessel, bridge_dist_km, vessel_speed, 
          depth_mean_m, dist_to_coast_km, 
          mouth_height = mouth_height_use, mouth_width = mouth_width_use,
          ck_juv = n_juv, ck_ad = n_ad)
@@ -112,7 +112,7 @@ dat_trim <- dat %>%
            month %in% c("9", "10", "11", "12") ~ "wi"
          ),
          season_f = as.factor(season),
-         effort = log(distance_travelled)) %>% 
+         effort = log(bridge_dist_km)) %>% 
   droplevels()
 
 
