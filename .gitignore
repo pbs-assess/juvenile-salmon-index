@@ -8,10 +8,8 @@ inst/doc
 prediction-grids/*
 *.rds
 !data/*.rds
-!data/stockKeys/*.rds
+!data/spatial/*.rds
 *.pdf
 .DS_Store
 R/hidden/
-data/modelFits/
-data/spatialData/eezShapeFile/
 *.dll
