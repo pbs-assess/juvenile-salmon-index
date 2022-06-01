@@ -18,7 +18,9 @@ dat_trim <- readRDS(here::here("data", "chin_catch_sbc.rds")) %>%
          offset = effort) %>% 
   filter(!is.na(depth_mean_m),
          !is.na(dist_to_coast_km),
-         !is.na(effort))
+         !is.na(effort),
+         # drop 1995 so that '96 doesn't have to be interpolated
+         !year == "1995")
 
 grid <- readRDS(here::here("data", "spatial", "pred_bathy_grid.RDS")) %>% 
   mutate(utm_x_1000 = X / 1000,
@@ -75,6 +77,20 @@ plot(jchin1_spde_nch$mesh, main = NA, edge.color = "grey60", asp = 1)
 
 ## FIT SIMPLE MODEL ------------------------------------------------------------
 
+# correlation between depth and distance to coast?
+dum <- dat_trim[, c("depth_mean_m", "dist_to_coast_km")]
+cor(dum)
+
+# Fit offset only
+# TODO: ask Sean why offsets don't work...
+fit0 <- sdmTMB(ck_juv ~ depth_mean_m,
+              offset = dat_trim$effort,
+              data = dat_trim,
+              mesh = bspde,
+              family = nbinom2(link = "log"),
+              spatial = "off")
+
+
 # Fit spatial only model with environmental covariates and no effort offset
 # (month, bathymetry and distance to coast)
 fit <- sdmTMB(ck_juv ~ s(depth_mean_m, by = season_f, k = 3) + 
@@ -94,6 +110,7 @@ qqplot <- simulate(fit, nsim = 500) %>%
   dharma_residuals(fit)
 
 
+pdf(here::here("figs", "diagnostics", "fits_spatial_only.pdf"))
 visreg::visreg(fit, xvar = "depth_mean_m", by = "season_f", xlim = c(0, 1000))
 visreg::visreg(fit, xvar = "depth_mean_m", by = "season_f", scale = "response", 
                xlim = c(0, 1000), nn = 200)
@@ -101,4 +118,29 @@ visreg::visreg(fit, xvar = "dist_to_coast_km", by = "season_f",
                xlim = c(0, 200))
 visreg::visreg(fit, xvar = "dist_to_coast_km", by = "season_f", 
                scale = "response", xlim = c(0, 200), nn = 200)
+dev.off()
 
+
+# Fit spatiotemporal model with only one environmental covariate
+fit_st <- sdmTMB(ck_juv ~ s(dist_to_coast_km, by = season_f, k = 3) + 
+                season_f,
+              # offset = dat_trim$effort,
+              data = dat_trim,
+              mesh = bspde,
+              time = "year",
+              family = nbinom2(link = "log"),
+              spatial = "off",
+              spatiotemporal = "ar1")
+
+sanity(fit_st)
+
+
+pdf(here::here("figs", "diagnostics", "fits_st.pdf"))
+simulate(fit_st, nsim = 500) %>% 
+  dharma_residuals(fit_st)
+visreg::visreg(fit_st, xvar = "season_f", scale = "response")
+visreg::visreg(fit_st, xvar = "dist_to_coast_km", by = "season_f", 
+               xlim = c(0, 200))
+visreg::visreg(fit_st, xvar = "dist_to_coast_km", by = "season_f", 
+               scale = "response", xlim = c(0, 200), nn = 200)
+dev.off()
