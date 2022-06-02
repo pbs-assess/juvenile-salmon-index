@@ -14,16 +14,14 @@ library(ggplot2)
 # downscale data and predictive grid
 dat_trim <- readRDS(here::here("data", "chin_catch_sbc.rds")) %>% 
   mutate(utm_x_1000 = utm_x / 1000,
-         utm_y_1000 = utm_y / 1000) %>% 
+         utm_y_1000 = utm_y / 1000,
+         survey = ifelse(year > 2016, "ipes", "hss")) %>% 
   filter(!is.na(depth_mean_m),
          !is.na(dist_to_coast_km),
          !is.na(effort),
          # drop 1995 so that '96 doesn't have to be interpolated
-         !year == "1995")
-
-grid <- readRDS(here::here("data", "spatial", "pred_bathy_grid.RDS")) %>% 
-  mutate(utm_x_1000 = X / 1000,
-         utm_y_1000 = Y / 1000)
+         !year %in% c("1995"#, "2022"
+                      ))
 
 coast_utm <- rbind(rnaturalearth::ne_states( "United States of America", 
                                          returnclass = "sf"), 
@@ -70,7 +68,8 @@ plot(jchin1_spde_nch$mesh, main = NA, edge.color = "grey60", asp = 1)
 
 ## FIT SIMPLE MODEL ------------------------------------------------------------
 
-# correlation between depth and distance to coast?
+# correlation between depth and distance to coast may be significant; probably
+# should fit one or the other
 dum <- dat_trim[, c("depth_mean_m", "dist_to_coast_km")]
 cor(dum)
 
@@ -86,6 +85,7 @@ fit0 <- sdmTMB(ck_juv ~ depth_mean_m,
 
 # Fit spatial only model with environmental covariates and no effort offset
 # (month, bathymetry and distance to coast)
+# Explored monthly smooth (instead of season), but issues with convergence
 fit <- sdmTMB(ck_juv ~ s(depth_mean_m, by = season_f) + 
                 s(dist_to_coast_km, by = season_f) + 
                 season_f,
@@ -113,6 +113,7 @@ visreg::visreg(fit, xvar = "dist_to_coast_km", by = "season_f",
 dev.off()
 
 
+
 # Fit spatiotemporal model with only one environmental covariate
 fit_st <- sdmTMB(ck_juv ~ s(dist_to_coast_km, by = season_f, k = 3) + 
                 season_f,
@@ -136,3 +137,99 @@ visreg::visreg(fit_st, xvar = "dist_to_coast_km", by = "season_f",
 visreg::visreg(fit_st, xvar = "dist_to_coast_km", by = "season_f", 
                scale = "response", xlim = c(0, 200), nn = 200)
 dev.off()
+
+
+# spatial distribution of residuals
+dat_trim$resids <- residuals(fit_st)
+
+pdf(here::here("figs", "diagnostics", "spatial_resids_st.pdf"))
+ggplot(dat_trim, aes(utm_x_1000, utm_y_1000, col = resids)) +
+  scale_colour_gradient2() +
+  geom_point() +
+  facet_wrap(~year) +
+  coord_fixed()
+dev.off()
+
+ggplot(dat_trim, aes(x = year, y = resids)) +
+  geom_point() +
+  ggsidekick::theme_sleek()
+
+p_cod$effort <- 0.3*density + 0.2 + rnorm(1, 0, 0.5)
+
+## SPATIAL PREDS ---------------------------------------------------------------
+
+grid <- readRDS(here::here("data", "spatial", "pred_ipes_grid.RDS")) %>% 
+  mutate(utm_x_1000 = X / 1000,
+         utm_y_1000 = Y / 1000,
+         dist_to_coast_km = shore_dist / 1000)
+
+# add unique years and seasons
+exp_grid <- expand.grid(
+  year = unique(dat_trim$year),
+  season_f = unique(dat_trim$season_f)
+) %>%
+  mutate(id = row_number()) %>%
+  split(., .$id) %>% 
+  purrr::map(., function (x) {
+    grid %>% 
+      mutate(
+        year = x$year,
+        season_f = x$season_f
+      )
+  }) %>%
+  bind_rows() 
+
+
+preds <- predict(fit_st, exp_grid)
+preds_trim <- preds %>% filter(season_f == "su")
+
+plot_map <- function(dat, column) {
+  ggplot(dat, aes_string("utm_x_1000", "utm_y_1000", fill = column)) +
+    geom_raster() +
+    coord_fixed() +
+    ggsidekick::theme_sleek()
+}
+
+plot_map(preds_trim, "exp(est)") +
+  scale_fill_viridis_c(
+    # trans = "sqrt",
+    # # trim extreme high values to make spatial variation more visible
+    # na.value = "yellow", limits = c(0, quantile(exp(predictions$est), 0.995))
+  ) +
+  facet_wrap(~year) +
+  ggtitle("Prediction (fixed effects + all random effects)")
+
+plot_map(preds_trim, "exp(est_non_rf)") +
+  scale_fill_viridis_c(
+    # trans = "sqrt"
+    ) +
+  ggtitle("Prediction (fixed effects only)")  
+
+plot_map(preds_trim, "est_rf") +
+  scale_fill_gradient2(
+  ) +
+  ggtitle("Prediction (fixed effects only)")  
+
+plot_map(preds_trim, "epsilon_st") +
+  scale_fill_gradient2() +
+  facet_wrap(~year) +
+  ggtitle("Prediction (fixed effects + all random effects)")
+
+
+# index from summer
+p_st <- predict(fit_st, newdata = exp_grid %>% filter(season_f == "su"), 
+                return_tmb_object = TRUE)
+index <- get_index(p_st#, area = rep(4, nrow(grid))
+                   )
+
+index_plot <- ggplot(index, aes(year, est)) +
+  geom_ribbon(aes(ymin = lwr, ymax = upr), fill = "grey90") +
+  geom_line(lwd = 1, colour = "grey30") +
+  labs(x = "Year", y = "Count") +
+  ggsidekick::theme_sleek()
+
+pdf(here::here("figs", "diagnostics", "st_index.pdf"))
+index_plot
+dev.off()
+
+# clear evidence of change in mean value (likely survey effects?)

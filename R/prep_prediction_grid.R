@@ -34,15 +34,16 @@ if (Sys.info()['sysname'] == "Windows") {
   library("doParallel")
   cl <- makeCluster(ncores)
   registerDoParallel(cl)
+  big_bathy_path <- "C:/Users/FRESHWATERC/Documents/drive docs/spatial/BC NetCDF"
 } else {
   doMC::registerDoMC(ncores)
+  big_bathy_path <- "/Users/cam/Google Drive/spatial/BC NetCDF"
 }
 
 
 ## GENERATE BATHYMETRY RASTER _-------------------------------------------------
 
 ## import depth data from netcdf file for BC and US PNW
-big_bathy_path <- "C:/Users/FRESHWATERC/Documents/drive docs/spatial/BC NetCDF"
 ncin <- nc_open(
   paste(big_bathy_path, "british_columbia_3_msl_2013.nc", sep = "/"))
 # ncin_us <- nc_open(
@@ -95,7 +96,8 @@ plot(ipes_grid_raw,
      border = "blue")
 
 # crop to survey grid
-ipes_raster_utm <- crop(bc_raster_utm, ipes_grid_raw) 
+dum <- crop(bc_raster_utm, extent(ipes_grid_raw))
+ipes_raster_utm <- mask(dum, ipes_grid_raw)
 
 
 # # merge and add aspect/slope
@@ -105,8 +107,8 @@ ipes_raster_slope <- terrain(ipes_raster_utm, opt = 'slope', unit = 'degrees',
 ipes_raster_aspect <- terrain(ipes_raster_utm, opt = 'aspect', unit = 'degrees',
                                neighbors = 8)
 ipes_raster_list <- list(depth = ipes_raster_utm,
-                          slope = bc_raster_slope,
-                          aspect = bc_raster_aspect)
+                          slope = ipes_raster_slope,
+                          aspect = ipes_raster_aspect)
 
 # downscaled version
 # low_bc_raster_list <- purrr::map(bc_raster_list,
@@ -149,9 +151,6 @@ ipes_sf_list <- purrr::map2(
       as.data.frame() %>%
       st_as_sf(., coords = c("x", "y"),
                crs = sp::CRS("+proj=utm +zone=9 +units=m"))
-    # rename(lon = x, lat = y) %>%
-    #   st_as_sf(., coords = c("lon", "lat"),
-    #            crs = sp::CRS("+proj=longlat +datum=WGS84"))
   }
 )
 
@@ -179,7 +178,6 @@ coast_utm <- coast %>%
   sf::st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
 
 
-
 # combine all data
 ipes_grid <- data.frame(
   st_coordinates(ipes_sf[ , 1]),
@@ -191,7 +189,7 @@ ipes_grid_trim <- ipes_grid %>% filter(!depth > 500)
 
 ggplot() + 
   # geom_sf(data = coast_utm) +
-  geom_raster(data = ipes_grid_trim, aes(x = X, y = Y, fill = shore_dist)) +
+  geom_raster(data = ipes_grid, aes(x = X, y = Y, fill = shore_dist)) +
   scale_fill_viridis_c() +
   # geom_point(data = dat_trim, aes(x = utm_x, y = utm_y),
   #            fill = "white",
