@@ -122,7 +122,7 @@ fit_st <- sdmTMB(ck_juv ~ s(dist_to_coast_km, by = season_f, k = 3) +
               mesh = bspde,
               time = "year",
               family = nbinom2(link = "log"),
-              spatial = "off",
+              spatial = "on",
               spatiotemporal = "ar1")
 
 sanity(fit_st)
@@ -155,6 +155,7 @@ ggplot(dat_trim, aes(x = year, y = resids)) +
   ggsidekick::theme_sleek()
 
 p_cod$effort <- 0.3*density + 0.2 + rnorm(1, 0, 0.5)
+
 
 ## SPATIAL PREDS ---------------------------------------------------------------
 
