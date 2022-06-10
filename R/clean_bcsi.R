@@ -149,6 +149,18 @@ dat_trim %>%
   facet_wrap(~vessel) +
   ggsidekick::theme_sleek()
 
+
+# check seasonal coverage
+dat_trim %>% 
+  group_by(year, month, survey_f) %>% 
+  summarize(n_tows = length(unique_event)) %>% 
+  ungroup() %>% 
+  ggplot(.) +
+  geom_jitter(aes(x = month, y = year, size = n_tows, fill = survey_f),
+              alpha = 0.3, width = 0.25, shape = 21) +
+  ggsidekick::theme_sleek()
+
+
 dat_trim$log_dist_coast <- log(dat_trim$dist_to_coast_km)
 dat_trim$log_depth <- log(dat_trim$depth_mean_m)
 

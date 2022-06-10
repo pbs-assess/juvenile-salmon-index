@@ -15,19 +15,21 @@ library(ggplot2)
 dat_trim <- readRDS(here::here("data", "chin_catch_sbc.rds")) %>% 
   mutate(utm_x_1000 = utm_x / 1000,
          utm_y_1000 = utm_y / 1000,
-         survey = ifelse(year > 2016, "ipes", "hss")) %>% 
+         survey_f = ifelse(
+           year > 2016 & season_f == "su", "ipes", "hss") %>% as.factor()
+         ) %>% 
   filter(!is.na(depth_mean_m),
          !is.na(dist_to_coast_km),
          !is.na(effort),
          # drop 1995 so that '96 doesn't have to be interpolated
-         !year %in% c("1995"#, "2022"
+         !year %in% c("1995", "2022"
                       ))
 
 coast_utm <- rbind(rnaturalearth::ne_states( "United States of America", 
                                          returnclass = "sf"), 
                rnaturalearth::ne_states( "Canada", returnclass = "sf")) %>% 
   sf::st_crop(., 
-              xmin = -132, ymin = 47, xmax = -121.25, ymax = 52.5) %>% 
+              xmin = -137, ymin = 47, xmax = -121.25, ymax = 57) %>% 
   sf::st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
 
 
@@ -35,7 +37,6 @@ coast_utm <- rbind(rnaturalearth::ne_states( "United States of America",
 ## MAKE MESH -------------------------------------------------------------------
 
 # have to account for landmasses so use predictive grid as baseline 
-# TODO: generate grid without SOG based on BSCI shape file
 
 # spde <- make_mesh(dat_trim, c("utm_x_1000", "utm_y_1000"), 
 #                            n_knots = 250, type = "kmeans")
@@ -56,7 +57,9 @@ mesh_df_land <- bspde$mesh_sf[bspde$barrier_triangles, ]
 ggplot(coast_utm) +
   geom_sf() +
   geom_sf(data = mesh_df_water, size = 1, colour = "blue") +
-  geom_sf(data = mesh_df_land, size = 1, colour = "green")
+  geom_sf(data = mesh_df_land, size = 1, colour = "green") +
+  geom_point(data = dat_trim, aes(x = utm_x, y = utm_y), 
+             colour = "red", alpha = 0.4)
 
 
 #compare 
@@ -76,7 +79,7 @@ cor(dum)
 # Fit offset only
 # TODO: ask Sean why offsets don't work...
 fit0 <- sdmTMB(ck_juv ~ depth_mean_m,
-              offset = dat_trim$effort,
+              offset = "effort",
               data = dat_trim,
               mesh = bspde,
               family = nbinom2(link = "log"),
@@ -89,7 +92,7 @@ fit0 <- sdmTMB(ck_juv ~ depth_mean_m,
 fit <- sdmTMB(ck_juv ~ s(depth_mean_m, by = season_f) + 
                 s(dist_to_coast_km, by = season_f) + 
                 season_f,
-              offset = effort,
+              # offset = effort,
               data = dat_trim,
               mesh = bspde,
               # silent = FALSE,
@@ -98,20 +101,6 @@ fit <- sdmTMB(ck_juv ~ s(depth_mean_m, by = season_f) +
 
 fit
 sanity(fit)
-
-
-pdf(here::here("figs", "diagnostics", "fits_spatial_only.pdf"))
-qqplot <- simulate(fit, nsim = 500) %>% 
-  dharma_residuals(fit)
-visreg::visreg(fit, xvar = "depth_mean_m", by = "season_f", xlim = c(0, 1000))
-visreg::visreg(fit, xvar = "depth_mean_m", by = "season_f", scale = "response", 
-               xlim = c(0, 1000), nn = 200)
-visreg::visreg(fit, xvar = "dist_to_coast_km", by = "season_f", 
-               xlim = c(0, 200))
-visreg::visreg(fit, xvar = "dist_to_coast_km", by = "season_f", 
-               scale = "response", xlim = c(0, 200), nn = 200)
-dev.off()
-
 
 
 # Fit spatiotemporal model with only one environmental covariate
@@ -154,7 +143,30 @@ ggplot(dat_trim, aes(x = year, y = resids)) +
   geom_point() +
   ggsidekick::theme_sleek()
 
-p_cod$effort <- 0.3*density + 0.2 + rnorm(1, 0, 0.5)
+
+
+# compare fit_st to models that include a) fixed effect for survey and b) 
+# constrained to only summer months (also requires infilling)
+fit_st_survey <- sdmTMB(ck_juv ~ s(dist_to_coast_km, by = season_f, k = 3) + 
+                          season_f + survey_f,
+                        # offset = dat_trim$effort,
+                        data = dat_trim,
+                        mesh = bspde,
+                        time = "year",
+                        family = nbinom2(link = "log"),
+                        spatial = "off",
+                        spatiotemporal = "ar1")
+
+fit_st_survey2 <- sdmTMB(ck_juv ~ s(dist_to_coast_km, k = 3) + survey_f,
+                        # offset = dat_trim$effort,
+                        data = dat_trim %>% filter(season_f == "su"),
+                        mesh = bspde,
+                        time = "year",
+                        family = nbinom2(link = "log"),
+                        spatial = "off",
+                        spatiotemporal = "ar1")
+
+
 
 ## SPATIAL PREDS ---------------------------------------------------------------
 
@@ -177,7 +189,10 @@ exp_grid <- expand.grid(
         season_f = x$season_f
       )
   }) %>%
-  bind_rows() 
+  bind_rows() %>% 
+  left_join(., 
+            dat_trim %>% dplyr::select(year, survey_f, season_f) %>% distinct(),
+            by = c("year", "season_f")) 
 
 
 preds <- predict(fit_st, exp_grid)
@@ -233,3 +248,19 @@ index_plot
 dev.off()
 
 # clear evidence of change in mean value (likely survey effects?)
+
+# index from summer
+p_st <- predict(fit_st_survey, newdata = exp_grid %>% filter(season_f == "su"), 
+                return_tmb_object = TRUE)
+index <- get_index(p_st#, area = rep(4, nrow(grid))
+)
+
+index_plot <- ggplot(index, aes(year, est)) +
+  geom_ribbon(aes(ymin = lwr, ymax = upr), fill = "grey90") +
+  geom_line(lwd = 1, colour = "grey30") +
+  labs(x = "Year", y = "Count") +
+  ggsidekick::theme_sleek()
+
+pdf(here::here("figs", "diagnostics", "st_index_surv.pdf"))
+index_plot
+dev.off()
