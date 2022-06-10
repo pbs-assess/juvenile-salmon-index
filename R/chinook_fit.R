@@ -111,7 +111,7 @@ fit_st <- sdmTMB(ck_juv ~ s(dist_to_coast_km, by = season_f, k = 3) +
               mesh = bspde,
               time = "year",
               family = nbinom2(link = "log"),
-              spatial = "off",
+              spatial = "on",
               spatiotemporal = "ar1")
 
 sanity(fit_st)
@@ -165,6 +165,7 @@ fit_st_survey2 <- sdmTMB(ck_juv ~ s(dist_to_coast_km, k = 3) + survey_f,
                         family = nbinom2(link = "log"),
                         spatial = "off",
                         spatiotemporal = "ar1")
+
 
 
 
