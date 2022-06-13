@@ -112,7 +112,9 @@ dat_trim <- dat %>%
            month %in% c("9", "10", "11", "12") ~ "wi"
          ),
          season_f = as.factor(season),
-         effort = log(distance_travelled)) %>% 
+         effort = log(distance_travelled),
+         survey_f = ifelse(
+           year > 2016 & season_f == "su", "ipes", "hss") %>% as.factor()) %>% 
   droplevels()
 
 
@@ -139,7 +141,7 @@ ggplot() +
 
 # some potential issues with limited data for certain vessels (don't assume
 # models will perform well)
-dat_trim %>% 
+vessel_cov <- dat_trim %>% 
   group_by(year, month, vessel) %>% 
   summarize(n_tows = length(unique_event)) %>% 
   ungroup() %>% 
@@ -151,7 +153,7 @@ dat_trim %>%
 
 
 # check seasonal coverage
-dat_trim %>% 
+temp_cov <- dat_trim %>% 
   group_by(year, month, survey_f) %>% 
   summarize(n_tows = length(unique_event)) %>% 
   ungroup() %>% 
@@ -171,9 +173,18 @@ plot_foo <- function(x_in) {
     facet_wrap(~season_f, scales = "free")
 }
 
-plot_foo("distance_travelled")
-plot_foo("dist_to_coast_km")
-plot_foo("depth_mean_m")
+catch_eff <- plot_foo("distance_travelled")
+catch_dist <- plot_foo("dist_to_coast_km")
+catch_bathy <- plot_foo("depth_mean_m")
+
+
+pdf(here::here("figs", "exp_figs.pdf"))
+vessel_cov
+temp_cov
+catch_eff
+catch_dist
+catch_bathy
+dev.off()
 
 
 # export subsetted version to use for initial fitting
