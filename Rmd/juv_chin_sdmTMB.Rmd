@@ -1,0 +1,131 @@
+---
+title: "Juvenile Chinook sdmTMB"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(include = FALSE)
+library(tidyverse)
+library(sdmTMB)
+library(ggplot2)
+
+# downscale data and predictive grid
+dat_trim <- readRDS(here::here("data", "chin_catch_sbc.rds")) %>% 
+  mutate(utm_x_1000 = utm_x / 1000,
+         utm_y_1000 = utm_y / 1000,
+         survey_f = ifelse(
+           year > 2016 & season_f == "su", "ipes", "hss") %>% as.factor()
+         ) %>% 
+  filter(!is.na(depth_mean_m),
+         !is.na(dist_to_coast_km),
+         !is.na(effort),
+         # drop 1995 so that '96 doesn't have to be interpolated
+         !year %in% c("1995", "2022"
+                      ))
+
+coast_utm <- rbind(rnaturalearth::ne_states( "United States of America", 
+                                         returnclass = "sf"), 
+               rnaturalearth::ne_states( "Canada", returnclass = "sf")) %>% 
+  sf::st_crop(., 
+              xmin = -137, ymin = 45.5, xmax = -121.25, ymax = 57) %>% 
+  sf::st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
+```
+
+The goal is to develop a species distribution modeling framework that can be used to generate an annual abundance index for juvenile Chinook salmon (while accounting for changes in survey design) and also be used to predict spatial distributions in specific seasons to provide to various clients. Since these models will be parameterized with the same (or similar) data, but be structured in slightly different ways, will focus on the first component here.
+
+The basic data are counts of juvenile Chinook from each tow, which are heavily skewed towards zeros and small values, which lends itself well to a negative binomial distribution.
+
+```{r view_data, echo=TRUE}
+hist(dat_trim$ck_juv, breaks = 100)
+```
+
+Ideally we'll incorporate environmental and survey variables that might influence Chinook salmon abundance. To keep things simple, the initial model includes a categorical variable for season, a categorical variable for survey (IPES if summer and after 2016, otherwise defined as high seas), and a smoother for distance to shore, which varies among seasons. I considered including bottom bathymetry, but it's fairly correlated with distance to shore. Similarly initial models that included a smooth seasonal parameter (e.g. month or week), failed to converge. 
+
+I somewhat arbitrarily truncated the data around SEAK and excluded SoG data. While a lot of these samples are outside of the current IPES survey grid, the rationale is that including more data allows the model to better estimate the effect of covariates, which can then improve performance. Predictions (and the annual index of abundance) will be constrained to the IPES survey grid.
+
+```{r spatial_catch, echo=TRUE}
+ggplot() +
+  geom_sf(data = coast_utm) +
+  geom_point(data = dat_trim, aes(x = utm_x, y = utm_y, fill = survey_f), 
+             shape = 21, alpha = 0.2) +
+  facet_wrap(~season_f) +
+  ggsidekick::theme_sleek()
+```
+
+Before fitting the model we create a mesh based on the sampling domain. I chose the cutoff (controls the spacing of the mesh) somewhat arbitrarily but preliminary fits suggest it doesn't strongly impact the predictions. 
+
+```{r mesh1, echo=TRUE}
+spde <- make_mesh(dat_trim, c("utm_x_1000", "utm_y_1000"), 
+                   cutoff = 10, type = "kmeans")
+plot(spde)
+```
+
+I next constrained the mesh with a boundary to force the model to exclude points on land when estimating spatial effects. According to Sean this may not actually be necessary and constrains some of the model structures we can use (I'll explore more).
+
+```{r mesh2, echo = TRUE}
+bspde <- add_barrier_mesh(
+  spde, coast_utm, range_fraction = 0.1,
+  # scaling = 1000 since UTMs were rescaled above
+  proj_scaling = 1000, plot = TRUE
+)
+
+mesh_df_water <- bspde$mesh_sf[bspde$normal_triangles, ]
+mesh_df_land <- bspde$mesh_sf[bspde$barrier_triangles, ]
+ggplot(coast_utm) +
+  geom_sf() +
+  geom_sf(data = mesh_df_water, size = 1, colour = "blue") +
+  geom_sf(data = mesh_df_land, size = 1, colour = "green") 
+```
+
+Besides the fixed effects noted above, the model includes temporal, spatial, and spatiotemporal parameters. In this case, the temporal parameters reflect annual variability. To constrain, the model these are assumed to be autoregressive (i.e. there is a correlation in Chinook abundance from year to year). The spatial effects reflect spatial patterns that are stable among years, while the spatiotemporal effects reflect spatial patterns that vary among years. This results in the following model structure (not run due to time constraints). 
+
+```{r fit_model, echo=TRUE}
+# don't run, import instead
+fit_st_survey <- sdmTMB(ck_juv ~ s(dist_to_coast_km, by = season_f, k = 3) + 
+                          season_f + survey_f,
+              data = dat_trim,
+              mesh = bspde,
+              time = "year",
+              family = nbinom2(link = "log"),
+              spatial = "on",
+              spatiotemporal = "ar1",
+              do_fit = FALSE)
+
+fit_st_survey <- readRDS(here::here("data", "fits", "fit_st_survey.RDS"))
+```
+
+Residuals and spatial residuals look good.
+
+```{r check_resids, echo=TRUE}
+dat_trim$resids <- residuals(fit_st_survey, type = "mle-laplace")
+qqnorm(dat_trim$resids)
+abline(b = 1, a = 0)
+
+ggplot(dat_trim, aes(utm_x_1000, utm_y_1000, col = resids)) +
+  scale_colour_gradient2() +
+  geom_point() +
+  facet_wrap(~year) +
+  coord_fixed()
+```
+
+
+Fixed effects for distance to coast and season seem reasonable.
+
+```{r cond_effs, echo = TRUE}
+ggeffects::ggpredict(fit_st_survey,
+                     terms = "season_f") %>%
+  glimpse()
+  plot()
+```
+
+### Outstanding issues
+1. Identify suite of fixed covariates to include; use VIF or equivalent to assess colinearity
+2. Add distance traveled as a proxy for effort (use an offset)
+3. Evaluate impacts of including anisotropy vs. including a boundary mesh
+4. Evaluate impacts of fitting model to full dataset vs spatially/temporally constrained dataset (e.g. summer, IPES grid only)
+5. Determine most appropriate way to account for changes in survey design
+6. Does small estimate for rho invalidate independence of survey design effect and year effect?
+
+### Alternative model structure
+
+To provide predictions of spatial distributions, rather than an index of abundance, similar environmental covariates should be used, but the model should be reparameterized. Specifically, I would recommend treating month/week as a temporal variable (and allowing spatial patterns to vary accordingly), while year would be treated as a random intercept (potentially with random walk or AR1 component). This would for predictions to be made for an "average" year and better capturing seasonal changes in abundance which likely vary spatially. The spatial domain of the prediction grid could also be expanded to provide information coastwide.

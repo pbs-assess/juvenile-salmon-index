@@ -1,0 +1,13 @@
+Notes for Chinook Juvenile Indicators
+
+June 2
+- Fit initial spatial and spatio-temporal models
+- Convergence issues 
+	- Depth and bathymetry rel. highly correlated and including both terms lead to model convergence issues
+	- Replaced smooth for month with factor due to convergence issues
+	- Offset term resulted in errors
+- ST model diagnostics look good and predictions seems reasonable
+- Obvious shift in catch index with change in survey design 
+
+June 3 
+- Explore st models that include fixed effect for survey (HSS vs. IPES) and are constrained to summer months

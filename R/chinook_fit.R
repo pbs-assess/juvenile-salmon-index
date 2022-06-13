@@ -69,6 +69,17 @@ plot(jchin1_spde$mesh, main = NA, edge.color = "grey60", asp = 1)
 plot(jchin1_spde_nch$mesh, main = NA, edge.color = "grey60", asp = 1)
 
 
+# as above but for summer survey only
+spde_summer <-  make_mesh(dat_trim %>% filter(season_f == "su"),
+                          c("utm_x_1000", "utm_y_1000"), 
+                          cutoff = 10, type = "kmeans")
+bspde_summer <- add_barrier_mesh(
+  spde_summer, coast_utm, range_fraction = 0.1,
+  # scaling = 1000 since UTMs were rescaled above
+  proj_scaling = 1000, plot = TRUE
+)
+
+
 ## FIT SIMPLE MODEL ------------------------------------------------------------
 
 # correlation between depth and distance to coast may be significant; probably
@@ -154,8 +165,11 @@ fit_st_survey <- sdmTMB(ck_juv ~ s(dist_to_coast_km, by = season_f, k = 3) +
                         mesh = bspde,
                         time = "year",
                         family = nbinom2(link = "log"),
-                        spatial = "off",
+                        spatial = "on",
                         spatiotemporal = "ar1")
+sanity(fit_st_survey)
+#export do explore in Rmd
+saveRDS(fit_st_survey, here::here("data", "fits", "fit_st_survey.RDS"))
 
 fit_st_survey2 <- sdmTMB(ck_juv ~ s(dist_to_coast_km, k = 3) + survey_f,
                         # offset = dat_trim$effort,
@@ -165,7 +179,6 @@ fit_st_survey2 <- sdmTMB(ck_juv ~ s(dist_to_coast_km, k = 3) + survey_f,
                         family = nbinom2(link = "log"),
                         spatial = "off",
                         spatiotemporal = "ar1")
-
 
 
 
