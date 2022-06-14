@@ -112,10 +112,32 @@ ggplot(dat_trim, aes(utm_x_1000, utm_y_1000, col = resids)) +
 Fixed effects for distance to coast and season seem reasonable.
 
 ```{r cond_effs, echo = TRUE}
-ggeffects::ggpredict(fit_st_survey,
-                     terms = "season_f") %>%
-  glimpse()
-  plot()
+season_p <- visreg::visreg(fit_st_survey, xvar = "season_f", 
+                           scale = "response")
+dist_p <- visreg::visreg(fit_st_survey, xvar = "dist_to_coast_km", 
+                         by = "season_f", xlim = c(0, 200), scale = "response")
+```
+
+As mentioned above, even though the model is parameterized using a larger spatial domain, we can constrain predictions to focus on current IPES survey grid. 
+
+```{r spatial_preds, echo = TRUE}
+# import utm grid to generate predictions on
+exp_grid <- readRDS(here::here("data", "exp_pred_ipes_grid_utm.rds")) %>% 
+  filter(!year %in% c("1995", "2022"),
+         !is.na(dist_to_coast_km))
+
+# generate predictions
+preds <- predict(fit_st_survey, exp_grid)
+preds_hss <- preds %>% filter(season_f == "su", survey_f == "hss")
+preds_ipes <- preds %>% filter(season_f == "su", survey_f == "ipes")
+
+
+plot_map <- function(dat, column) {
+  ggplot(dat, aes_string("utm_x_1000", "utm_y_1000", fill = column)) +
+    geom_raster() +
+    coord_fixed() +
+    ggsidekick::theme_sleek()
+}
 ```
 
 ### Outstanding issues

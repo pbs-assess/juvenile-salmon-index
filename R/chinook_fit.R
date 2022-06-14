@@ -169,16 +169,19 @@ fit_st_survey <- sdmTMB(ck_juv ~ s(dist_to_coast_km, by = season_f, k = 3) +
                         spatiotemporal = "ar1")
 sanity(fit_st_survey)
 #export do explore in Rmd
-saveRDS(fit_st_survey, here::here("data", "fits", "fit_st_survey.RDS"))
+# saveRDS(fit_st_survey, here::here("data", "fits", "fit_st_survey.RDS"))
 
-fit_st_survey2 <- sdmTMB(ck_juv ~ s(dist_to_coast_km, k = 3) + survey_f,
-                        # offset = dat_trim$effort,
-                        data = dat_trim %>% filter(season_f == "su"),
-                        mesh = bspde,
-                        time = "year",
-                        family = nbinom2(link = "log"),
-                        spatial = "off",
-                        spatiotemporal = "ar1")
+# ggpredict throws variable type errors
+# ggeffects::ggpredict(fit_st_survey,
+#                      terms = "dist_to_coast_km [all]") %>%
+#   plot()
+
+season_p <- visreg::visreg(fit_st_survey, xvar = "season_f", 
+                           scale = "response")
+dist_p <- visreg::visreg(fit_st_survey, xvar = "dist_to_coast_km", 
+                         by = "season_f", xlim = c(0, 200), scale = "response")
+plot_list <- list(season_p, dist_p)
+saveRDS(plot_list, here::here("figs", "st_survey_counterfacs_list.RDS"))
 
 
 
@@ -192,7 +195,8 @@ grid <- readRDS(here::here("data", "spatial", "pred_ipes_grid.RDS")) %>%
 # add unique years and seasons
 exp_grid <- expand.grid(
   year = unique(dat_trim$year),
-  season_f = unique(dat_trim$season_f)
+  season_f = unique(dat_trim$season_f),
+  survey_f = unique(dat_trim$survey_f)
 ) %>%
   mutate(id = row_number()) %>%
   split(., .$id) %>% 
@@ -207,6 +211,7 @@ exp_grid <- expand.grid(
   left_join(., 
             dat_trim %>% dplyr::select(year, survey_f, season_f) %>% distinct(),
             by = c("year", "season_f")) 
+saveRDS(exp_grid, here::here("data", "exp_pred_ipes_grid_utm.rds"))
 
 
 preds <- predict(fit_st, exp_grid)
