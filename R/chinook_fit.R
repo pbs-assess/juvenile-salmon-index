@@ -90,7 +90,7 @@ cor(dum)
 # Fit offset only
 # TODO: ask Sean why offsets don't work...
 fit0 <- sdmTMB(ck_juv ~ depth_mean_m,
-              offset = "effort",
+              offset = dat_trim$effort,
               data = dat_trim,
               mesh = bspde,
               family = nbinom2(link = "log"),
