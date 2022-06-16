@@ -9,6 +9,7 @@ prediction-grids/*
 *.rds
 !data/*.rds
 !data/spatial/*.rds
+!data/preds/*.rds
 data/fits/*.rds
 .DS_Store
 R/hidden/
