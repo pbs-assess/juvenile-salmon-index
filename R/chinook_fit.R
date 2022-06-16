@@ -170,11 +170,13 @@ fit_st_survey <- sdmTMB(ck_juv ~ s(dist_to_coast_km, by = season_f, k = 3) +
 sanity(fit_st_survey)
 #export do explore in Rmd
 # saveRDS(fit_st_survey, here::here("data", "fits", "fit_st_survey.RDS"))
+fit_st_survey <- readRDS(here::here("data", "fits", "fit_st_survey.RDS"))
+
 
 # ggpredict throws variable type errors
-# ggeffects::ggpredict(fit_st_survey,
-#                      terms = "dist_to_coast_km [all]") %>%
-#   plot()
+ggeffects::ggpredict(fit_st_survey,
+                     terms = "dist_to_coast_km") %>%
+  plot()
 
 season_p <- visreg::visreg(fit_st_survey, xvar = "season_f", 
                            scale = "response")
@@ -204,18 +206,25 @@ exp_grid <- expand.grid(
     grid %>% 
       mutate(
         year = x$year,
-        season_f = x$season_f
+        season_f = x$season_f,
+        survey_f = x$survey_f
       )
   }) %>%
   bind_rows() %>% 
-  left_join(., 
-            dat_trim %>% dplyr::select(year, survey_f, season_f) %>% distinct(),
-            by = c("year", "season_f")) 
-saveRDS(exp_grid, here::here("data", "exp_pred_ipes_grid_utm.rds"))
+  # left_join(., 
+  #           dat_trim %>% dplyr::select(year, survey_f, season_f) %>% distinct(),
+  #           by = c("year", "season_f")) %>% 
+  filter(!year %in% c("1995", "2022")) %>% 
+  mutate(
+    fake_survey = case_when(
+      season_f == "su" & year > 2016 & survey_f == "hss" ~ "1",
+      season_f == "su" & year < 2017 & survey_f == "ipes" ~ "1",
+      TRUE ~ "0")
+  )
 
-
-preds <- predict(fit_st, exp_grid)
-preds_trim <- preds %>% filter(season_f == "su")
+preds <- predict(fit_st_survey, newdata = exp_grid)
+preds_trim <- preds %>% 
+  filter(season_f == "su") 
 
 plot_map <- function(dat, column) {
   ggplot(dat, aes_string("utm_x_1000", "utm_y_1000", fill = column)) +
@@ -226,53 +235,36 @@ plot_map <- function(dat, column) {
 
 plot_map(preds_trim, "exp(est)") +
   scale_fill_viridis_c(
-    # trans = "sqrt",
-    # # trim extreme high values to make spatial variation more visible
-    # na.value = "yellow", limits = c(0, quantile(exp(predictions$est), 0.995))
+    trans = "sqrt",
+    # trim extreme high values to make spatial variation more visible
+    na.value = "yellow", limits = c(0, quantile(exp(preds_trim$est), 0.995))
   ) +
   facet_wrap(~year) +
   ggtitle("Prediction (fixed effects + all random effects)")
 
 plot_map(preds_trim, "exp(est_non_rf)") +
   scale_fill_viridis_c(
-    # trans = "sqrt"
+    trans = "sqrt"
     ) +
   ggtitle("Prediction (fixed effects only)")  
 
 plot_map(preds_trim, "est_rf") +
   scale_fill_gradient2(
   ) +
-  ggtitle("Prediction (fixed effects only)")  
+  ggtitle("Prediction (spatial random effects only)")  
 
 plot_map(preds_trim, "epsilon_st") +
   scale_fill_gradient2() +
   facet_wrap(~year) +
-  ggtitle("Prediction (fixed effects + all random effects)")
+  ggtitle("Prediction (spatiotemporal random effects)")
 
 
 # index from summer
-p_st <- predict(fit_st, newdata = exp_grid %>% filter(season_f == "su"), 
+p_st <- predict(fit_st_survey, 
+                newdata = exp_grid %>% filter(season_f == "su",
+                                              survey_f == "hss"), 
                 return_tmb_object = TRUE)
-index <- get_index(p_st#, area = rep(4, nrow(grid))
-                   )
-
-index_plot <- ggplot(index, aes(year, est)) +
-  geom_ribbon(aes(ymin = lwr, ymax = upr), fill = "grey90") +
-  geom_line(lwd = 1, colour = "grey30") +
-  labs(x = "Year", y = "Count") +
-  ggsidekick::theme_sleek()
-
-pdf(here::here("figs", "diagnostics", "st_index.pdf"))
-index_plot
-dev.off()
-
-# clear evidence of change in mean value (likely survey effects?)
-
-# index from summer
-p_st <- predict(fit_st_survey, newdata = exp_grid %>% filter(season_f == "su"), 
-                return_tmb_object = TRUE)
-index <- get_index(p_st#, area = rep(4, nrow(grid))
-)
+index <- get_index(p_st)
 
 index_plot <- ggplot(index, aes(year, est)) +
   geom_ribbon(aes(ymin = lwr, ymax = upr), fill = "grey90") +
@@ -283,3 +275,20 @@ index_plot <- ggplot(index, aes(year, est)) +
 pdf(here::here("figs", "diagnostics", "st_index_surv.pdf"))
 index_plot
 dev.off()
+
+
+# as above but not accounting for survey effects
+p_st2 <- predict(fit_st_survey, 
+                newdata = exp_grid %>% filter(season_f == "su",
+                                              fake_survey == "0"), 
+                return_tmb_object = TRUE)
+index2 <- get_index(p_st2)
+index_list <- list(survey_eff = index, no_survey_eff = index2)
+
+
+## export to Rmd
+saveRDS(exp_grid, here::here("data", "spatial", "exp_pred_ipes_grid_utm.rds"))
+saveRDS(preds, here::here("data", "preds", "st_survey_spatial_preds.rds"))
+saveRDS(index_list, here::here("data", "preds", "st_survey_index_list.rds"))
+
+
