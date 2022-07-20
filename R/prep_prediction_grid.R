@@ -3,6 +3,8 @@
 # (ignore American data for now); use UTM to ensure equal spacing in grid
 # 2) Back-convert to lat/lon to use coastdistance function
 # 3) Combine and export
+# TODO: use https://download.gebco.net/ to extract data for full survey area
+# TODO: interpolate any missing covariates
 # Updated May 17, 2022
 
 

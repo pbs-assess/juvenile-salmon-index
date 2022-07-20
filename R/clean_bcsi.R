@@ -132,8 +132,10 @@ coast <- rbind(rnaturalearth::ne_states( "United States of America",
 
 ggplot() +
   geom_sf(data = coast, color = "black", fill = "white") +
-  geom_point(data = dat_trim,
-             aes(x = utm_x, y = utm_y, fill = pfma), 
+  geom_point(data = dat_trim %>% 
+               filter(season_f == "su") %>% 
+               mutate(f2016 = ifelse(year == "2016", "Y", "N")),
+             aes(x = utm_x, y = utm_y, fill = f2016), 
              shape = 21, alpha = 0.4)
 
 

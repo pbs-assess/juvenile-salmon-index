@@ -16,10 +16,12 @@ dat_trim <- readRDS(here::here("data", "chin_catch_sbc.rds")) %>%
   mutate(utm_x_1000 = utm_x / 1000,
          utm_y_1000 = utm_y / 1000,
          survey_f = ifelse(
-           year > 2016 & season_f == "su", "ipes", "hss") %>% as.factor()
+           year > 2016 & season_f == "su", "ipes", "hss") %>% as.factor(),
+         week = lubridate::week(date)
          ) %>% 
   filter(!is.na(depth_mean_m),
          !is.na(dist_to_coast_km),
+         !effort < 0,
          !is.na(effort),
          # drop 1995 so that '96 doesn't have to be interpolated
          !year %in% c("1995", "2022"
@@ -88,30 +90,53 @@ dum <- dat_trim[, c("depth_mean_m", "dist_to_coast_km")]
 cor(dum)
 
 # Fit offset only
-# TODO: ask Sean why offsets don't work...
-fit0 <- sdmTMB(ck_juv ~ depth_mean_m,
+fit0 <- sdmTMB(ck_juv ~ s(dist_to_coast_km), #depth_mean_m,
               offset = dat_trim$effort,
               data = dat_trim,
               mesh = bspde,
-              family = nbinom2(link = "log"),
-              spatial = "off")
+              family = sdmTMB::nbinom2(),
+              spatial = "off"
+              )
+
+m3 <- sdmTMB(catch ~ 1 +
+               s(month_n, bs = "tp", k = 4, m = 2) +
+               (1 | reg) +
+               (1 | year),
+             offset = catch$offset,
+             data = catch, 
+             spatial = "off", family = sdmTMB::nbinom2())
 
 
-# Fit spatial only model with environmental covariates and no effort offset
+# Fit spatial only model with single environmental covariates 
 # (month, bathymetry and distance to coast)
-# Explored monthly smooth (instead of season), but issues with convergence
-fit <- sdmTMB(ck_juv ~ s(depth_mean_m, by = season_f) + 
-                s(dist_to_coast_km, by = season_f) + 
-                season_f,
-              # offset = effort,
-              data = dat_trim,
-              mesh = bspde,
-              # silent = FALSE,
-              family = nbinom2(link = "log"),
-              spatial = "on")
+# REPLACED BY MONTHLY SMOOTHER BELOW
+# fit1 <- sdmTMB(ck_juv ~ 1 + #s(depth_mean_m, by = season_f) + 
+#                 s(dist_to_coast_km, bs = "tp", k = 4) + 
+#                 season_f,
+#               offset = dat_trim$effort,
+#               data = dat_trim,
+#               mesh = bspde,
+#               time = "year",
+#               family = sdmTMB::nbinom2(),
+#               spatial = "on",
+#               spatiotemporal = "ar1")
+fit2 <- sdmTMB(ck_juv ~ 1 +  
+                 s(dist_to_coast_km, bs = "tp", k = 4) + 
+                 s(month, bs = "cc", k = 4),
+               offset = dat_trim$effort,
+               data = dat_trim,
+               mesh = bspde,
+               time = "year",
+               family = sdmTMB::nbinom2(),
+               spatial = "on",
+               spatiotemporal = "ar1"
+               )
+
+visreg::visreg(fit2, xvar = "month", scale = "response")
+
 
 fit
-sanity(fit)
+sanity(fit2)
 
 
 # Fit spatiotemporal model with only one environmental covariate

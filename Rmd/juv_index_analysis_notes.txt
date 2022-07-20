@@ -1,0 +1,23 @@
+Juvenile Salmon Index Notes
+
+
+July 20
+- No clear evidence of unique spatial distribution in 2016 relative to other summer surveys
+
+Meetings
+
+July 21 - Meeting with Jackie King 
+
+1-It sucks that week or month wouldn’t converge because I’m concerned about summer surveys starting later etc.  But perhaps it’s not really as much as a problem as I imagine it to be – i.e. that there isn’t enough variability to allow convergence, so why worry about week/month effects?
+
+Tweaked somethings and this now works.
+
+2-I like the spatial only effect, i.e. that there are areas of low abundance and high abundance among years.  That’s cool.
+
+3-it’s weird that there are no fixed effects for IPES.  Why would that be?
+Not sure what you're asking here...
+
+4-why distance travelled, and not volume, for effort—I thought Amy had fixed missing net mensuration stuff
+Volume would probably be better, but I don't think she sent it in the most recent data pull. 
+
+5-I think I like summer index and fall index, since it helps to focus more on stocks present.
