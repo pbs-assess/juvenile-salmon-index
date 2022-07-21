@@ -14,51 +14,122 @@ chin <- read.csv(
   here::here("data", "BCSI_Juv_CHINOOK_Counts_True20220504.csv")
 ) %>% 
   janitor::clean_names()
-bridge <- read.csv(here::here("data", "BCSI_Bridge_Info_20220505.csv")) %>% 
+bridge_raw <- read.csv(here::here("data", "BCSI_Bridge_Info_20220505.csv")) %>% 
   janitor::clean_names() 
 synoptic_stations <- read.csv(here::here("data", "synoptic_stations.csv")) %>% 
   janitor::clean_names()
 
+
+## INTERSECTION WITH IPES GRID -------------------------------------------------
+
+## import and transform IPES grid
+# ipes_sf_deg <- readRDS(here::here("data", "spatial", "ipes_sf_list_deg.RDS"))
+ipes_grid_raw <- readOGR(
+  here::here("data", "spatial", "ipes_shapefiles", "IPES_Grid_UTM9.shp"))
+
+# convert shapefile to sf, then points, then combine into single polygon
+ipes_sf <- as(ipes_grid_raw, 'SpatialPolygonsDataFrame')
+ipes_sf_pts <- st_as_sf(ipes_grid_raw, as_points = TRUE, merge = TRUE)
+ipes_sf_poly <- st_union(ipes_sf_pts, by_feature = FALSE)
+
+
+## add UTM to bridge and convert to sf
+get_utm <- function(x, y, zone, loc){
+  points = SpatialPoints(cbind(x, y),
+                         proj4string = CRS("+proj=longlat +datum=WGS84"))
+  points_utm = spTransform(
+    points, CRS(paste0("+proj=utm +zone=",zone[1]," +units=m"))
+  )
+  if (loc == "x") {
+    return(coordinates(points_utm)[,1])
+  } else if (loc == "y") {
+    return(coordinates(points_utm)[,2])
+  }
+}
+
+bridge <- bridge_raw %>% 
+  mutate(mean_lat = ifelse(is.na(end_latitude),
+                           start_latitude,
+                           (start_latitude + end_latitude) / 2),
+         mean_lon = ifelse(is.na(end_longitude),
+                           start_longitude,
+                           (start_longitude + end_longitude) / 2),
+         utm_x = get_utm(mean_lon, mean_lat, zone = "9", loc = "x"),
+         utm_y = get_utm(mean_lon, mean_lat, zone = "9", loc = "y")) 
+
+bridge_sf <- bridge %>% 
+  select(unique_event, mean_lat, mean_lon) %>% 
+  st_as_sf(., coords = c("mean_lon", "mean_lat"), 
+           crs = sp::CRS("+proj=longlat +datum=WGS84")) 
+
+bridge_sf2 <- bridge_sf %>% 
+  st_transform(., crs = st_crs(ipes_sf_poly))
+    
+ggplot() +
+  geom_sf(data = st_intersection(bridge_sf2, ipes_sf_poly))
+
+# extract events within ipes survey grid
+ipes_grid_events <- st_intersection(bridge_sf2, ipes_sf_poly) %>% 
+  pull(., unique_event)
+
+
+## CLEAN AND MERGE -------------------------------------------------------------
+
+# interpolate missing depths_data
+depths2 <- depths %>% 
+  left_join(., bridge %>% select(mean_lat, mean_lon, unique_event)) %>% 
+  select(mean_lat, mean_lon, depth_mean_m, depth_med_m, transect_dist_km, 
+         depth_start:bridge_dist_km) 
+depths2[] <- lapply(depths2, function(x) as.numeric(as.character(x)))
+depth_interp <- VIM::kNN(depths2, k = 5)
+depth_interp2 <- depth_interp %>% 
+  select(-ends_with("imp")) %>% 
+  mutate(unique_event = depths$unique_event)
+
+
 dat <- bridge %>% 
-  left_join(., 
-            depths %>% dplyr::select(unique_event, depth_mean_m, dist_to_coast_km,
-                              bridge_dist_km),
-            by = "unique_event") %>% 
-  left_join(., chin, by = "unique_event") %>% 
+  left_join(
+    ., 
+    depth_interp2 %>% 
+      dplyr::select(unique_event, depth_mean_m, start_depth_bridge,
+                    dist_to_coast_km, bridge_dist_km),
+    by = "unique_event"
+  ) %>% 
+  left_join(., chin, by = "unique_event") %>%
   mutate(
     date = as.POSIXct(date,
                            format = "%Y-%m-%d",
                            tz = "America/Los_Angeles"),
     month = lubridate::month(date),
-    mean_lat = ifelse(is.na(end_latitude),
-                      start_latitude,
-                      (start_latitude + end_latitude) / 2),
-    mean_lon = ifelse(is.na(end_longitude),
-                      start_longitude,
-                      (start_longitude + end_longitude) / 2),
-    # incomplete flagging use lat for now
-    # synoptic_station = ifelse(unique_event %in% synoptic_stations$station_id,
-    #                           TRUE,
-    #                           FALSE),
+    week = lubridate::week(date),
+    season = case_when(
+      month %in% c("2", "3", "4") ~ "sp",
+      month %in% c("5", "6", "7", "8") ~ "su",
+      month %in% c("9", "10", "11", "12") ~ "wi"
+    ),
+    season_f = as.factor(season),
+    # define core area as southern BC and SEAK excluding SoG
     synoptic_station = ifelse(
       mean_lat > 47 & mean_lat < 56 & !grepl("GS", station_name) & 
         mean_lon > -135,
       TRUE,
       FALSE
       ),
-    season = case_when(
-      month %in% c("4", "5", "6") ~ "sp",
-      month %in% c("7", "8", "9") ~ "su",
-      month %in% c("10", "11", "12") ~ "fa",
-      month %in% c("1", "2", "3") ~ "wi"
+    # define IPES based on intersections with grid
+    ipes_grid = ifelse(
+      unique_event %in% ipes_grid_events,
+      TRUE,
+      FALSE
     ),
+    survey_f = ifelse(
+      year > 2016 & season_f == "su", "ipes", "hss") %>% as.factor(),
+    year_f = as.factor(year),
+    effort = log(distance_travelled),
     # missing bathymetry for a few cases
     depth_mean_m = case_when(
       is.na(depth_mean_m) ~ start_bottom_depth,
       depth_mean_m < 0 ~ start_bottom_depth,
       TRUE ~ as.numeric(depth_mean_m)),
-    # bridge_dist_km = as.numeric(bridge_dist_km),
-    dist_to_coast_km = as.numeric(dist_to_coast_km),
     vessel_name = tolower(vessel_name),
     vessel = case_when(
       grepl("crest", vessel_name) ~ "sea crest",
@@ -72,49 +143,22 @@ dat <- bridge %>%
       grepl("ocean selector", vessel_name) ~ "ocean selector"
     )
   ) %>% 
-  dplyr::select(unique_event, date, year, month, day, day_night, season,
+  dplyr::select(unique_event, date, year, month, day, day_night, season_f,
          stratum:station_name, pfma = dfo_stat_area_code,
-         synoptic_station, mean_lat, mean_lon, 
+         synoptic_station, ipes_grid, survey_f,
+         mean_lat, mean_lon, utm_x, utm_y,
          vessel, distance_travelled, vessel_speed, 
          depth_mean_m, dist_to_coast_km, 
          mouth_height = mouth_height_use, mouth_width = mouth_width_use,
          ck_juv = n_juv, ck_ad = n_ad)
 
-
-## PREP SPATIAL ----------------------------------------------------------------
-
-# import IPES survey grid to constrain 
-
-# NOTE full dataset spans many UTM zones so only apply to southern regions
-get_utm <- function(x, y, zone, loc){
-  points = SpatialPoints(cbind(x, y),
-                         proj4string = CRS("+proj=longlat +datum=WGS84"))
-  points_utm = spTransform(
-    points, CRS(paste0("+proj=utm +zone=",zone[1]," +units=m"))
-  )
-  if (loc == "x") {
-    return(coordinates(points_utm)[,1])
-  } else if (loc == "y") {
-    return(coordinates(points_utm)[,2])
-  }
-}
- 
+# subset to core area and remove rows with missing data
 dat_trim <- dat %>%
   filter(synoptic_station == TRUE,
          # exclude SoG and Puget Sound PFMAs
-         ! pfma %in% c("13", "14", "15", "16", "17", "18", "19", "PS")) %>%
-  mutate(utm_x = get_utm(mean_lon, mean_lat, "9", loc = "x"),
-         utm_y = get_utm(mean_lon, mean_lat, "9", loc = "y"),
-         year_f = as.factor(year),
-         season = case_when(
-           month %in% c("2", "3", "4") ~ "sp",
-           month %in% c("5", "6", "7", "8") ~ "su",
-           month %in% c("9", "10", "11", "12") ~ "wi"
-         ),
-         season_f = as.factor(season),
-         effort = log(distance_travelled),
-         survey_f = ifelse(
-           year > 2016 & season_f == "su", "ipes", "hss") %>% as.factor()) %>% 
+         !pfma %in% c("13", "14", "15", "16", "17", "18", "19", "PS"),
+         !is.na(depth_mean_m),
+         !is.na(dist_to_coast_km)) %>%
   droplevels()
 
 
@@ -132,10 +176,8 @@ coast <- rbind(rnaturalearth::ne_states( "United States of America",
 
 ggplot() +
   geom_sf(data = coast, color = "black", fill = "white") +
-  geom_point(data = dat_trim %>% 
-               filter(season_f == "su") %>% 
-               mutate(f2016 = ifelse(year == "2016", "Y", "N")),
-             aes(x = utm_x, y = utm_y, fill = f2016), 
+  geom_point(data = dat_trim,
+             aes(x = utm_x, y = utm_y, fill = ipes_grid), 
              shape = 21, alpha = 0.4)
 
 
