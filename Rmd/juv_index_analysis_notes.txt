@@ -4,6 +4,13 @@ Juvenile Salmon Index Notes
 July 20
 - No clear evidence of unique spatial distribution in 2016 relative to other summer surveys
 
+July 21
+- Add interpolated prediction grid and ID stations that occur within IPES grid
+- Trim testing model to exclude years after 2017 so that they can be used for prediction and model comparison
+- Compare model w/ different fixed effects (distance to coast w/ and w/out bathymetry)
+
+
+
 Meetings
 
 July 21 - Meeting with Jackie King 
@@ -24,7 +31,7 @@ Volume would probably be better, but I don't think she sent it in the most recen
 
 
 1. Model testing 
-	- Step one is data in -- all data, spatially constrained (IPES grid), seasonally constrained, spatially and seasonally constrained
+	- Step one is data in -- all data, spatially constrained (IPES grid), seasonally constrained, spatially and seasonally constrained (predict 2018-19)
 	- Step two is structure -- anisotropy vs. grid
 	- Step three are covariates 
 	- Step four is prediction
@@ -33,6 +40,7 @@ Volume would probably be better, but I don't think she sent it in the most recen
 4. Who's writing this?
 5. Get effort data from Amy
 6. Do we incorporate stock-specificity? If so how and at what scale?
+7. Some predictions might make more sense outside of IPES grid (e.g. abundance of WCVI juvenile Chinook)
 
 
 - IYS

@@ -24,7 +24,7 @@ synoptic_stations <- read.csv(here::here("data", "synoptic_stations.csv")) %>%
 
 ## import and transform IPES grid
 # ipes_sf_deg <- readRDS(here::here("data", "spatial", "ipes_sf_list_deg.RDS"))
-ipes_grid_raw <- readOGR(
+ipes_grid_raw <- rgdal::readOGR(
   here::here("data", "spatial", "ipes_shapefiles", "IPES_Grid_UTM9.shp"))
 
 # convert shapefile to sf, then points, then combine into single polygon
@@ -180,6 +180,10 @@ ggplot() +
              aes(x = utm_x, y = utm_y, fill = ipes_grid), 
              shape = 21, alpha = 0.4)
 
+# export subsetted version to use for initial fitting
+saveRDS(dat_trim, here::here("data", "chin_catch_sbc.rds"))
+saveRDS(coast, here::here("data", "spatial", "sbc_sf_utm.rds"))
+
 
 ## DATA EXPLORE ----------------------------------------------------------------
 
@@ -230,7 +234,3 @@ catch_dist
 catch_bathy
 dev.off()
 
-
-# export subsetted version to use for initial fitting
-saveRDS(dat_trim, here::here("data", "chin_catch_sbc.rds"))
-saveRDS(coast, here::here("data", "spatial", "sbc_sf_utm.rds"))

@@ -15,17 +15,15 @@ library(ggplot2)
 dat_trim <- readRDS(here::here("data", "chin_catch_sbc.rds")) %>% 
   mutate(utm_x_1000 = utm_x / 1000,
          utm_y_1000 = utm_y / 1000,
-         survey_f = ifelse(
-           year > 2016 & season_f == "su", "ipes", "hss") %>% as.factor(),
-         week = lubridate::week(date)
-         ) %>% 
-  filter(!is.na(depth_mean_m),
-         !is.na(dist_to_coast_km),
+         effort = log(distance_travelled)
+         ) %>%
+  filter(#!is.na(depth_mean_m),
+         #!is.na(dist_to_coast_km),
          !effort < 0,
          !is.na(effort),
          # drop 1995 so that '96 doesn't have to be interpolated
-         !year %in% c("1995", "2022"
-                      ))
+         !year %in% c("1995"),
+         year < 2018)
 
 coast_utm <- rbind(rnaturalearth::ne_states( "United States of America", 
                                          returnclass = "sf"), 
@@ -71,7 +69,16 @@ plot(jchin1_spde$mesh, main = NA, edge.color = "grey60", asp = 1)
 plot(jchin1_spde_nch$mesh, main = NA, edge.color = "grey60", asp = 1)
 
 
-# as above but for summer survey only
+# as above but for summer survey only and IPES grid only
+spde_ipes <-  make_mesh(dat_trim %>% filter(ipes_grid == TRUE),
+                          c("utm_x_1000", "utm_y_1000"), 
+                          cutoff = 10, type = "kmeans")
+bspde_ipes <- add_barrier_mesh(
+  spde_ipes, coast_utm, range_fraction = 0.1,
+  # scaling = 1000 since UTMs were rescaled above
+  proj_scaling = 1000, plot = TRUE
+)
+
 spde_summer <-  make_mesh(dat_trim %>% filter(season_f == "su"),
                           c("utm_x_1000", "utm_y_1000"), 
                           cutoff = 10, type = "kmeans")
@@ -90,29 +97,18 @@ dum <- dat_trim[, c("depth_mean_m", "dist_to_coast_km")]
 cor(dum)
 
 # Fit offset only
-fit0 <- sdmTMB(ck_juv ~ s(dist_to_coast_km), #depth_mean_m,
-              offset = dat_trim$effort,
-              data = dat_trim,
-              mesh = bspde,
-              family = sdmTMB::nbinom2(),
-              spatial = "off"
-              )
-
-
-# Fit spatial only model with single environmental covariates 
-# (month, bathymetry and distance to coast)
-# REPLACED BY MONTHLY SMOOTHER BELOW
-# fit1 <- sdmTMB(ck_juv ~ 1 + #s(depth_mean_m, by = season_f) + 
-#                 s(dist_to_coast_km, bs = "tp", k = 4) + 
-#                 season_f,
+# fit0 <- sdmTMB(ck_juv ~ s(dist_to_coast_km), #depth_mean_m,
 #               offset = dat_trim$effort,
 #               data = dat_trim,
 #               mesh = bspde,
-#               time = "year",
 #               family = sdmTMB::nbinom2(),
-#               spatial = "on",
-#               spatiotemporal = "ar1")
-fit2 <- sdmTMB(ck_juv ~ 1 +  
+#               spatial = "off"
+#               )
+
+
+## COMPARE FIXED EFFECT STRUCTURES ---------------------------------------------
+
+fitA <- sdmTMB(ck_juv ~ 1 +  
                  s(dist_to_coast_km, bs = "tp", k = 4) + 
                  s(month, bs = "cc", k = 4),
                offset = dat_trim$effort,
@@ -123,6 +119,18 @@ fit2 <- sdmTMB(ck_juv ~ 1 +
                spatial = "on",
                spatiotemporal = "ar1"
                )
+fitB <- sdmTMB(ck_juv ~ 1 +  
+                s(dist_to_coast_km, bs = "tp", k = 4, by = season_f) + 
+                s(month, bs = "cc", k = 4),
+              offset = dat_trim$effort,
+              data = dat_trim,
+              mesh = bspde,
+              time = "year",
+              family = sdmTMB::nbinom2(),
+              spatial = "on",
+              spatiotemporal = "ar1"
+)
+
 
 visreg::visreg(fit2, xvar = "month", scale = "response")
 
