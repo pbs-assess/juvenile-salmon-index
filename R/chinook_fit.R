@@ -98,14 +98,6 @@ fit0 <- sdmTMB(ck_juv ~ s(dist_to_coast_km), #depth_mean_m,
               spatial = "off"
               )
 
-m3 <- sdmTMB(catch ~ 1 +
-               s(month_n, bs = "tp", k = 4, m = 2) +
-               (1 | reg) +
-               (1 | year),
-             offset = catch$offset,
-             data = catch, 
-             spatial = "off", family = sdmTMB::nbinom2())
-
 
 # Fit spatial only model with single environmental covariates 
 # (month, bathymetry and distance to coast)

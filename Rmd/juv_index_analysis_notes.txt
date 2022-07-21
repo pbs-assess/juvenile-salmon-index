@@ -21,3 +21,27 @@ Not sure what you're asking here...
 Volume would probably be better, but I don't think she sent it in the most recent data pull. 
 
 5-I think I like summer index and fall index, since it helps to focus more on stocks present.
+
+
+1. Model testing 
+	- Step one is data in -- all data, spatially constrained (IPES grid), seasonally constrained, spatially and seasonally constrained
+	- Step two is structure -- anisotropy vs. grid
+	- Step three are covariates 
+	- Step four is prediction
+2. Next steps for analysis? Distribution map? CPUE index? When to meet w/ Sean?
+3. Which dimensions of analysis to emphasize? Fixed effects vs. space vs. interannual
+4. Who's writing this?
+5. Get effort data from Amy
+6. Do we incorporate stock-specificity? If so how and at what scale?
+
+
+- IYS
+	- October meeting
+	- Physical oceanography
+	- What to participate in (e.g. diets for synthesis paper)
+	- Data requests and Laurie data
+	- SST bias
+	- timeline for CTD data
+- animal care at sea
+- Kelsey OT
+- AFS
