@@ -143,7 +143,7 @@ dat <- bridge %>%
       grepl("ocean selector", vessel_name) ~ "ocean selector"
     )
   ) %>% 
-  dplyr::select(unique_event, date, year, month, day, day_night, season_f,
+  dplyr::select(unique_event, date, year, month, week, day, day_night, season_f,
          stratum:station_name, pfma = dfo_stat_area_code,
          synoptic_station, ipes_grid, survey_f,
          mean_lat, mean_lon, utm_x, utm_y,

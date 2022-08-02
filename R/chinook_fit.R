@@ -15,14 +15,15 @@ library(ggplot2)
 dat_trim <- readRDS(here::here("data", "chin_catch_sbc.rds")) %>% 
   mutate(utm_x_1000 = utm_x / 1000,
          utm_y_1000 = utm_y / 1000,
-         effort = log(distance_travelled)
+         effort = log(distance_travelled),
+         week = lubridate::week(date)
          ) %>%
   filter(#!is.na(depth_mean_m),
          #!is.na(dist_to_coast_km),
          !effort < 0,
          !is.na(effort),
          # drop 1995 so that '96 doesn't have to be interpolated
-         !year %in% c("1995"),
+         !year %in% c("1995", "1997"),
          year < 2018)
 
 coast_utm <- rbind(rnaturalearth::ne_states( "United States of America", 
@@ -44,6 +45,9 @@ spde <- make_mesh(dat_trim, c("utm_x_1000", "utm_y_1000"),
                    cutoff = 10, type = "kmeans")
 plot(spde)
 
+# spde2 <- make_mesh(dat_trim, c("utm_x_1000", "utm_y_1000"), 
+#                   cutoff = 20, type = "kmeans")
+# plot(spde2)
 
 # add barrier mesh
 bspde <- add_barrier_mesh(
@@ -69,22 +73,32 @@ plot(jchin1_spde$mesh, main = NA, edge.color = "grey60", asp = 1)
 plot(jchin1_spde_nch$mesh, main = NA, edge.color = "grey60", asp = 1)
 
 
-# as above but for summer survey only and IPES grid only
-spde_ipes <-  make_mesh(dat_trim %>% filter(ipes_grid == TRUE),
-                          c("utm_x_1000", "utm_y_1000"), 
-                          cutoff = 10, type = "kmeans")
+## alternative meshes that use data subsets
+dat_ipes <- dat_trim %>% filter(ipes_grid == TRUE)
+spde_ipes <-  make_mesh(dat_ipes,
+                        c("utm_x_1000", "utm_y_1000"), 
+                        cutoff = 10, type = "kmeans")
 bspde_ipes <- add_barrier_mesh(
   spde_ipes, coast_utm, range_fraction = 0.1,
-  # scaling = 1000 since UTMs were rescaled above
   proj_scaling = 1000, plot = TRUE
 )
 
-spde_summer <-  make_mesh(dat_trim %>% filter(season_f == "su"),
+dat_summer <- dat_trim %>% filter(season_f == "su")
+spde_summer <-  make_mesh(dat_summer,
                           c("utm_x_1000", "utm_y_1000"), 
                           cutoff = 10, type = "kmeans")
 bspde_summer <- add_barrier_mesh(
   spde_summer, coast_utm, range_fraction = 0.1,
-  # scaling = 1000 since UTMs were rescaled above
+  proj_scaling = 1000, plot = TRUE
+)
+
+dat_summer_ipes <- dat_trim %>% filter(season_f == "su",
+                                       ipes_grid == TRUE)
+spde_summer_ipes <-  make_mesh(dat_summer_ipes,
+                               c("utm_x_1000", "utm_y_1000"), 
+                               cutoff = 10, type = "kmeans")
+bspde_summer_ipes <- add_barrier_mesh(
+  spde_summer_ipes, coast_utm, range_fraction = 0.1,
   proj_scaling = 1000, plot = TRUE
 )
 
@@ -96,61 +110,234 @@ bspde_summer <- add_barrier_mesh(
 dum <- dat_trim[, c("depth_mean_m", "dist_to_coast_km")]
 cor(dum)
 
-# Fit offset only
-# fit0 <- sdmTMB(ck_juv ~ s(dist_to_coast_km), #depth_mean_m,
-#               offset = dat_trim$effort,
-#               data = dat_trim,
-#               mesh = bspde,
-#               family = sdmTMB::nbinom2(),
-#               spatial = "off"
-#               )
+# Fit simplified spatial model to most constrained dataset to estimate relative 
+# benefits of NB vs zero-inflated NB 
+# (exclude spatiotemporal to minimize fit time)
+# fit_nb <- sdmTMB(ck_juv ~ s(dist_to_coast_km, k = 4) +  survey_f, 
+#                  offset = dat_summer$effort,
+#                  data = dat_summer,
+#                  mesh = bspde_summer,
+#                  family = sdmTMB::nbinom2(),
+#                  spatial = "on"
+# )
+# 
+# # fails to converge
+# fit_nb0 <- sdmTMB(ck_juv ~ s(dist_to_coast_km, k = 4) + survey_f, 
+#                  offset = dat_summer$effort,
+#                  data = dat_summer,
+#                  mesh = bspde_summer,
+#                  family = sdmTMB::delta_truncated_nbinom2(),
+#                  spatial = "on",
+#                  control = sdmTMBcontrol(
+#                    nlminb_loops = 2,
+#                    newton_loops = 2
+#                  )
+# )
+# 
+# # inferior AIC
+# fit_nb1 <- sdmTMB(ck_juv ~ s(dist_to_coast_km, k = 4) +  survey_f, 
+#                   offset = dat_summer$effort,
+#                   data = dat_summer,
+#                   mesh = bspde_summer,
+#                   family = sdmTMB::nbinom1(),
+#                   spatial = "on"
+# )
 
 
 ## COMPARE FIXED EFFECT STRUCTURES ---------------------------------------------
 
-fitA <- sdmTMB(ck_juv ~ 1 +  
+# week vs month (spatial only)
+fit_month <- sdmTMB(ck_juv ~ 1 +  
                  s(dist_to_coast_km, bs = "tp", k = 4) + 
-                 s(month, bs = "cc", k = 4),
+                 s(month, bs = "cc", k = 4) +
+                 survey_f,
                offset = dat_trim$effort,
                data = dat_trim,
                mesh = bspde,
+               family = sdmTMB::nbinom2(),
+               spatial = "on"
+               )
+fit_week <- sdmTMB(ck_juv ~ 1 +  
+                 s(dist_to_coast_km, bs = "tp", k = 4) + 
+                 s(week, bs = "cc", k = 4) +
+                 survey_f,
+               offset = dat_trim$effort,
+               data = dat_trim,
+               mesh = bspde,
+               family = sdmTMB::nbinom2(),
+               spatial = "on"
+)
+AIC(fit_month, fit_week)
+# month outperforms week
+
+# bathy vs. distance
+fit_dist <- fit_month
+fit_bathy <- sdmTMB(ck_juv ~ 1 +  
+                      s(depth_mean_m, bs = "tp", k = 4) + 
+                      s(month, bs = "cc", k = 4) +
+                      survey_f,
+                    offset = dat_trim$effort,
+                    data = dat_trim,
+                    mesh = bspde,
+                    family = sdmTMB::nbinom2(),
+                    spatial = "on"
+) 
+AIC(fit_bathy, fit_dist)
+# distance outperforms bathymetry
+
+# seasonal structure 
+fit_a <- fit_dist
+fit_b <- sdmTMB(ck_juv ~ 1 +
+                s(dist_to_coast_km, bs = "tp", k = 4, by = season_f) +
+                s(month, bs = "cc", k = 4) +
+                 survey_f,
+                offset = dat_trim$effort,
+                data = dat_trim,
+                mesh = bspde,
+                family = sdmTMB::nbinom2(),
+                spatial = "on",
+                control = sdmTMBcontrol(
+                  nlminb_loops = 2#,
+                  # newton_loops = 2
+                )
+)
+fit_c <- sdmTMB(ck_juv ~ 1 +  
+                 s(dist_to_coast_km, bs = "tp", k = 4, by = season_f) + 
+                 season_f +
+                 survey_f,
+                offset = dat_trim$effort,
+                data = dat_trim,
+                mesh = bspde,
+                family = sdmTMB::nbinom2(),
+                spatial = "on",
+                control = sdmTMBcontrol(
+                  nlminb_loops = 2
+                )
+)
+AIC(fit_a, fit_b, fit_c)
+# seasonal interactions not supported with current compelx structure
+
+
+## COMPARE DATA INPTUS ---------------------------------------------------------
+
+# compare predictions from four different input data structures, then compare to
+# observed
+# a) coastwide data, all seasons
+# b) coastwide data, summer only
+# c) IPES data, all seasons
+# d) IPES data, summer only
+
+
+# fit models with different fixed effects due to different time scales
+fit_full <- sdmTMB(ck_juv ~ 1 +  
+                 s(dist_to_coast_km, bs = "tp", k = 4) + 
+                 s(month, bs = "cc", k = 4) +
+                 survey_f,
+               offset = dat_trim$effort,
+               data = dat_trim %>% filter(year < 2018),
+               mesh = bspde,
                time = "year",
+               extra_time = c(2018L, 2019L),
                family = sdmTMB::nbinom2(),
                spatial = "on",
                spatiotemporal = "ar1"
-               )
-fitB <- sdmTMB(ck_juv ~ 1 +  
-                s(dist_to_coast_km, bs = "tp", k = 4, by = season_f) + 
-                s(month, bs = "cc", k = 4),
-              offset = dat_trim$effort,
-              data = dat_trim,
-              mesh = bspde,
-              time = "year",
-              family = sdmTMB::nbinom2(),
-              spatial = "on",
-              spatiotemporal = "ar1"
 )
+fit_summer <- sdmTMB(ck_juv ~ 1 +  
+                       s(dist_to_coast_km, bs = "tp", k = 4) + 
+                       # switch to thin plate 
+                       s(month, bs = "tp", k = 4) +
+                       survey_f,
+                     offset = dat_summer$effort,
+                     data = dat_summer %>% filter(year < 2018),
+                     mesh = bspde_summer,
+                     time = "year",
+                     extra_time = c(2016L, 2018L, 2019L),
+                     family = sdmTMB::nbinom2(),
+                     spatial = "on",
+                     spatiotemporal = "ar1"
+)
+fit_ipes <- sdmTMB(ck_juv ~ 1 +  
+                     s(dist_to_coast_km, bs = "tp", k = 4) + 
+                     s(month, bs = "cc", k = 4) +
+                     survey_f,
+                     offset = dat_ipes$effort,
+                     data = dat_ipes %>% filter(year < 2018),
+                     mesh = bspde_ipes,
+                     time = "year",
+                     extra_time = c(2018L, 2019L),
+                     family = sdmTMB::nbinom2(),
+                     spatial = "on",
+                     spatiotemporal = "ar1"
+)
+fit_summer_ipes <- sdmTMB(ck_juv ~ 1 +  
+                     s(dist_to_coast_km, bs = "tp", k = 4) + 
+                     s(month, bs = "tp", k = 4) +
+                     survey_f,
+                   offset = dat_summer_ipes$effort,
+                   data = dat_summer_ipes %>% filter(year < 2018),
+                   mesh = bspde_summer_ipes,
+                   time = "year",
+                   extra_time = c(2018L, 2019L),
+                   family = sdmTMB::nbinom2(),
+                   spatial = "on",
+                   spatiotemporal = "ar1"
+)
+
+fit_list <- list(fit_full,
+                 fit_summer,
+                 fit_ipes#,
+                 # fit_summer_ipes
+                 )
+
+
+## testing data are observed catches in 2018/19 in summer in the ipes_grid
+# due to sdmTMB constraints, all time elements have to be passed when generating
+# predictions
+dat_test <- readRDS(here::here("data", "chin_catch_sbc.rds")) %>% 
+  mutate(utm_x_1000 = utm_x / 1000,
+         utm_y_1000 = utm_y / 1000,
+         effort = log(distance_travelled)
+  ) %>%
+  filter(
+    !effort < 0,
+    !is.na(effort),
+    !year %in% c("1995", "1997"),
+    year < 2020)
+
+
+
+test_preds <- predict(fit_ipes,
+                      newdata = dat_test)
+
+test_preds_trim <- test_preds %>% 
+  filter(year %in% c("2018", "2019"),
+         ipes_grid == TRUE,
+         season_f == "su")
+plot(ck_juv ~ exp(est), data = test_preds_trim)
+
+
+Metrics::rmse(test_preds_trim$ck_juv, exp(test_preds_trim$est))
+
+fit_tbl <- tibble(
+  name = c("full", "sum", "ipes"#, "sum_ipes"
+  ),
+  mod = fit_list) %>% 
+  mutate(
+    preds = purrr::map(mod, function (x) {
+      test_preds <- predict(x,
+                            newdata = dat_test)
+      
+      test_preds %>% 
+        filter(year %in% c("2018", "2019"),
+               ipes_grid == TRUE,
+               season_f == "su")
+    })
+  )
+
+
 
 
 visreg::visreg(fit2, xvar = "month", scale = "response")
-
-
-fit
-sanity(fit2)
-
-
-# Fit spatiotemporal model with only one environmental covariate
-fit_st <- sdmTMB(ck_juv ~ s(dist_to_coast_km, by = season_f, k = 3) + 
-                season_f,
-              # offset = dat_trim$effort,
-              data = dat_trim,
-              mesh = bspde,
-              time = "year",
-              family = nbinom2(link = "log"),
-              spatial = "on",
-              spatiotemporal = "ar1")
-
-sanity(fit_st)
 
 
 pdf(here::here("figs", "diagnostics", "fits_st.pdf"))
@@ -178,41 +365,6 @@ dev.off()
 ggplot(dat_trim, aes(x = year, y = resids)) +
   geom_point() +
   ggsidekick::theme_sleek()
-
-
-
-# compare fit_st to models that include a) fixed effect for survey and b) 
-# constrained to only summer months (also requires infilling)
-fit_st_survey <- sdmTMB(ck_juv ~ s(dist_to_coast_km, by = season_f, k = 3) + 
-                          season_f + survey_f,
-                        # offset = dat_trim$effort,
-                        data = dat_trim,
-                        mesh = bspde,
-                        time = "year",
-                        family = nbinom2(link = "log"),
-                        spatial = "on",
-                        spatiotemporal = "ar1")
-sanity(fit_st_survey)
-#export do explore in Rmd
-# saveRDS(fit_st_survey, here::here("data", "fits", "fit_st_survey.RDS"))
-fit_st_survey <- readRDS(here::here("data", "fits", "fit_st_survey.RDS"))
-
-
-# ggpredict throws variable type errors
-ggeffects::ggpredict(fit_st_survey,
-                     terms = "dist_to_coast_km") %>%
-  plot()
-
-season_p <- visreg::visreg(fit_st_survey, xvar = "season_f", 
-                           scale = "response")
-dist_p <- visreg::visreg(fit_st_survey, xvar = "dist_to_coast_km", 
-                         by = "season_f", xlim = c(0, 200), scale = "response")
-plot_list <- list(season_p, dist_p)
-saveRDS(plot_list, here::here("figs", "st_survey_counterfacs_list.RDS"))
-
-
-
-## SPATIAL PREDS ---------------------------------------------------------------
 
 grid <- readRDS(here::here("data", "spatial", "pred_ipes_grid.RDS")) %>% 
   mutate(utm_x_1000 = X / 1000,
@@ -315,5 +467,9 @@ index_list <- list(survey_eff = index, no_survey_eff = index2)
 saveRDS(exp_grid, here::here("data", "spatial", "exp_pred_ipes_grid_utm.rds"))
 saveRDS(preds, here::here("data", "preds", "st_survey_spatial_preds.rds"))
 saveRDS(index_list, here::here("data", "preds", "st_survey_index_list.rds"))
+
+
+
+
 
 
