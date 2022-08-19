@@ -174,11 +174,20 @@ coast <- rbind(rnaturalearth::ne_states( "United States of America",
   st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
   
 
-ggplot() +
+set_map <- ggplot() +
   geom_sf(data = coast, color = "black", fill = "white") +
   geom_point(data = dat_trim,
              aes(x = utm_x, y = utm_y, fill = ipes_grid), 
-             shape = 21, alpha = 0.4)
+             shape = 21, alpha = 0.4) +
+  facet_wrap(~season_f) +
+  ggsidekick::theme_sleek() +
+  theme(#legend.position = "top",
+        axis.title = element_blank())
+
+png(here::here("figs", "set_map.png"), height = 4, width = 8, res = 250, 
+    units = "in")
+set_map
+dev.off()
 
 # export subsetted version to use for initial fitting
 saveRDS(dat_trim, here::here("data", "chin_catch_sbc.rds"))
@@ -234,3 +243,43 @@ catch_dist
 catch_bathy
 dev.off()
 
+
+png(here::here("figs", "temporal_coverage.png"), height = 4, width = 4, 
+    res = 250, 
+    units = "in")
+temp_cov
+dev.off()
+
+
+# VISUALIZE DIFFERENT DATA COVERAGE -------------------------------------------- 
+
+base_map <- ggplot() +
+  geom_sf(data = coast, color = "black", fill = "white") +
+  facet_wrap(~season_f, drop = FALSE) +
+  ggsidekick::theme_sleek() +
+  theme(axis.title = element_blank(),
+        legend.position = "none",
+        axis.text = element_blank())
+
+map1 <- base_map +
+  geom_point(data = dat_trim,
+             aes(x = utm_x, y = utm_y, fill = ipes_grid), 
+             shape = 21, alpha = 0.4)
+map2 <- base_map +
+  geom_point(data = dat_trim %>% filter(ipes_grid == "TRUE"),
+             aes(x = utm_x, y = utm_y, fill = ipes_grid), 
+             shape = 21, alpha = 0.4)
+map3 <- base_map +
+  geom_point(data = dat_trim %>% filter(season_f == "su"),
+             aes(x = utm_x, y = utm_y, fill = ipes_grid), 
+             shape = 21, alpha = 0.4)
+map4 <- base_map +
+  geom_point(data = dat_trim %>% filter(season_f == "su",
+                                        ipes_grid == "TRUE"),
+             aes(x = utm_x, y = utm_y, fill = ipes_grid), 
+             shape = 21, alpha = 0.4)
+
+png(here::here("figs", "data_input_map.png"), height = 5, width = 8, res = 250, 
+    units = "in")
+cowplot::plot_grid(map1, map2, map3, map4, nrow = 2)
+dev.off()

@@ -67,10 +67,10 @@ ggplot(coast_utm) +
 
 
 #compare 
-plot(dat_trim_spde)
-plot(jchin1_spde_nch)
-plot(jchin1_spde$mesh, main = NA, edge.color = "grey60", asp = 1)
-plot(jchin1_spde_nch$mesh, main = NA, edge.color = "grey60", asp = 1)
+# plot(dat_trim_spde)
+# plot(jchin1_spde_nch)
+# plot(jchin1_spde$mesh, main = NA, edge.color = "grey60", asp = 1)
+# plot(jchin1_spde_nch$mesh, main = NA, edge.color = "grey60", asp = 1)
 
 
 ## alternative meshes that use data subsets
@@ -101,7 +101,6 @@ bspde_summer_ipes <- add_barrier_mesh(
   spde_summer_ipes, coast_utm, range_fraction = 0.1,
   proj_scaling = 1000, plot = TRUE
 )
-
 
 ## FIT SIMPLE MODEL ------------------------------------------------------------
 
@@ -141,6 +140,21 @@ cor(dum)
 #                   mesh = bspde_summer,
 #                   family = sdmTMB::nbinom1(),
 #                   spatial = "on"
+# )
+# # inferior AIC (even with ST version)
+# fit_ln0 <- sdmTMB(ck_juv ~ s(dist_to_coast_km, k = 4) + survey_f,
+#                   offset = dat_summer$effort,
+#                   data = dat_summer,
+#                   mesh = bspde_summer,
+#                   family = sdmTMB::delta_lognormal(),
+#                   spatial = "on",
+#                   time = "year",
+#                   extra_time = c(2016L),
+#                   spatiotemporal = "ar1",
+#                   control = sdmTMBcontrol(
+#                     nlminb_loops = 2,
+#                     newton_loops = 1
+#                   )
 # )
 
 
@@ -277,7 +291,7 @@ fit_summer_ipes <- sdmTMB(ck_juv ~ 1 +
                    data = dat_summer_ipes %>% filter(year < 2018),
                    mesh = bspde_summer_ipes,
                    time = "year",
-                   extra_time = c(2018L, 2019L),
+                   extra_time = c(2016L, 2018L, 2019L),
                    family = sdmTMB::nbinom2(),
                    spatial = "on",
                    spatiotemporal = "ar1"
@@ -285,8 +299,8 @@ fit_summer_ipes <- sdmTMB(ck_juv ~ 1 +
 
 fit_list <- list(fit_full,
                  fit_summer,
-                 fit_ipes#,
-                 # fit_summer_ipes
+                 fit_ipes,
+                 fit_summer_ipes
                  )
 
 
@@ -305,21 +319,9 @@ dat_test <- readRDS(here::here("data", "chin_catch_sbc.rds")) %>%
     year < 2020)
 
 
-
-test_preds <- predict(fit_ipes,
-                      newdata = dat_test)
-
-test_preds_trim <- test_preds %>% 
-  filter(year %in% c("2018", "2019"),
-         ipes_grid == TRUE,
-         season_f == "su")
-plot(ck_juv ~ exp(est), data = test_preds_trim)
-
-
-Metrics::rmse(test_preds_trim$ck_juv, exp(test_preds_trim$est))
-
+# generate predictions for each model/dataset
 fit_tbl <- tibble(
-  name = c("full", "sum", "ipes"#, "sum_ipes"
+  name = c("full", "sum", "ipes", "sum_ipes"
   ),
   mod = fit_list) %>% 
   mutate(
@@ -333,6 +335,17 @@ fit_tbl <- tibble(
                season_f == "su")
     })
   )
+
+# calculate RMSE and plot predictions
+fit_tbl$rmse <- purrr::map(fit_tbl$preds, function (x) {
+  Metrics::rmse(x$ck_juv, exp(x$est))
+}) %>% 
+  unlist()
+
+plot_list <- purrr::map(fit_tbl$preds, function (x) {
+  plot(ck_juv ~ exp(est), data = x)
+})
+
 
 
 
@@ -469,7 +482,135 @@ saveRDS(preds, here::here("data", "preds", "st_survey_spatial_preds.rds"))
 saveRDS(index_list, here::here("data", "preds", "st_survey_index_list.rds"))
 
 
+## ANISOTROPY VS BARRIER MESH --------------------------------------------------
+
+# use summer dataset to evaluate relative support for anisotropy vs. barrier 
+# mesh
+
+fit_summer_barrier <- sdmTMB(ck_juv ~ 1 +  
+                       s(dist_to_coast_km, bs = "tp", k = 4) + 
+                       # switch to thin plate 
+                       s(month, bs = "tp", k = 4) +
+                       survey_f,
+                     offset = dat_summer$effort,
+                     data = dat_summer %>% filter(year < 2018),
+                     mesh = bspde_summer,
+                     time = "year",
+                     extra_time = c(2016L, 2018L, 2019L),
+                     family = sdmTMB::nbinom2(),
+                     spatial = "on",
+                     spatiotemporal = "ar1"
+)
+fit_summer_anisotropy <- sdmTMB(ck_juv ~ 1 +  
+                               s(dist_to_coast_km, bs = "tp", k = 4) + 
+                               # switch to thin plate 
+                               s(month, bs = "tp", k = 4) +
+                               survey_f,
+                             offset = dat_summer$effort,
+                             data = dat_summer %>% filter(year < 2018),
+                             anisotropy = TRUE,
+                             mesh = spde_summer,
+                             time = "year",
+                             extra_time = c(2016L, 2018L, 2019L),
+                             family = sdmTMB::nbinom2(),
+                             spatial = "on",
+                             spatiotemporal = "ar1"
+)
+AIC(fit_summer_anisotropy, fit_summer_barrier)
+
+summer_fit_tbl <- tibble(
+  name = c("barrier", "anisotropy"
+  ),
+  mod = list(fit_summer_barrier,
+             fit_summer_anisotropy)) %>% 
+  mutate(
+    preds = purrr::map(mod, function (x) {
+      predict(x, newdata = dat_test)
+    }),
+    test_preds = purrr::map(preds, function (x) {
+      x %>% 
+        filter(year %in% c("2018", "2019"),
+               ipes_grid == TRUE,
+               season_f == "su")
+    })
+  )
+
+# calculate RMSE and plot predictions
+purrr::map(summer_fit_tbl$test_preds, function (x) {
+  Metrics::rmse(x$ck_juv, exp(x$est))
+}) %>% 
+  unlist()
+
+plot_list <- purrr::map(summer_fit_tbl$preds, function (x) {
+  plot(ck_juv ~ exp(est), data = x %>% filter(ck_juv < 100))
+  abline(a = 0, b = 1, col = "red")
+})
+
+hist_list <- purrr::map(summer_fit_tbl$preds, function (x) {
+  dum <- x %>% filter(ck_juv < 50)
+  p1 <- hist(exp(dum$est))                     
+  p2 <- hist(dum$ck_juv)                     
+  plot( p1, col=rgb(0,0,1,1/4)#, xlim=c(0,20)
+        )  # first histogram
+  plot( p2, col=rgb(1,0,0,1/4)#, xlim=c(0,20)
+        , add=T)  # second
+})
 
 
+# compare spatial predictions
+grid <- readRDS(here::here("data", "spatial", "pred_ipes_grid.RDS")) %>% 
+  mutate(utm_x_1000 = X / 1000,
+         utm_y_1000 = Y / 1000,
+         dist_to_coast_km = shore_dist / 1000)
+
+# add unique years and seasons
+summer_exp_grid <- expand.grid(
+  year = seq(1998, 2019, by = 1)
+) %>%
+  mutate(id = row_number()) %>%
+  split(., .$id) %>% 
+  purrr::map(., function (x) {
+    grid %>% 
+      mutate(
+        year = x$year,
+        month = 7,
+        survey_f = "hss"
+      )
+  }) %>%
+  bind_rows() 
+
+summer_fit_tbl$spatial_preds <- purrr::map2(
+  summer_fit_tbl$name,
+  summer_fit_tbl$mod, 
+  function (x, y) {
+    predict(y, summer_exp_grid) %>% 
+      mutate(name = x)
+  }
+)
 
 
+preds_2015 <- summer_fit_tbl$spatial_preds %>% 
+  bind_rows() %>% 
+  filter(year == "2015")
+
+plot_map <- function(dat, column) {
+  ggplot(dat, aes_string("utm_x_1000", "utm_y_1000", fill = column)) +
+    geom_raster() +
+    coord_fixed() +
+    ggsidekick::theme_sleek()
+}
+
+out_map <- plot_map(preds_2015, "exp(est)") +
+  scale_fill_viridis_c(
+    trans = "sqrt",
+    na.value = "yellow", limits = c(0, quantile(exp(preds_2015$est), 0.995))
+  ) +
+  facet_wrap(~name) +
+  ggtitle("Prediction (fixed effects + all random effects)")
+
+
+png(here::here("figs", "anisotropy_barrier_comparison_map.png"), 
+    height = 5, width = 8, res = 250, 
+    units = "in")
+out_map
+dev.off()
