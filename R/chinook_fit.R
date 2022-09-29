@@ -22,9 +22,10 @@ dat_trim <- readRDS(here::here("data", "chin_catch_sbc.rds")) %>%
          #!is.na(dist_to_coast_km),
          !effort < 0,
          !is.na(effort),
-         # drop 1995 so that '96 doesn't have to be interpolated
-         !year %in% c("1995", "1997"),
-         year < 2018)
+         # sampling coverage very sparse early in time series
+         !year < 1998,
+         year < 2018
+         )
 
 coast_utm <- rbind(rnaturalearth::ne_states( "United States of America", 
                                          returnclass = "sf"), 
@@ -176,7 +177,8 @@ fit_month <- sdmTMB(ck_juv ~ 1 +
                  survey_f,
                offset = dat_trim$effort,
                data = dat_trim,
-               mesh = bspde,
+               mesh = spde,
+               anisotropy = TRUE,
                family = sdmTMB::nbinom2(),
                spatial = "on"
                )
@@ -186,7 +188,8 @@ fit_week <- sdmTMB(ck_juv ~ 1 +
                  survey_f,
                offset = dat_trim$effort,
                data = dat_trim,
-               mesh = bspde,
+               mesh = spde,
+               anisotropy = TRUE,
                family = sdmTMB::nbinom2(),
                spatial = "on"
 )
@@ -250,6 +253,8 @@ AIC(fit_a, fit_b, fit_c)
 # c) IPES data, all seasons
 # d) IPES data, summer only
 
+# library(future)
+# plan(multisession)
 
 # fit models with different fixed effects due to different time scales
 fit_full <- sdmTMB(
@@ -258,14 +263,15 @@ fit_full <- sdmTMB(
     s(month, bs = "cc", k = 4) +
     survey_f,
   offset = dat_trim$effort,
-  data = dat_trim %>% filter(year < 2018),
+  data = dat_trim,
   mesh = spde,
   time = "year",
-  extra_time = c(2018L, 2019L),
+  extra_time = c(2018L, 2019L
+                 ),
   family = sdmTMB::nbinom2(),
   spatial = "on",
   spatiotemporal = "ar1",
-  anisotropy = TRUE,
+  # anisotropy = TRUE,
   priors = sdmTMBpriors(
     matern_s = pc_matern(range_gt = 2, sigma_lt = 5)
   )
@@ -277,14 +283,15 @@ fit_summer <- sdmTMB(
     s(month, bs = "tp", k = 4) +
     survey_f,
   offset = dat_summer$effort,
-  data = dat_summer %>% filter(year < 2018),
+  data = dat_summer,
   mesh = spde_summer,
   time = "year",
-  extra_time = c(2016L, 2018L, 2019L),
+  extra_time = c(2016L, 2018L, 2019L
+                 ),
   family = sdmTMB::nbinom2(),
   spatial = "on",
   spatiotemporal = "ar1",
-  anisotropy = TRUE,
+  # anisotropy = TRUE,
   priors = sdmTMBpriors(
     matern_s = pc_matern(range_gt = 2, sigma_lt = 5)
   )
@@ -295,44 +302,44 @@ fit_ipes <- sdmTMB(
     s(month, bs = "cc", k = 4) +
     survey_f,
   offset = dat_ipes$effort,
-  data = dat_ipes %>% filter(year < 2018),
+  data = dat_ipes,
   mesh = spde_ipes,
   time = "year",
   extra_time = c(2018L, 2019L),
   family = sdmTMB::nbinom2(),
   spatial = "on",
   spatiotemporal = "ar1",
-  anisotropy = TRUE,
+  # anisotropy = TRUE,
   priors = sdmTMBpriors(
     matern_s = pc_matern(range_gt = 2, sigma_lt = 5)
   )
 )
-# fit_summer_ipes <- sdmTMB(
-#   ck_juv ~ 1 +  
-#     s(dist_to_coast_km, bs = "tp", k = 4) + 
-#     s(month, bs = "tp", k = 4) +
-#     survey_f,
-#   offset = dat_summer_ipes$effort,
-#   data = dat_summer_ipes %>% filter(year < 2018),
-#   mesh = spde_summer_ipes,
-#   time = "year",
-#   extra_time = c(2016L, 2018L, 2019L),
-#   family = sdmTMB::nbinom2(),
-#   spatial = "on",
-#   spatiotemporal = "ar1",
-#   anisotropy = TRUE,
-#   priors = sdmTMBpriors(
-#     matern_s = pc_matern(range_gt = 2, sigma_lt = 5)
-#   )
-# )
+fit_summer_ipes <- sdmTMB(
+  ck_juv ~ 1 +
+    s(dist_to_coast_km, bs = "tp", k = 4) +
+    s(month, bs = "tp", k = 4) +
+    survey_f,
+  offset = dat_summer_ipes$effort,
+  data = dat_summer_ipes,
+  mesh = spde_summer_ipes,
+  time = "year",
+  extra_time = c(2016L, 2018L, 2019L),
+  family = sdmTMB::nbinom2(),
+  spatial = "on",
+  spatiotemporal = "ar1",
+  # anisotropy = TRUE,
+  priors = sdmTMBpriors(
+    matern_s = pc_matern(range_gt = 2, sigma_lt = 5)
+  )
+)
 
 fit_list <- list(fit_full,
                  fit_summer,
-                 fit_ipes#,
-                 # fit_summer_ipes
+                 fit_ipes,
+                 fit_summer_ipes
                  )
+saveRDS(fit_list, here::here("data", "fits", "mod_comp_fit_list.RDS"))
 
-saveRDS(fit_list, here::here("data", "fit_list.rds"))
 
 ## testing data are observed catches in 2018/19 in summer in the ipes_grid
 # due to sdmTMB constraints, all time elements have to be passed when generating
@@ -345,14 +352,12 @@ dat_test <- readRDS(here::here("data", "chin_catch_sbc.rds")) %>%
   filter(
     !effort < 0,
     !is.na(effort),
-    !year %in% c("1995", "1997"),
-    year < 2020)
+    year >= min(dat_trim$year) & year < 2020)
 
 
 # generate predictions for each model/dataset
 fit_tbl <- tibble(
-  name = c("full", "sum", "ipes"#, "sum_ipes"
-  ),
+  name = c("full", "sum", "ipes", "sum_ipes"),
   mod = fit_list) %>% 
   mutate(
     preds = purrr::map(mod, function (x) {
@@ -366,24 +371,81 @@ fit_tbl <- tibble(
     })
   )
 
-# calculate RMSE and plot predictions
+# calculate RMSE and plot predictions (replaced w/ log likelihood below)
 # fit_tbl$rmse <- purrr::map(fit_tbl$preds, function (x) {
 #   Metrics::rmse(x$ck_juv, exp(x$est))
 # }) %>% 
 #   unlist()
 
-# calculate log-lik
-fit_tbl$log_lik <- purrr::map(fit_tbl$preds, function (x) {
-
+# calculate log-likelihood for each model
+ll_nbinom2 <- function(object, withheld_y, withheld_mu) {
+  phi <- exp(object$model$par[["ln_phi"]])
+  stats::dnbinom(x = withheld_y, size = phi, mu = withheld_mu, log = TRUE)
+}
+fit_tbl$log_lik <- purrr::map2(
+  fit_tbl$mod, fit_tbl$preds, function (mod, preds) {
+    log_lik <- ll_nbinom2(object = mod, withheld_y = test_preds$ck_juv, 
+                          withheld_mu = exp(test_preds$est)) 
+    sum(log_lik)
 })
+# full model has best performance (-429 vs. -436 for ipes)
 
 
+## compare key parameters for differences 
+ran_par_ests <- purrr::map2(fit_tbl$mod, fit_tbl$name, function (x, name) {
+  tidy(x, "ran_pars") %>% 
+    mutate(model = name)
+}) %>% 
+  bind_rows() %>% 
+  ggplot() +
+  geom_point(aes(x = model, y = estimate)) +
+  facet_wrap(~term, scales = "free_y") +
+  ggsidekick::theme_sleek()
 
-plot_list <- purrr::map(fit_tbl$preds, function (x) {
-  plot(ck_juv ~ exp(est), data = x)
-})
+pdf(here::here("figs", "diagnostics", "ran_pars.pdf"))
+ran_par_ests
+dev.off()
 
 
+# look at fine scale predictions of each model 
+pred_grid <- readRDS(here::here("data", "spatial", "pred_ipes_grid.RDS")) %>% 
+  mutate(utm_x_1000 = X / 1000,
+         utm_y_1000 = Y / 1000,
+         dist_to_coast_km = shore_dist / 1000,
+         survey_f = "hss",
+         month = 7)
+
+# expand prediction grid for different years
+yr_vec <- unique(dat_test$year)
+pred_grid_year <- vector(mode = "list", length = length(yr_vec))
+for (i in seq_along(yr_vec)) {
+  pred_grid_year[[i]] <- pred_grid %>% mutate(year = yr_vec[[i]])
+}
+pred_grid_year <- bind_rows(pred_grid_year)
+
+dum <- predict(fit_tbl$mod[[1]], newdata = pred_grid_year) 
+
+sp_pred_all_mods <- purrr::map2(fit_tbl$mod, fit_tbl$name, function (x, name) {
+  predict(x, newdata = pred_grid_year) %>% 
+    mutate(model = name)
+}) %>% 
+  bind_rows()
+
+
+pdf(here::here("figs", "diagnostics", "sp_preds_2010.pdf"))
+ggplot(sp_pred_all_mods %>% 
+         filter(year == "2010"), 
+       aes(utm_x_1000, utm_y_1000, fill = exp(est))) +
+  geom_raster() +
+  coord_fixed() +
+  ggsidekick::theme_sleek() +
+  scale_fill_viridis_c(
+    trans = "sqrt",
+    # trim extreme high values to make spatial variation more visible
+    na.value = "yellow", limits = c(0, quantile(exp(sp_pred_all_mods$est), 0.995))
+  ) +
+  facet_wrap(~model)
+dev.off()
 
 
 
