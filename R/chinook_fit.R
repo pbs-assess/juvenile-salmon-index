@@ -1,8 +1,9 @@
-### Juvenile Chinook model fit
-## Fit sdmTMB to 
-## 1) Develop standardized index of abundance
-## 2) Estimate vessel effects (requires developing interannual smooth or 
-## AR-term, otherwise confounded with year effects)
+### Juvenile Chinook model fit -- testing
+## Preliminary fits of juvenile Chinook salmon dataset with sdmTMB
+## 1) Evaluate subset of fixed effects optiosn
+## 2) Explore different link functions
+## 3) Compare subsets of different data inputs
+## 4) Compare barrier spde to anisotropy
 ## May 26, 2022
 
 
@@ -12,17 +13,21 @@ library(ggplot2)
 
 
 # downscale data and predictive grid
-dat_trim <- readRDS(here::here("data", "chin_catch_sbc.rds")) %>% 
+dat <- readRDS(here::here("data", "chin_catch_sbc.rds")) %>% 
   mutate(utm_x_1000 = utm_x / 1000,
          utm_y_1000 = utm_y / 1000,
          effort = log(distance_travelled),
-         week = lubridate::week(date)
-         ) %>%
-  filter(#!is.na(depth_mean_m),
-         #!is.na(dist_to_coast_km),
-         !effort < 0,
-         !is.na(effort),
-         # sampling coverage very sparse early in time series
+         week = lubridate::week(date),
+         vessel = as.factor(vessel)
+         ) %>% 
+  filter(
+    !effort < 0,
+    !is.na(effort)
+  ) %>% 
+  droplevels()
+
+dat_trim <- dat %>%
+  filter(# sampling coverage very sparse early in time series
          !year < 1998,
          year < 2018
          )
@@ -171,30 +176,52 @@ cor(dum)
 ## COMPARE FIXED EFFECT STRUCTURES ---------------------------------------------
 
 # week vs month (spatial only)
-fit_month <- sdmTMB(ck_juv ~ 1 +  
-                 s(dist_to_coast_km, bs = "tp", k = 4) + 
-                 s(month, bs = "cc", k = 4) +
-                 survey_f,
-               offset = dat_trim$effort,
-               data = dat_trim,
-               mesh = spde,
-               anisotropy = TRUE,
-               family = sdmTMB::nbinom2(),
-               spatial = "on"
-               )
-fit_week <- sdmTMB(ck_juv ~ 1 +  
-                 s(dist_to_coast_km, bs = "tp", k = 4) + 
-                 s(week, bs = "cc", k = 4) +
-                 survey_f,
-               offset = dat_trim$effort,
-               data = dat_trim,
-               mesh = spde,
-               anisotropy = TRUE,
-               family = sdmTMB::nbinom2(),
-               spatial = "on"
+fit_month <- sdmTMB(
+  ck_juv ~ 1 +  
+    s(depth_mean_m, bs = "tp", k = 4) + 
+    s(dist_to_coast_km, bs = "tp", k = 4) + 
+    s(month, bs = "cc", k = 4) +
+    survey_f,
+  offset = dat_trim$effort,
+  data = dat_trim,
+  mesh = spde,
+  anisotropy = TRUE,
+  family = sdmTMB::nbinom2(),
+  spatial = "on"
+)
+fit_week <- sdmTMB(
+  ck_juv ~ 1 +  
+    s(depth_mean_m, bs = "tp", k = 4) + 
+    s(dist_to_coast_km, bs = "tp", k = 4) + 
+    s(week, bs = "cc", k = 4) +
+    survey_f,
+  offset = dat_trim$effort,
+  data = dat_trim,
+  mesh = spde,
+  anisotropy = TRUE,
+  family = sdmTMB::nbinom2(),
+  spatial = "on"
 )
 AIC(fit_month, fit_week)
 # month outperforms week
+
+# any benefit to including random intercept for vessel
+fit_month_v <- sdmTMB(
+  ck_juv ~ 1 +  
+    s(depth_mean_m, bs = "tp", k = 4) + 
+    s(dist_to_coast_km, bs = "tp", k = 4) + 
+    s(month, bs = "cc", k = 4) +
+    survey_f +
+    (1 | vessel),
+  offset = dat_trim$effort,
+  data = dat_trim,
+  mesh = spde,
+  anisotropy = TRUE,
+  family = sdmTMB::nbinom2(),
+  spatial = "on"
+)
+# support for including vessel effects
+
 
 # bathy vs. distance
 fit_dist <- fit_month
@@ -209,7 +236,7 @@ fit_bathy <- sdmTMB(ck_juv ~ 1 +
                     spatial = "on"
 ) 
 AIC(fit_bathy, fit_dist)
-# distance outperforms bathymetry
+# distance outperforms bathymetry, but both should be included based on AIC
 
 # seasonal structure 
 fit_a <- fit_dist
@@ -442,10 +469,88 @@ ggplot(sp_pred_all_mods %>%
   scale_fill_viridis_c(
     trans = "sqrt",
     # trim extreme high values to make spatial variation more visible
-    na.value = "yellow", limits = c(0, quantile(exp(sp_pred_all_mods$est), 0.995))
+    na.value = "yellow", 
+    limits = c(0, quantile(exp(sp_pred_all_mods$est), 0.995))
   ) +
   facet_wrap(~model)
 dev.off()
+
+
+### FIT SATURATED --------------------------------------------------------------
+
+# keep early years in dataset for now but exclude 2022 and consider dropping 
+# years with v. limited summer data
+dat_in <- dat %>% filter(!year == "2022")
+spde <- make_mesh(dat_in, c("utm_x_1000", "utm_y_1000"), 
+                  cutoff = 10, type = "kmeans")
+
+
+fit <- sdmTMB(
+  ck_juv ~ 1 +  
+    s(depth_mean_m, bs = "tp", k = 4) +
+    s(dist_to_coast_km, bs = "tp", k = 4) + 
+    s(month, bs = "cc", k = 4) +
+    survey_f,
+  offset = dat_in$effort,
+  data = dat_in,
+  mesh = spde,
+  time = "year",
+  # infill 1996
+  extra_time = c(1996L),
+  family = sdmTMB::nbinom2(),
+  spatial = "on",
+  spatiotemporal = "ar1",
+  anisotropy = TRUE,
+  priors = sdmTMBpriors(
+    matern_s = pc_matern(range_gt = 2, sigma_lt = 5)
+  )
+)
+saveRDS(fit, here::here("data", "fits", "fit_st_full.rds"))
+#AIC = 16741.74
+
+fit_v <- sdmTMB(
+  ck_juv ~ 1 +  
+    s(depth_mean_m, bs = "tp", k = 4) +
+    s(dist_to_coast_km, bs = "tp", k = 4) + 
+    s(month, bs = "cc", k = 4) +
+    survey_f  +
+    (1 | vessel),
+  offset = dat_in$effort,
+  data = dat_in,
+  mesh = spde,
+  time = "year",
+  # infill 1996
+  extra_time = c(1996L),
+  family = sdmTMB::nbinom2(),
+  spatial = "on",
+  spatiotemporal = "ar1",
+  anisotropy = TRUE,
+  priors = sdmTMBpriors(
+    matern_s = pc_matern(range_gt = 2, sigma_lt = 5)
+  )
+)
+
+
+## simulate and check residuals
+sims <- simulate(fit, nsim = 250)
+dharma_residuals(sims, fit)
+
+samps <- sample.int(250, size = 9)
+breaks_vec <- c(seq(0, 200, by = 10))
+obs_dat <- dat_in %>% filter(ck_juv < 200) %>% pull(ck_juv)
+par(mfrow = c(3, 3))
+for (i in seq_along(samps)) {
+  dum <- sims[, i ]
+  hist(obs_dat, col="green", pch=20, cex=4, breaks=breaks_vec)
+  hist(dum[dum < 200], pch=20, cex=4, breaks=breaks_vec, col=rgb(1,0,0,0.5), add=TRUE)
+}
+
+for (i in seq_along(samps)) {
+  dum <- sims[, i ]
+  plot(log(dum[-1]) ~ log(dat_in$ck_juv))
+  abline(0, 1, col = "red")
+}
+
 
 
 
