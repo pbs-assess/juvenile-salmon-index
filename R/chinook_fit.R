@@ -483,11 +483,14 @@ dev.off()
 dat_in <- dat %>% filter(!year == "2022")
 spde <- make_mesh(dat_in, c("utm_x_1000", "utm_y_1000"), 
                   cutoff = 10, type = "kmeans")
-
+bspde <- add_barrier_mesh(
+  spde, coast_utm, range_fraction = 0.1,
+  # scaling = 1000 since UTMs were rescaled above
+  proj_scaling = 1000, plot = TRUE
+)
 
 fit <- sdmTMB(
   ck_juv ~ 1 +  
-    # s(depth_mean_m, bs = "tp", k = 4) +
     s(dist_to_coast_km, bs = "tp", k = 4) + 
     s(month, bs = "cc", k = 4) +
     survey_f,
