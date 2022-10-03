@@ -57,20 +57,20 @@ plot(spde)
 # plot(spde2)
 
 # add barrier mesh
-# bspde <- add_barrier_mesh(
-#   spde, coast_utm, range_fraction = 0.1,
-#   # scaling = 1000 since UTMs were rescaled above
-#   proj_scaling = 1000, plot = TRUE
-# )
-# 
-# mesh_df_water <- bspde$mesh_sf[bspde$normal_triangles, ]
-# mesh_df_land <- bspde$mesh_sf[bspde$barrier_triangles, ]
-# ggplot(coast_utm) +
-#   geom_sf() +
-#   geom_sf(data = mesh_df_water, size = 1, colour = "blue") +
-#   geom_sf(data = mesh_df_land, size = 1, colour = "green") +
-#   geom_point(data = dat_trim, aes(x = utm_x, y = utm_y), 
-#              colour = "red", alpha = 0.4)
+bspde <- add_barrier_mesh(
+  spde, coast_utm, range_fraction = 0.1,
+  # scaling = 1000 since UTMs were rescaled above
+  proj_scaling = 1000, plot = TRUE
+)
+
+mesh_df_water <- bspde$mesh_sf[bspde$normal_triangles, ]
+mesh_df_land <- bspde$mesh_sf[bspde$barrier_triangles, ]
+ggplot(coast_utm) +
+  geom_sf() +
+  geom_sf(data = mesh_df_water, size = 1, colour = "blue") +
+  geom_sf(data = mesh_df_land, size = 1, colour = "green") +
+  geom_point(data = dat_trim, aes(x = utm_x, y = utm_y),
+             colour = "red", alpha = 0.4)
 
 
 #compare 
@@ -487,20 +487,20 @@ spde <- make_mesh(dat_in, c("utm_x_1000", "utm_y_1000"),
 
 fit <- sdmTMB(
   ck_juv ~ 1 +  
-    s(depth_mean_m, bs = "tp", k = 4) +
+    # s(depth_mean_m, bs = "tp", k = 4) +
     s(dist_to_coast_km, bs = "tp", k = 4) + 
     s(month, bs = "cc", k = 4) +
     survey_f,
   offset = dat_in$effort,
   data = dat_in,
-  mesh = spde,
+  mesh = bspde,
   time = "year",
   # infill 1996
   extra_time = c(1996L),
   family = sdmTMB::nbinom2(),
   spatial = "on",
   spatiotemporal = "ar1",
-  anisotropy = TRUE,
+  anisotropy = FALSE,
   priors = sdmTMBpriors(
     matern_s = pc_matern(range_gt = 2, sigma_lt = 5)
   )
