@@ -502,7 +502,7 @@ fit <- sdmTMB(
   spatiotemporal = "ar1",
   anisotropy = FALSE,
   priors = sdmTMBpriors(
-    matern_s = pc_matern(range_gt = 2, sigma_lt = 5)
+    matern_s = pc_matern(range_gt = 10, sigma_lt = 80)
   )
 )
 saveRDS(fit, here::here("data", "fits", "fit_st_full.rds"))
@@ -510,7 +510,7 @@ saveRDS(fit, here::here("data", "fits", "fit_st_full.rds"))
 
 fit_v <- sdmTMB(
   ck_juv ~ 1 +  
-    s(depth_mean_m, bs = "tp", k = 4) +
+    # s(depth_mean_m, bs = "tp", k = 4) +
     s(dist_to_coast_km, bs = "tp", k = 4) + 
     s(month, bs = "cc", k = 4) +
     survey_f  +
@@ -524,9 +524,9 @@ fit_v <- sdmTMB(
   family = sdmTMB::nbinom2(),
   spatial = "on",
   spatiotemporal = "ar1",
-  anisotropy = TRUE,
+  anisotropy = FALSE,
   priors = sdmTMBpriors(
-    matern_s = pc_matern(range_gt = 2, sigma_lt = 5)
+    matern_s = pc_matern(range_gt = 10, sigma_lt = 80)
   )
 )
 
