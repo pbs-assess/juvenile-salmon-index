@@ -16,7 +16,11 @@ coast_utm <- rbind(rnaturalearth::ne_states( "United States of America",
               xmin = -137, ymin = 47, xmax = -121.25, ymax = 57) %>% 
   sf::st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
 
-spde <- make_mesh(dat_trim, c("utm_x_1000", "utm_y_1000"), 
+# fitted model
+fit <- readRDS(here::here("data", "fits", "fit_st_full.rds"))
+
+
+spde <- make_mesh(fit$data, c("utm_x_1000", "utm_y_1000"), 
                   cutoff = 10, type = "kmeans")
 bspde <- add_barrier_mesh(
   spde, coast_utm, range_fraction = 0.1,
@@ -25,21 +29,13 @@ bspde <- add_barrier_mesh(
 )
 
 
-# fitted model
-fit <- readRDS(here::here("data", "fits", "fit_st_full.rds"))
-
-
-
-nsims = 25
+nsims = 15
 sims_test <- simulate(fit, nsim = nsims)
 
 
 ## for each simulated dataset, refit model, recover pars and store
 library(furrr)
-plan(multisession, workers = 4)
-
-# This does run in parallel!
-future_map(c("hello", "world"), ~.x)
+plan(multisession, workers = 6)
 
 sim_tbl <- tibble(
   iter = seq(1, nsims, by = 1),
@@ -52,13 +48,13 @@ sim_tbl <- tibble(
 sim_tbl$sim_fit <- future_map(
   sim_tbl$sim_dat, function (x) {
     sdmTMB(
-      sim_dat ~ 1 +  
-        s(depth_mean_m, bs = "tp", k = 4) +
-        # s(dist_to_coast_km, bs = "tp", k = 4) + 
+      sim_catch ~ 1 +  
+        # s(depth_mean_m, bs = "tp", k = 4) +
+        s(dist_to_coast_km, bs = "tp", k = 4) +
         s(month, bs = "cc", k = 4) +
         survey_f,
-      offset = dat_in$effort,
-      data = dat_in,
+      offset = x$effort,
+      data = x,
       mesh = bspde,
       time = "year",
       # infill 1996
@@ -68,34 +64,39 @@ sim_tbl$sim_fit <- future_map(
       spatiotemporal = "ar1",
       anisotropy = FALSE,
       priors = sdmTMBpriors(
-        matern_s = pc_matern(range_gt = 2, sigma_lt = 5)
+        matern_s = pc_matern(range_gt = 10, sigma_lt = 80)
       )
     )
   }
 )
 
+# check one model's summary
+summary(sim_tbl$sim_fit[[1]])
 
-tidy_pars_rand <- tidy_pars_fix <- vector(mode = "list", length = nsims)
-for (i in seq_len(nsims)) {
-  dat_in$sim_dat <- sims_test[, i]
-  fit <- sdmTMB(
-    sim_dat ~ 1 +  
-      s(depth_mean_m, bs = "tp", k = 4) +
-      # s(dist_to_coast_km, bs = "tp", k = 4) + 
-      s(month, bs = "cc", k = 4) +
-      survey_f,
-    offset = dat_in$effort,
-    data = dat_in,
-    mesh = bspde,
-    time = "year",
-    # infill 1996
-    extra_time = c(1996L),
-    family = sdmTMB::nbinom2(),
-    spatial = "on",
-    spatiotemporal = "ar1",
-    anisotropy = FALSE,
-    priors = sdmTMBpriors(
-      matern_s = pc_matern(range_gt = 2, sigma_lt = 5)
-    )
-  )
-}
+# extract fixed and ran effects pars
+sim_tbl$pars <- purrr::map(sim_tbl$sim_fit, function (x) {
+  x <- sim_tbl$sim_fit[[2]]
+  fix <- tidy(x, effects = "fixed")
+  ran <- tidy(x, effects = "ran_pars")
+  rbind(fix, ran)
+})
+
+tidy_fix <- tidy(fit, effects = "fixed")
+tidy_ran <- tidy(fit, effects = "ran_pars")
+tidy_fit <- rbind(tidy_fix, tidy_ran)
+
+sim_pars <- sim_tbl %>% 
+  select(iter, pars) %>% 
+  unnest(cols = c(pars)) %>% 
+  mutate(iter = as.factor(iter))
+saveRDS(sim_pars, here::here("data", "preds", "sim_pars.rds"))
+
+sim_box <- ggplot() +
+  geom_boxplot(data = sim_pars, aes(x = term, y = estimate)) +
+  geom_point(data = tidy_fit, aes(x = term, y = estimate), colour = "red") +
+  facet_wrap(~term, scales = "free") +
+  ggsidekick::theme_sleek()
+
+pdf(here::here("figs", "diagnostics", "par_recovery_sim_box.pdf"))
+sim_box
+dev.off()

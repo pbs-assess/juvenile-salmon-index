@@ -509,7 +509,7 @@ fit <- sdmTMB(
   )
 )
 saveRDS(fit, here::here("data", "fits", "fit_st_full.rds"))
-#AIC = 16741.74
+#AIC = 16874.48
 
 fit_v <- sdmTMB(
   ck_juv ~ 1 +  
