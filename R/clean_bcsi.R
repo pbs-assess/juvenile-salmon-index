@@ -1,20 +1,20 @@
 ## Clean BCSI Data
-# Uses .csv files produced by Amy Tabata May 2022
-
+# Uses .csv files produced by Amy Tabata May 2022 (updated Oct 2022)
 
 library(tidyverse)
 library(sf)
 library(sp)
 
-depths <- read.csv(
-  here::here("data", "event_depths_from_bathymetry_hires.csv")
-) %>% 
-  janitor::clean_names()
+# original depths data generated separately but has been merged with bridge data
+# depths <- read.csv(
+#   here::here("data", "event_depths_from_bathymetry_hires.csv")
+# ) %>% 
+#   janitor::clean_names()
 chin <- read.csv(
   here::here("data", "BCSI_Juv_CHINOOK_Counts_True20220504.csv")
 ) %>% 
   janitor::clean_names()
-bridge_raw <- read.csv(here::here("data", "BCSI_Bridge_Info_20220505.csv")) %>% 
+bridge_raw <- read.csv(here::here("data", "BCSI_Bridge_Info_20220929.csv")) %>% 
   janitor::clean_names() 
 synoptic_stations <- read.csv(here::here("data", "synoptic_stations.csv")) %>% 
   janitor::clean_names()
@@ -75,26 +75,19 @@ ipes_grid_events <- st_intersection(bridge_sf2, ipes_sf_poly) %>%
 
 ## CLEAN AND MERGE -------------------------------------------------------------
 
-# interpolate missing depths_data
-depths2 <- depths %>% 
-  left_join(., bridge %>% select(mean_lat, mean_lon, unique_event)) %>% 
-  select(mean_lat, mean_lon, depth_mean_m, depth_med_m, transect_dist_km, 
-         depth_start:bridge_dist_km) 
-depths2[] <- lapply(depths2, function(x) as.numeric(as.character(x)))
-depth_interp <- VIM::kNN(depths2, k = 5)
-depth_interp2 <- depth_interp %>% 
+# impute missing bridge data
+imp_dat <- bridge %>% 
+  select(utm_x, utm_y, trip_id, tow_length_hour, mouth_height_use:volume_km3) 
+imp_dat2 <- VIM::kNN(imp_dat, k = 5)
+imp_dat2 <- imp_dat2 %>% 
   select(-ends_with("imp")) %>% 
-  mutate(unique_event = depths$unique_event)
-
-
+  mutate(unique_event = bridge$unique_event)
+  
 dat <- bridge %>% 
-  left_join(
-    ., 
-    depth_interp2 %>% 
-      dplyr::select(unique_event, depth_mean_m, start_depth_bridge,
-                    dist_to_coast_km, bridge_dist_km),
-    by = "unique_event"
-  ) %>% 
+  # remove values and replace with imputed data above
+  select(-c(utm_x, utm_y, trip_id, tow_length_hour, 
+           mouth_height_use:volume_km3)) %>% 
+  left_join(., imp_dat2, by = "unique_event") %>% 
   left_join(., chin, by = "unique_event") %>%
   mutate(
     date = as.POSIXct(date,
@@ -124,12 +117,6 @@ dat <- bridge %>%
     survey_f = ifelse(
       year > 2016 & season_f == "su", "ipes", "hss") %>% as.factor(),
     year_f = as.factor(year),
-    effort = log(distance_travelled),
-    # missing bathymetry for a few cases
-    depth_mean_m = case_when(
-      is.na(depth_mean_m) ~ start_bottom_depth,
-      depth_mean_m < 0 ~ start_bottom_depth,
-      TRUE ~ as.numeric(depth_mean_m)),
     vessel_name = tolower(vessel_name),
     vessel = case_when(
       grepl("crest", vessel_name) ~ "sea crest",
@@ -148,17 +135,16 @@ dat <- bridge %>%
          synoptic_station, ipes_grid, survey_f,
          mean_lat, mean_lon, utm_x, utm_y,
          vessel, distance_travelled, vessel_speed, 
-         depth_mean_m, dist_to_coast_km, 
-         mouth_height = mouth_height_use, mouth_width = mouth_width_use,
-         ck_juv = n_juv, ck_ad = n_ad)
+         bath_depth_mean_m, dist_to_coast_km, 
+         mouth_height = mouth_height_use, mouth_width = mouth_width_use, 
+         volume_km3, ck_juv = n_juv, ck_ad = n_ad) 
+
 
 # subset to core area and remove rows with missing data
 dat_trim <- dat %>%
   filter(synoptic_station == TRUE,
          # exclude SoG and Puget Sound PFMAs
-         !pfma %in% c("13", "14", "15", "16", "17", "18", "19", "PS"),
-         !is.na(depth_mean_m),
-         !is.na(dist_to_coast_km)) %>%
+         !pfma %in% c("13", "14", "15", "16", "17", "18", "19", "PS")) %>%
   droplevels()
 
 
@@ -188,6 +174,7 @@ png(here::here("figs", "set_map.png"), height = 4, width = 8, res = 250,
     units = "in")
 set_map
 dev.off()
+
 
 # export subsetted version to use for initial fitting
 saveRDS(dat_trim, here::here("data", "chin_catch_sbc.rds"))
