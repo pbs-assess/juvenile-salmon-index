@@ -134,9 +134,8 @@ dat <- bridge %>%
          stratum:station_name, pfma = dfo_stat_area_code,
          synoptic_station, ipes_grid, survey_f,
          mean_lat, mean_lon, utm_x, utm_y,
-         vessel, distance_travelled, vessel_speed, 
-         bath_depth_mean_m, dist_to_coast_km, 
-         mouth_height = mouth_height_use, mouth_width = mouth_width_use, 
+         vessel, distance_km, vessel_speed, 
+         bath_depth_mean_m, dist_to_coast_km, height_km, width_km, 
          volume_km3, ck_juv = n_juv, ck_ad = n_ad) 
 
 

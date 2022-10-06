@@ -14,15 +14,13 @@ library(ggplot2)
 
 # downscale data and predictive grid
 dat <- readRDS(here::here("data", "chin_catch_sbc.rds")) %>% 
-  mutate(utm_x_1000 = utm_x / 1000,
-         utm_y_1000 = utm_y / 1000,
-         effort = log(distance_travelled),
-         week = lubridate::week(date),
-         vessel = as.factor(vessel)
-         ) %>% 
-  filter(
-    !effort < 0,
-    !is.na(effort)
+  mutate(
+    utm_x_1000 = utm_x / 1000,
+    utm_y_1000 = utm_y / 1000,
+    volume_m3 = (distance_km * 1000) * ((width_km * 1000) * (height_km * 1000)),
+    effort = log(volume_m3),
+    week = lubridate::week(date),
+    vessel = as.factor(vessel)
   ) %>% 
   droplevels()
 
@@ -50,7 +48,7 @@ coast_utm <- rbind(rnaturalearth::ne_states( "United States of America",
 #                            n_knots = 250, type = "kmeans")
 spde <- make_mesh(dat_trim, c("utm_x_1000", "utm_y_1000"), 
                    cutoff = 10, type = "kmeans")
-plot(spde)
+# plot(spde)
 
 # spde2 <- make_mesh(dat_trim, c("utm_x_1000", "utm_y_1000"), 
 #                   cutoff = 20, type = "kmeans")
@@ -178,7 +176,7 @@ cor(dum)
 # week vs month (spatial only)
 fit_month <- sdmTMB(
   ck_juv ~ 1 +  
-    s(depth_mean_m, bs = "tp", k = 4) + 
+    s(bath_depth_mean_m, bs = "tp", k = 4) + 
     s(dist_to_coast_km, bs = "tp", k = 4) + 
     s(month, bs = "cc", k = 4) +
     survey_f,
@@ -191,7 +189,7 @@ fit_month <- sdmTMB(
 )
 fit_week <- sdmTMB(
   ck_juv ~ 1 +  
-    s(depth_mean_m, bs = "tp", k = 4) + 
+    s(bath_depth_mean_m, bs = "tp", k = 4) + 
     s(dist_to_coast_km, bs = "tp", k = 4) + 
     s(week, bs = "cc", k = 4) +
     survey_f,
@@ -208,7 +206,7 @@ AIC(fit_month, fit_week)
 # any benefit to including random intercept for vessel
 fit_month_v <- sdmTMB(
   ck_juv ~ 1 +  
-    s(depth_mean_m, bs = "tp", k = 4) + 
+    s(bath_depth_mean_m, bs = "tp", k = 4) + 
     s(dist_to_coast_km, bs = "tp", k = 4) + 
     s(month, bs = "cc", k = 4) +
     survey_f +
@@ -226,7 +224,7 @@ fit_month_v <- sdmTMB(
 # bathy vs. distance
 fit_dist <- fit_month
 fit_bathy <- sdmTMB(ck_juv ~ 1 +  
-                      s(depth_mean_m, bs = "tp", k = 4) + 
+                      s(bath_depth_mean_m, bs = "tp", k = 4) + 
                       s(month, bs = "cc", k = 4) +
                       survey_f,
                     offset = dat_trim$effort,
@@ -491,6 +489,7 @@ bspde <- add_barrier_mesh(
 
 fit <- sdmTMB(
   ck_juv ~ 1 +  
+    s(bath_depth_mean_m, bs = "tp", k = 4) +
     s(dist_to_coast_km, bs = "tp", k = 4) + 
     s(month, bs = "cc", k = 4) +
     survey_f,
@@ -513,7 +512,7 @@ saveRDS(fit, here::here("data", "fits", "fit_st_full.rds"))
 
 fit_v <- sdmTMB(
   ck_juv ~ 1 +  
-    # s(depth_mean_m, bs = "tp", k = 4) +
+    s(bath_depth_mean_m, bs = "tp", k = 4) +
     s(dist_to_coast_km, bs = "tp", k = 4) + 
     s(month, bs = "cc", k = 4) +
     survey_f  +
