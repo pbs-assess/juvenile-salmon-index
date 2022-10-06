@@ -17,7 +17,7 @@ dat <- readRDS(here::here("data", "chin_catch_sbc.rds")) %>%
   mutate(
     utm_x_1000 = utm_x / 1000,
     utm_y_1000 = utm_y / 1000,
-    volume_m3 = (distance_km * 1000) * ((width_km * 1000) * (height_km * 1000)),
+    volume_m3 = volume_km3 * 1000,
     effort = log(volume_m3),
     week = lubridate::week(date),
     vessel = as.factor(vessel)
@@ -176,7 +176,7 @@ cor(dum)
 # week vs month (spatial only)
 fit_month <- sdmTMB(
   ck_juv ~ 1 +  
-    s(bath_depth_mean_m, bs = "tp", k = 4) + 
+    # s(bath_depth_mean_m, bs = "tp", k = 4) + 
     s(dist_to_coast_km, bs = "tp", k = 4) + 
     s(month, bs = "cc", k = 4) +
     survey_f,
@@ -185,7 +185,11 @@ fit_month <- sdmTMB(
   mesh = spde,
   anisotropy = TRUE,
   family = sdmTMB::nbinom2(),
-  spatial = "on"
+  spatial = "on",
+  control = sdmTMBcontrol(
+                        nlminb_loops = 2,
+                        newton_loops = 1
+                      )
 )
 fit_week <- sdmTMB(
   ck_juv ~ 1 +  
