@@ -491,6 +491,7 @@ bspde <- add_barrier_mesh(
   proj_scaling = 1000, plot = TRUE
 )
 
+
 fit <- sdmTMB(
   ck_juv ~ 1 +  
     s(bath_depth_mean_m, bs = "tp", k = 4) +
@@ -509,7 +510,8 @@ fit <- sdmTMB(
   anisotropy = FALSE,
   priors = sdmTMBpriors(
     matern_s = pc_matern(range_gt = 10, sigma_lt = 80)
-  )
+  ),
+  previous_fit = fit_spatial
 )
 saveRDS(fit, here::here("data", "fits", "fit_st_full.rds"))
 #AIC = 16874.48
