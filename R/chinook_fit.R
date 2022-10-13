@@ -13,7 +13,8 @@ library(ggplot2)
 
 
 # downscale data and predictive grid
-dat <- readRDS(here::here("data", "chin_catch_sbc.rds")) %>% 
+dat <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>% 
+  filter(species == "CHINOOK") %>% 
   mutate(
     utm_x_1000 = utm_x / 1000,
     utm_y_1000 = utm_y / 1000,
@@ -23,11 +24,6 @@ dat <- readRDS(here::here("data", "chin_catch_sbc.rds")) %>%
   ) %>% 
   droplevels()
 
-dat_trim <- dat %>%
-  filter(# sampling coverage very sparse early in time series
-         !year < 1998,
-         year < 2018
-         )
 
 coast_utm <- rbind(rnaturalearth::ne_states( "United States of America", 
                                          returnclass = "sf"), 
@@ -35,9 +31,6 @@ coast_utm <- rbind(rnaturalearth::ne_states( "United States of America",
   sf::st_crop(., 
               xmin = -137, ymin = 47, xmax = -121.25, ymax = 57) %>% 
   sf::st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
-
-
-
 
 
 ### FIT SATURATED --------------------------------------------------------------
@@ -55,7 +48,7 @@ bspde <- add_barrier_mesh(
 
 
 fit <- sdmTMB(
-  ck_juv ~ 1 +  
+  n_juv ~ 1 +  
     # s(bath_depth_mean_m, bs = "tp", k = 4) + 
     s(dist_to_coast_km, bs = "tp", k = 4) + 
     s(week, bs = "cc", k = 5) +
@@ -254,6 +247,12 @@ saveRDS(index_list, here::here("data", "preds", "st_survey_index_list.rds"))
 
 ## MAKE MESH -------------------------------------------------------------------
 
+dat_trim <- dat %>%
+  filter(# sampling coverage very sparse early in time series
+    !year < 1998,
+    year < 2018
+  )
+
 # have to account for landmasses so use predictive grid as baseline 
 # NOTE: switch to anisotropy given preliminary analysis of improved model fit
 
@@ -332,7 +331,7 @@ plot(spde_summer_ipes)
 
 # week vs month (spatial only)
 fit_month <- sdmTMB(
-  ck_juv ~ 1 +  
+  n_juv ~ 1 +  
     # s(bath_depth_mean_m, bs = "tp", k = 4) +
     s(dist_to_coast_km, bs = "tp", k = 4) + 
     s(month, bs = "cc", k = 5) +
@@ -351,10 +350,10 @@ fit_month <- sdmTMB(
   )
 )
 fit_week <- sdmTMB(
-  ck_juv ~ 1 +  
-    # s(bath_depth_mean_m, bs = "tp", k = 4) + 
+  n_juv ~ 1 +  
+    s(bath_depth_mean_m, bs = "tp", k = 4) +
     s(dist_to_coast_km, bs = "tp", k = 4) + 
-    s(week, bs = "cc", k = 5) +
+    s(week, bs = "cc", k = 4) +
     day_night +
     target_depth_bin +
     survey_f,
@@ -370,7 +369,7 @@ AIC(fit_month, fit_week)
 
 # any benefit to including random intercept for vessel
 fit_month_v <- sdmTMB(
-  ck_juv ~ 1 +  
+  n_juv ~ 1 +  
     s(bath_depth_mean_m, bs = "tp", k = 4) + 
     s(dist_to_coast_km, bs = "tp", k = 4) + 
     s(month, bs = "cc", k = 4) +
@@ -388,7 +387,7 @@ fit_month_v <- sdmTMB(
 
 # bathy vs. distance
 fit_dist <- fit_month
-fit_bathy <- sdmTMB(ck_juv ~ 1 +  
+fit_bathy <- sdmTMB(n_juv ~ 1 +  
                       s(bath_depth_mean_m, bs = "tp", k = 4) + 
                       s(month, bs = "cc", k = 4) +
                       survey_f,
@@ -403,7 +402,7 @@ AIC(fit_bathy, fit_dist)
 
 # seasonal structure 
 fit_a <- fit_dist
-fit_b <- sdmTMB(ck_juv ~ 1 +
+fit_b <- sdmTMB(n_juv ~ 1 +
                   s(dist_to_coast_km, bs = "tp", k = 4, by = season_f) +
                   s(month, bs = "cc", k = 4) +
                   survey_f,
@@ -417,7 +416,7 @@ fit_b <- sdmTMB(ck_juv ~ 1 +
                   # newton_loops = 2
                 )
 )
-fit_c <- sdmTMB(ck_juv ~ 1 +  
+fit_c <- sdmTMB(n_juv ~ 1 +  
                   s(dist_to_coast_km, bs = "tp", k = 4, by = season_f) + 
                   season_f +
                   survey_f,
@@ -448,7 +447,7 @@ AIC(fit_a, fit_b, fit_c)
 
 # fit models with different fixed effects due to different time scales
 fit_full <- sdmTMB(
-  ck_juv ~ 1 +  
+  n_juv ~ 1 +  
     s(dist_to_coast_km, bs = "tp", k = 4) + 
     s(month, bs = "cc", k = 4) +
     survey_f,
@@ -467,7 +466,7 @@ fit_full <- sdmTMB(
   )
 )
 fit_summer <- sdmTMB(
-  ck_juv ~ 1 +  
+  n_juv ~ 1 +  
     s(dist_to_coast_km, bs = "tp", k = 4) + 
     # switch to thin plate 
     s(month, bs = "tp", k = 4) +
@@ -487,7 +486,7 @@ fit_summer <- sdmTMB(
   )
 )
 fit_ipes <- sdmTMB(
-  ck_juv ~ 1 +  
+  n_juv ~ 1 +  
     s(dist_to_coast_km, bs = "tp", k = 4) + 
     s(month, bs = "cc", k = 4) +
     survey_f,
@@ -505,7 +504,7 @@ fit_ipes <- sdmTMB(
   )
 )
 fit_summer_ipes <- sdmTMB(
-  ck_juv ~ 1 +
+  n_juv ~ 1 +
     s(dist_to_coast_km, bs = "tp", k = 4) +
     s(month, bs = "tp", k = 4) +
     survey_f,
@@ -563,7 +562,7 @@ fit_tbl <- tibble(
 
 # calculate RMSE and plot predictions (replaced w/ log likelihood below)
 # fit_tbl$rmse <- purrr::map(fit_tbl$preds, function (x) {
-#   Metrics::rmse(x$ck_juv, exp(x$est))
+#   Metrics::rmse(x$n_juv, exp(x$est))
 # }) %>% 
 #   unlist()
 
@@ -574,7 +573,7 @@ ll_nbinom2 <- function(object, withheld_y, withheld_mu) {
 }
 fit_tbl$log_lik <- purrr::map2(
   fit_tbl$mod, fit_tbl$preds, function (mod, preds) {
-    log_lik <- ll_nbinom2(object = mod, withheld_y = test_preds$ck_juv, 
+    log_lik <- ll_nbinom2(object = mod, withheld_y = test_preds$n_juv, 
                           withheld_mu = exp(test_preds$est)) 
     sum(log_lik)
   })
@@ -644,7 +643,7 @@ dev.off()
 # use summer dataset to evaluate relative support for anisotropy vs. barrier 
 # mesh
 
-fit_summer_barrier <- sdmTMB(ck_juv ~ 1 +  
+fit_summer_barrier <- sdmTMB(n_juv ~ 1 +  
                        s(dist_to_coast_km, bs = "tp", k = 4) + 
                        # switch to thin plate 
                        s(month, bs = "tp", k = 4) +
@@ -658,7 +657,7 @@ fit_summer_barrier <- sdmTMB(ck_juv ~ 1 +
                      spatial = "on",
                      spatiotemporal = "ar1"
 )
-fit_summer_anisotropy <- sdmTMB(ck_juv ~ 1 +  
+fit_summer_anisotropy <- sdmTMB(n_juv ~ 1 +  
                                s(dist_to_coast_km, bs = "tp", k = 4) + 
                                # switch to thin plate 
                                s(month, bs = "tp", k = 4) +
@@ -694,19 +693,19 @@ summer_fit_tbl <- tibble(
 
 # calculate RMSE and plot predictions
 purrr::map(summer_fit_tbl$test_preds, function (x) {
-  Metrics::rmse(x$ck_juv, exp(x$est))
+  Metrics::rmse(x$n_juv, exp(x$est))
 }) %>% 
   unlist()
 
 plot_list <- purrr::map(summer_fit_tbl$preds, function (x) {
-  plot(ck_juv ~ exp(est), data = x %>% filter(ck_juv < 100))
+  plot(n_juv ~ exp(est), data = x %>% filter(n_juv < 100))
   abline(a = 0, b = 1, col = "red")
 })
 
 hist_list <- purrr::map(summer_fit_tbl$preds, function (x) {
-  dum <- x %>% filter(ck_juv < 50)
+  dum <- x %>% filter(n_juv < 50)
   p1 <- hist(exp(dum$est))                     
-  p2 <- hist(dum$ck_juv)                     
+  p2 <- hist(dum$n_juv)                     
   plot( p1, col=rgb(0,0,1,1/4)#, xlim=c(0,20)
         )  # first histogram
   plot( p2, col=rgb(1,0,0,1/4)#, xlim=c(0,20)

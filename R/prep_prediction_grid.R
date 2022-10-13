@@ -84,6 +84,11 @@ bc_raster_utm <- projectRaster(bc_raster,
                                # convert to 1000 m resolution
                                res = 1000)
 
+# save RDS for manuscript figs
+saveRDS(bc_raster, 
+        here::here("data", "spatial", "full_coast_raster_latlon_1000m.RDS"))
+
+
 plot(bc_raster_utm)
 plot(ipes_grid_raw, 
      add = T,

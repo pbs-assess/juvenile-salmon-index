@@ -5,10 +5,10 @@ library(tidyverse)
 library(sf)
 library(sp)
 
-chin <- read.csv(
-  here::here("data", "BCSI_Juv_CHINOOK_Counts_True20220504.csv")
-) %>% 
-  janitor::clean_names()
+# chin <- read.csv(
+#   here::here("data", "BCSI_Juv_CHINOOK_Counts_True20220504.csv")
+# ) %>% 
+#   janitor::clean_names()
 bridge_raw <- read.csv(here::here("data", "BCSI_Bridge_Info_20220929.csv")) %>% 
   janitor::clean_names() 
 synoptic_stations <- read.csv(here::here("data", "synoptic_stations.csv")) %>% 
@@ -108,7 +108,7 @@ dat <- bridge %>%
   select(-c(utm_x, utm_y, trip_id, tow_length_hour, target_depth, vessel_speed, 
             bath_depth_mean_m, dist_to_coast_km, distance_km:height_km)) %>% 
   left_join(., imp_dat2, by = "unique_event") %>% 
-  left_join(., chin, by = "unique_event") %>%
+  # left_join(., chin, by = "unique_event") %>%
   mutate(
     date = as.POSIXct(date,
                            format = "%Y-%m-%d",
@@ -135,7 +135,11 @@ dat <- bridge %>%
       FALSE
     ),
     survey_f = ifelse(
-      year > 2016 & season_f == "su", "ipes", "hss") %>% as.factor(),
+      year > 2016 & season_f == "su" & ipes_grid == TRUE,
+      "ipes", 
+      "hss"
+    ) %>% 
+      as.factor(),
     year_f = as.factor(year),
     vessel_name = tolower(vessel_name),
     vessel = case_when(
@@ -157,7 +161,9 @@ dat <- bridge %>%
          mean_lat, mean_lon, utm_x, utm_y,
          vessel, distance_km, vessel_speed, target_depth, target_depth_bin, 
          bath_depth_mean_m, dist_to_coast_km, height_km, width_km, 
-         volume_m3, ck_juv = n_juv, ck_ad = n_ad) 
+         volume_m3
+         # , ck_juv = n_juv, ck_ad = n_ad
+         ) 
 
 
 # subset to core area and remove rows with missing data
@@ -167,6 +173,12 @@ dat_trim <- dat %>%
          !pfma %in% c("13", "14", "15", "16", "17", "18", "19", "PS")) %>%
   droplevels()
 
+
+saveRDS(dat_trim, here::here("data", "survey_sbc.rds"))
+saveRDS(coast, here::here("data", "spatial", "sbc_sf_utm.rds"))
+
+
+## SURVEY FIGS -----------------------------------------------------------------
 
 min_lat <- min(floor(dat_trim$mean_lat) - 0.1)
 max_lat <- max(dat_trim$mean_lat) + 0.1
@@ -178,30 +190,167 @@ coast <- rbind(rnaturalearth::ne_states( "United States of America",
                rnaturalearth::ne_states( "Canada", returnclass = "sf")) %>% 
   st_crop(., xmin = min_lon, ymin = min_lat, xmax = max_lon, ymax = max_lat) %>% 
   st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
-  
 
+
+# map of set locations
 set_map <- ggplot() +
   geom_sf(data = coast, color = "black", fill = "white") +
-  geom_point(data = deep,
-             aes(x = utm_x, y = utm_y, fill = ipes_grid), 
+  geom_point(data = dat_trim,
+             aes(x = utm_x, y = utm_y, fill = survey_f), 
              shape = 21, alpha = 0.4) +
-  # facet_wrap(~season_f) +
+  scale_fill_discrete(name = "Survey") +
   ggsidekick::theme_sleek() +
-  theme(#legend.position = "top",
-        axis.title = element_blank())
-
+  theme(axis.title = element_blank())
+  
+  
 png(here::here("figs", "set_map.png"), height = 4, width = 8, res = 250, 
     units = "in")
 set_map
 dev.off()
 
 
-# export subsetted version to use for initial fitting
-saveRDS(dat_trim, here::here("data", "chin_catch_sbc.rds"))
-saveRDS(coast, here::here("data", "spatial", "sbc_sf_utm.rds"))
+# map of spatial covariates (exclude for now)
+# bc_raster <- readRDS(
+#   here::here("data", "spatial", "full_coast_raster_latlon_1000m.RDS"))
+# 
+# # # merge and add aspect/slope
+# ipes_raster_slope <- terrain(ipes_raster_utm, opt = 'slope', unit = 'degrees',
+#                              neighbors = 8)
+# ipes_raster_aspect <- terrain(ipes_raster_utm, opt = 'aspect', unit = 'degrees',
+#                               neighbors = 8)
+# ipes_raster_list <- list(depth = ipes_raster_utm,
+#                          slope = ipes_raster_slope,
+#                          aspect = ipes_raster_aspect)
+
+
+# stacked bar plots for headrope depth and ppn day/night
+stacked_headrope_depth <- dat_trim %>%
+  group_by(target_depth_bin, year) %>%
+  summarize(n = length(unique_event), .groups = "drop") %>% 
+  ggplot(., aes(x = as.factor(year), y = n, fill = target_depth_bin)) +
+  geom_bar(position="stack", stat="identity") +
+  ggsidekick::theme_sleek() +
+  scale_fill_brewer(type = "seq", palette = 4, 
+                    name = "Target\nHeadrope\nDepth") +
+  labs(y = "Number of Tows") +
+  theme(
+    axis.title.x = element_blank()
+  )
+
+png(here::here("figs", "ms_figs", "headrope.png"), height = 3.5, width = 7, 
+    units = "in", res = 250)
+stacked_headrope_depth
+dev.off()
+
+
+stacked_daynight <- dat_trim %>%
+  group_by(day_night, year) %>%
+  summarize(n = length(unique_event), .groups = "drop") %>% 
+  ggplot(., aes(x = as.factor(year), y = n, fill = day_night)) +
+  geom_bar(position="stack", stat="identity") +
+  ggsidekick::theme_sleek() +
+  scale_fill_brewer(type = "qual", palette = 2, 
+                    name = "") +
+  labs(y = "Number of Tows") +
+  theme(
+    axis.title.x = element_blank()
+  )
+
+png(here::here("figs", "ms_figs", "dn_tows.png"), height = 3.5, width = 7, 
+    units = "in", res = 250)
+stacked_daynight
+dev.off()
+
+
+# bubble plots of temporal coverage
+bubble_temp_coverage <- dat_trim %>% 
+  group_by(year, week, survey_f) %>% 
+  summarize(n_tows = length(unique_event), .groups = "drop") %>% 
+  ungroup() %>% 
+  ggplot(.) +
+  geom_jitter(aes(x = week, y = year, size = n_tows, 
+                  fill = survey_f),
+              alpha = 0.3, width = 0.25, shape = 21) +
+  ggsidekick::theme_sleek() +
+  scale_size(name = "Number\nof\nTows") +
+  scale_fill_discrete(name = "Survey") +
+  theme(
+    axis.title.y = element_blank()
+  ) +
+  labs(x = "Week")
+
+png(here::here("figs", "ms_figs", "temp_cov.png"), height = 5.5, width = 5.5, 
+    units = "in", res = 250)
+bubble_temp_coverage
+dev.off()
+
+
+## ADD CATCH DATA --------------------------------------------------------------
+
+# import all species
+sp_files <- list.files(path = here::here("data"), pattern = "BCSI_Juv_")
+sp_catch <- purrr::map(
+  sp_files, function (x) {
+    read.csv(paste(here::here("data"), x, sep = "/"),
+             fileEncoding="UTF-8-BOM")
+  }
+) %>% 
+  bind_rows() %>% 
+  janitor::clean_names()
+
+catch_dat <- left_join(dat_trim, sp_catch, by = "unique_event") 
+
+saveRDS(catch_dat, here::here("data", "catch_survey_sbc.rds"))
 
 
 ## DATA EXPLORE ----------------------------------------------------------------
+
+catch_dat_plot <- catch_dat %>% 
+  mutate(
+    log_n_juv = n_juv + 0.0001,
+    non_zero = ifelse(n_juv > 0, "yes", "no")
+  )
+shape_pal <- c(21, 3)
+names(shape_pal) <- c("yes", "no")
+
+sp_dist <- ggplot() +
+  geom_sf(data = coast, color = "black", fill = "white") +
+  geom_point(data = catch_dat_plot,
+             aes(x = utm_x, y = utm_y, 
+                 # fill = survey_f, 
+                 size = log_n_juv,
+                 shape = non_zero), 
+             # shape = 21,
+             fill = "red",
+             alpha = 0.4) +
+  # scale_fill_discrete(name = "Survey") +
+  scale_shape_manual(values = shape_pal, name = "Salmon Caught") +
+  scale_size_continuous(name = "Individuals Caught", trans = "log") +
+  ggsidekick::theme_sleek() +
+  theme(axis.title = element_blank()) +
+  facet_grid(species~season_f)
+sp_dist2 <- sp_dist +
+  scale_size_continuous(name = "Individuals Caught")
+sp_dist3 <- ggplot() +
+  geom_sf(data = coast, color = "black", fill = "white") +
+  geom_point(data = catch_dat_plot %>% filter(non_zero == "yes"),
+             aes(x = utm_x, y = utm_y, 
+                 size = log_n_juv),
+             shape = 21,
+             fill = "red",
+             alpha = 0.4) +
+  scale_size_continuous(name = "Individuals Caught") +
+  ggsidekick::theme_sleek() +
+  theme(axis.title = element_blank()) +
+  facet_grid(species~season_f)
+
+
+pdf(here::here("figs", "ms_figs", "raw_catch.pdf"), height = 12, width = 8)
+sp_dist
+sp_dist2
+sp_dist3
+dev.off()  
+
 
 # some potential issues with limited data for certain vessels (don't assume
 # models will perform well)
