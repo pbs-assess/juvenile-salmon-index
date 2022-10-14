@@ -51,7 +51,7 @@ fit <- sdmTMB(
   n_juv ~ 1 +  
     # s(bath_depth_mean_m, bs = "tp", k = 4) + 
     s(dist_to_coast_km, bs = "tp", k = 4) + 
-    s(week, bs = "cc", k = 5) +
+    s(week, bs = "cc", k = 4) +
     day_night +
     target_depth_bin +
     survey_f,
@@ -351,18 +351,25 @@ fit_month <- sdmTMB(
 )
 fit_week <- sdmTMB(
   n_juv ~ 1 +  
-    s(bath_depth_mean_m, bs = "tp", k = 4) +
-    s(dist_to_coast_km, bs = "tp", k = 4) + 
+    # s(bath_depth_mean_m, bs = "tp", k = 3) +
+    s(dist_to_coast_km, bs = "tp", k = 3) + 
     s(week, bs = "cc", k = 4) +
     day_night +
     target_depth_bin +
     survey_f,
   offset = dat_trim$effort,
   data = dat_trim,
-  mesh = spde,
-  anisotropy = TRUE,
+  mesh = bspde,
+  anisotropy = FALSE,
   family = sdmTMB::nbinom2(),
-  spatial = "on"
+  spatial = "on",
+  control = sdmTMBcontrol(
+    nlminb_loops = 2,
+    newton_loops = 1
+  ),
+  priors = sdmTMBpriors(
+    matern_s = pc_matern(range_gt = 10, sigma_lt = 80)
+  )
 )
 AIC(fit_month, fit_week)
 # month outperforms week
