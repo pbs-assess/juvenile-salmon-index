@@ -17,8 +17,114 @@ coast_utm <- rbind(rnaturalearth::ne_states( "United States of America",
   sf::st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
 
 # fitted model
-fit <- readRDS(here::here("data", "fits", "fit_st_full.rds"))
+fit_all_sp <- readRDS(here::here("data", "fits", "st_mod_noFE.rds")) %>% 
+  mutate(
+    bspde = purrr::map(spde, add_barrier_mesh,
+                       coast_utm, range_fraction = 0.1,
+                       # scaling = 1000 since UTMs were rescaled above
+                       proj_scaling = 1000)
+  )
 
+nsims = 15
+sims_list <- purrr::map(fit_all_sp$st_mod, simulate, nsim = nsims)
+
+
+## for each simulated dataset, refit model, recover pars and store
+library(furrr)
+plan(multisession, workers = 6)
+
+
+# make a tibble for each species simulations
+sim_tbl <- purrr::pmap(
+  list(fit_all_sp$species, fit_all_sp$data, sims_list), function (sp, dat, x) {
+    tibble(
+      species = sp,
+      iter = seq(1, nsims, by = 1),
+      sim_dat = lapply(seq_len(ncol(x)), function(i) {
+        dat %>% 
+          mutate(sim_catch = x[ , i])
+      })
+    )
+  }
+) %>% 
+  bind_rows() %>% 
+  left_join(., fit_all_sp %>% select(species, bspde), by = "species")
+
+# dd <- sim_tbl[1:3, ] %>% 
+#   mutate(
+#     spde = purrr::map(sim_dat, make_mesh,  c("utm_x_1000", "utm_y_1000"),
+#                       cutoff = 15, type = "kmeans"),
+#     bspde = purrr::map(spde, add_barrier_mesh,
+#                        coast_utm, range_fraction = 0.1,
+#                        # scaling = 1000 since UTMs were rescaled above
+#                        proj_scaling = 1000)
+#   )
+# glimpse(dd$bspde[[1]])
+# glimpse(fit_all_sp$bspde[[1]])
+
+sim_fit_list <- furrr::future_pmap(
+  list(sim_tbl$sim_dat, sim_tbl$bspde), function (x, bspde_in) {
+    sdmTMB(
+      sim_catch ~ 1 +
+        s(week, bs = "cc", k = 5) +
+        day_night +
+        target_depth_bin +
+        survey_f,
+      offset = x$effort,
+      data = x,
+      mesh = bspde_in,
+      family = sdmTMB::nbinom2(),
+      spatial = "on",
+      spatiotemporal = "AR1",
+      time = "year",
+      anisotropy = FALSE,
+      priors = sdmTMBpriors(
+        matern_s = pc_matern(range_gt = 10, sigma_lt = 80)
+      ),
+      control = sdmTMBcontrol(
+        nlminb_loops = 2,
+        newton_loops = 1
+      )
+    )
+  }
+)
+
+# check one model's summary
+summary(sim_tbl$sim_fit[[1]])
+
+# extract fixed and ran effects pars
+sim_tbl$pars <- purrr::map(sim_tbl$sim_fit, function (x) {
+  x <- sim_tbl$sim_fit[[2]]
+  fix <- tidy(x, effects = "fixed")
+  ran <- tidy(x, effects = "ran_pars")
+  rbind(fix, ran)
+})
+
+tidy_fix <- tidy(fit, effects = "fixed")
+tidy_ran <- tidy(fit, effects = "ran_pars")
+tidy_fit <- rbind(tidy_fix, tidy_ran)
+
+sim_pars <- sim_tbl %>% 
+  select(iter, pars) %>% 
+  unnest(cols = c(pars)) %>% 
+  mutate(iter = as.factor(iter))
+saveRDS(sim_pars, here::here("data", "preds", "sim_pars.rds"))
+
+sim_box <- ggplot() +
+  geom_boxplot(data = sim_pars, aes(x = term, y = estimate)) +
+  geom_point(data = tidy_fit, aes(x = term, y = estimate), colour = "red") +
+  facet_wrap(~term, scales = "free") +
+  ggsidekick::theme_sleek()
+
+pdf(here::here("figs", "diagnostics", "par_recovery_sim_box.pdf"))
+sim_box
+dev.off()
+
+
+
+## CHINOOK ONLY VERSION OF PAR RECOVERY ----------------------------------------
+
+# fit <- readRDS(here::here("data", "fits", "fit_st_full.rds"))
 
 spde <- make_mesh(fit$data, c("utm_x_1000", "utm_y_1000"), 
                   cutoff = 10, type = "kmeans")
@@ -31,11 +137,6 @@ bspde <- add_barrier_mesh(
 
 nsims = 15
 sims_test <- simulate(fit, nsim = nsims)
-
-
-## for each simulated dataset, refit model, recover pars and store
-library(furrr)
-plan(multisession, workers = 6)
 
 sim_tbl <- tibble(
   iter = seq(1, nsims, by = 1),
