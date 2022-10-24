@@ -35,10 +35,13 @@ if (Sys.info()['sysname'] == "Windows") {
   cl <- makeCluster(ncores)
   registerDoParallel(cl)
   big_bathy_path <- "C:/Users/FRESHWATERC/Documents/drive docs/spatial/BC NetCDF"
+  creel_path <- "C:/Users/FRESHWATERC/Documents/drive docs/spatial/creel_areas/"
 } else {
   doMC::registerDoMC(ncores)
   big_bathy_path <- "/Users/cam/Google Drive/spatial/BC NetCDF"
+  creel_path <- "/Users/cam/Google Drive/spatial/creel_areas/"
 }
+
 
 
 ## GENERATE BATHYMETRY RASTER _-------------------------------------------------
@@ -193,3 +196,6 @@ saveRDS(ipes_grid_interp %>%
         here::here("data", "spatial", "pred_ipes_grid.RDS"))
 saveRDS(coast_utm, here::here("data", "spatial", "coast_trim_utm.RDS"))
 
+
+
+### MAKE SIMILAR GRID TO ABOVE THAT INCLUDES INLETS ----------------------------
