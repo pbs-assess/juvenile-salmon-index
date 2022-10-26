@@ -188,7 +188,7 @@ purrr::map(dat_tbl$data, function (x) range(x$n_juv))
 
 dat_tbl$st_mod <- st_mod
 
-saveRDS(dat_tbl, here::here("data", "fits", "st_mod_noFE.rds"))
+saveRDS(dat_tbl, here::here("data", "fits", "st_mod_all_sp.rds"))
 
 
 ## check residuals
