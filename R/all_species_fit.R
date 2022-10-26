@@ -47,6 +47,24 @@ coast_utm <- rbind(rnaturalearth::ne_states( "United States of America",
               xmin = -137, ymin = 47, xmax = -121.25, ymax = 57) %>% 
   sf::st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
 
+# make meshes (differ among groups because off pooling of depth strata)
+dat_tbl <- dat_in %>% 
+  group_by(species) %>% 
+  group_nest() %>% 
+  mutate(
+    spde = purrr::map(data, make_mesh,  c("utm_x_1000", "utm_y_1000"), 
+                      cutoff = 15, type = "kmeans"),
+    bspde = purrr::map(spde, add_barrier_mesh,
+                       coast_utm, range_fraction = 0.1,
+                       # scaling = 1000 since UTMs were rescaled above
+                       proj_scaling = 1000)
+  )
+
+
+# prep multisession
+ncores <- parallel::detectCores() 
+future::plan(future::multisession, workers = ncores - 3)
+
 
 ### EXP PLOTS ------------------------------------------------------------------
 
@@ -72,24 +90,6 @@ ggplot(dat_in) +
 
 
 ### FIT SPATIAL ----------------------------------------------------------------
-
-# make meshes (differ among groups because off pooling of depth strata)
-dat_tbl <- dat_in %>% 
-  group_by(species) %>% 
-  group_nest() %>% 
-  mutate(
-    spde = purrr::map(data, make_mesh,  c("utm_x_1000", "utm_y_1000"), 
-                      cutoff = 15, type = "kmeans"),
-    bspde = purrr::map(spde, add_barrier_mesh,
-                       coast_utm, range_fraction = 0.1,
-                       # scaling = 1000 since UTMs were rescaled above
-                       proj_scaling = 1000)
-  )
-
-
-# prep multisession
-ncores <- parallel::detectCores() 
-future::plan(future::multisession, workers = ncores - 3)
 
 
 spatial_mod <- furrr::future_map2(
@@ -152,15 +152,40 @@ spatial_preds <- predict(sp_mod,
 
 ### FIT SATURATED --------------------------------------------------------------
 
+dum <- sdmTMB(
+  n_juv ~ 1 +
+    dist_to_coast_km +
+    s(week, bs = "tp", k = 5) +
+    day_night +
+    s(target_depth, bs = "tp", k = 4) +
+    # target_depth_bin +
+    survey_f,
+  offset = dat_tbl$data[[2]]$effort,
+  data = dat_tbl$data[[2]],
+  mesh = dat_tbl$bspde[[2]],
+  family = sdmTMB::nbinom2(),
+  spatial = "on",
+  spatiotemporal = "AR1",
+  time = "year",
+  anisotropy = FALSE,
+  priors = sdmTMBpriors(
+    matern_s = pc_matern(range_gt = 10, sigma_lt = 80)
+  ),
+  control = sdmTMBcontrol(
+    nlminb_loops = 2,
+    newton_loops = 1
+  )
+)
+
 st_mod <- furrr::future_pmap(
-  list(dat_tbl$data, dat_tbl$bspde, dat_tbl$species), 
+  list(dat_tbl$data, dat_tbl$bspde, dat_tbl$species),
   function (x, spde_in, sp_in) {
     sdmTMB(
       n_juv ~ 1 +
-        dist_to_coast_km + 
-        s(week, bs = "cc", k = 5) +
+        dist_to_coast_km +
+        s(week, bs = "tp", k = 5) +
+        s(target_depth, bs = "tp", k = 4) +
         day_night +
-        target_depth_bin +
         survey_f,
       offset = x$effort,
       data = x,
@@ -189,6 +214,9 @@ purrr::map(dat_tbl$data, function (x) range(x$n_juv))
 dat_tbl$st_mod <- st_mod
 
 saveRDS(dat_tbl, here::here("data", "fits", "st_mod_all_sp.rds"))
+
+
+dat_tbl <- readRDS(here::here("data", "fits", "st_mod_all_sp.rds"))
 
 
 ## check residuals
@@ -221,7 +249,42 @@ pred_obs_list <- purrr::pmap(
 )
 
 
-## MAKE PREDICTIONS ------------------------------------------------------------
+## MAKE FE PREDICTIONS ---------------------------------------------------------
+
+#     dist_to_coast_km + 
+#     s(week, bs = "cc", k = 5) +
+#     day_night +
+#     s(target_depth, bs = "tp", k = 4) +
+#     # target_depth_bin +
+#     survey_f
+
+week_dat <- data.frame(
+ week = seq(5, 48, length.out = 100),
+ dist_to_coast_km = median(dat_in$dist_to_coast_km),
+ day_night = "DAY",
+ target_depth_bin = "0",
+ survey_f = "hss",
+ year = 2011L
+)
+p <- predict(dat_tbl$st_mod[[1]], newdata = week_dat, se_fit = T, re_form = NA)
+
+ggplot(p, 
+       aes(week, exp(est),
+           ymin = exp(est - 1.96 * est_se), ymax = exp(est + 1.96 * est_se))) +
+  geom_line() + 
+  geom_ribbon(alpha = 0.4)
+
+d <- data.frame(depth_scaled =
+                  seq(min(d$depth_scaled), max(d$depth_scaled), length.out = 100))
+nd$year <- 2011L
+p <- predict(m_gam, newdata = nd, se_fit = TRUE, re_form = NA)
+ggplot(p, aes(depth_scaled, exp(est),
+              ymin = exp(est - 1.96 * est_se), ymax = exp(est + 1.96 * est_se))) +
+  geom_line() + geom_ribbon(alpha = 0.4)
+
+
+
+## MAKE SPATIAL PREDICTIONS ----------------------------------------------------
 
 # spatial distribution of residuals
 grid <- readRDS(here::here("data", "spatial", "pred_ipes_grid.RDS")) %>% 
