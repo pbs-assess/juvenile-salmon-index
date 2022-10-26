@@ -11,7 +11,7 @@ library(raster)
 library(rgdal)
 library(tidyverse)
 library(ncdf4)
-library(maptools)
+# library(maptools)
 library(rmapshaper)
 library(mapdata)
 library(rnaturalearth)
@@ -21,9 +21,12 @@ library(rnaturalearthdata)
 # chinook dataset
 dat_trim <- readRDS(here::here("data", "chin_catch_sbc.rds"))
 
-# shapefile for IPES survey grid
+# shapefiles for IPES survey grid and combined WCVI/IPES grid
 ipes_grid_raw <- readOGR(
   here::here("data", "spatial", "ipes_shapefiles", "IPES_Grid_UTM9.shp"))
+ipes_wcvi_grid_raw <- readOGR(
+  here::here("data", "spatial", "wcvi_ipes_shapefiles", 
+             "IPES_WCVI_boundary_UTM9.shp"))
 
 
 # parallelize based on operating system (should speed up some of the spatial
@@ -93,23 +96,36 @@ saveRDS(bc_raster,
 
 
 plot(bc_raster_utm)
-plot(ipes_grid_raw, 
+# plot(ipes_grid_raw, 
+#      add = T,
+#      border = "blue")
+plot(ipes_wcvi_grid_raw, 
      add = T,
      border = "blue")
+
 
 # crop to survey grid
 dum <- crop(bc_raster_utm, extent(ipes_grid_raw))
 ipes_raster_utm <- mask(dum, ipes_grid_raw)
+wcvi_ipes_raster_utm <- mask(dum, ipes_wcvi_grid_raw)
+
 
 
 # # merge and add aspect/slope
-ipes_raster_slope <- terrain(ipes_raster_utm, opt = 'slope', unit = 'degrees',
+wcvi_ipes_raster_slope <- terrain(wcvi_ipes_raster_utm, opt = 'slope', unit = 'degrees',
                               neighbors = 8)
-ipes_raster_aspect <- terrain(ipes_raster_utm, opt = 'aspect', unit = 'degrees',
+wcvi_ipes_raster_aspect <- terrain(wcvi_ipes_raster_utm, opt = 'aspect', unit = 'degrees',
                                neighbors = 8)
-ipes_raster_list <- list(depth = ipes_raster_utm,
-                          slope = ipes_raster_slope,
-                          aspect = ipes_raster_aspect)
+wcvi_ipes_raster_list <- list(
+  depth = wcvi_ipes_raster_utm,
+  slope = wcvi_ipes_raster_slope,
+  aspect = wcvi_ipes_raster_aspect
+)
+
+ipes_raster_list <- purrr::map(wcvi_ipes_raster_list, function (x) {
+  dum <- crop(x, extent(ipes_grid_raw))
+  mask(dum, x)
+})
 
 saveRDS(bc_raster_utm,
         here::here("data", "spatial", "coast_raster_utm_1000m.RDS"))
