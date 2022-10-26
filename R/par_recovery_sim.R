@@ -17,7 +17,7 @@ coast_utm <- rbind(rnaturalearth::ne_states( "United States of America",
   sf::st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
 
 # fitted model
-fit_all_sp <- readRDS(here::here("data", "fits", "st_mod_noFE.rds")) %>% 
+fit_all_sp <- readRDS(here::here("data", "fits", "st_mod_all_sp.rds")) %>% 
   mutate(
     bspde = purrr::map(spde, add_barrier_mesh,
                        coast_utm, range_fraction = 0.1,
@@ -66,6 +66,7 @@ sim_fit_list <- furrr::future_pmap(
   list(sim_tbl$sim_dat, sim_tbl$bspde), function (x, bspde_in) {
     sdmTMB(
       sim_catch ~ 1 +
+        dist_to_coast_km + 
         s(week, bs = "cc", k = 5) +
         day_night +
         target_depth_bin +
@@ -89,115 +90,46 @@ sim_fit_list <- furrr::future_pmap(
   }
 )
 
+sim_tbl$sim_fit <- sim_fit_list
+
 # check one model's summary
 summary(sim_tbl$sim_fit[[1]])
 
-# extract fixed and ran effects pars
-sim_tbl$pars <- purrr::map(sim_tbl$sim_fit, function (x) {
-  x <- sim_tbl$sim_fit[[2]]
-  fix <- tidy(x, effects = "fixed")
-  ran <- tidy(x, effects = "ran_pars")
-  rbind(fix, ran)
-})
-
-tidy_fix <- tidy(fit, effects = "fixed")
-tidy_ran <- tidy(fit, effects = "ran_pars")
-tidy_fit <- rbind(tidy_fix, tidy_ran)
-
-sim_pars <- sim_tbl %>% 
-  select(iter, pars) %>% 
-  unnest(cols = c(pars)) %>% 
-  mutate(iter = as.factor(iter))
-saveRDS(sim_pars, here::here("data", "preds", "sim_pars.rds"))
-
-sim_box <- ggplot() +
-  geom_boxplot(data = sim_pars, aes(x = term, y = estimate)) +
-  geom_point(data = tidy_fit, aes(x = term, y = estimate), colour = "red") +
-  facet_wrap(~term, scales = "free") +
-  ggsidekick::theme_sleek()
-
-pdf(here::here("figs", "diagnostics", "par_recovery_sim_box.pdf"))
-sim_box
-dev.off()
-
-
-
-## CHINOOK ONLY VERSION OF PAR RECOVERY ----------------------------------------
-
-# fit <- readRDS(here::here("data", "fits", "fit_st_full.rds"))
-
-spde <- make_mesh(fit$data, c("utm_x_1000", "utm_y_1000"), 
-                  cutoff = 10, type = "kmeans")
-bspde <- add_barrier_mesh(
-  spde, coast_utm, range_fraction = 0.1,
-  # scaling = 1000 since UTMs were rescaled above
-  proj_scaling = 1000, plot = TRUE
-)
-
-
-nsims = 15
-sims_test <- simulate(fit, nsim = nsims)
-
-sim_tbl <- tibble(
-  iter = seq(1, nsims, by = 1),
-  sim_dat = lapply(seq_len(ncol(sims_test)), function(i) {
-    fit$data %>% 
-      mutate(sim_catch = sims_test[,i])
-  })
-) 
-
-sim_tbl$sim_fit <- future_map(
-  sim_tbl$sim_dat, function (x) {
-    sdmTMB(
-      sim_catch ~ 1 +  
-        # s(depth_mean_m, bs = "tp", k = 4) +
-        s(dist_to_coast_km, bs = "tp", k = 4) +
-        s(month, bs = "cc", k = 4) +
-        survey_f,
-      offset = x$effort,
-      data = x,
-      mesh = bspde,
-      time = "year",
-      # infill 1996
-      extra_time = c(1996L),
-      family = sdmTMB::nbinom2(),
-      spatial = "on",
-      spatiotemporal = "ar1",
-      anisotropy = FALSE,
-      priors = sdmTMBpriors(
-        matern_s = pc_matern(range_gt = 10, sigma_lt = 80)
-      )
-    )
+# extract fixed and ran effects pars from simulations
+sim_tbl$pars <- purrr::map(
+  sim_tbl$sim_fit, function (x) {
+    # x <- sim_tbl$sim_fit[[2]]
+    fix <- tidy(x, effects = "fixed")
+    ran <- tidy(x, effects = "ran_pars")
+    rbind(fix, ran) 
   }
 )
 
-# check one model's summary
-summary(sim_tbl$sim_fit[[1]])
-
-# extract fixed and ran effects pars
-sim_tbl$pars <- purrr::map(sim_tbl$sim_fit, function (x) {
-  x <- sim_tbl$sim_fit[[2]]
-  fix <- tidy(x, effects = "fixed")
-  ran <- tidy(x, effects = "ran_pars")
-  rbind(fix, ran)
-})
-
-tidy_fix <- tidy(fit, effects = "fixed")
-tidy_ran <- tidy(fit, effects = "ran_pars")
-tidy_fit <- rbind(tidy_fix, tidy_ran)
-
 sim_pars <- sim_tbl %>% 
-  select(iter, pars) %>% 
+  select(species, iter, pars) %>% 
   unnest(cols = c(pars)) %>% 
   mutate(iter = as.factor(iter))
 saveRDS(sim_pars, here::here("data", "preds", "sim_pars.rds"))
 
+
+# as above but for fitted models
+fit_effs <- purrr::map2(
+  fit_all_sp$st_mod, fit_all_sp$species, function (x, sp) {
+    fix <- tidy(x, effects = "fixed")
+    ran <- tidy(x, effects = "ran_pars")
+    rbind(fix, ran) %>% 
+      mutate(species = sp)
+  }
+) %>% 
+  bind_rows()
+
 sim_box <- ggplot() +
-  geom_boxplot(data = sim_pars, aes(x = term, y = estimate)) +
-  geom_point(data = tidy_fit, aes(x = term, y = estimate), colour = "red") +
+  geom_boxplot(data = sim_pars, aes(x = species, y = estimate)) +
+  geom_point(data = fit_effs, aes(x = species, y = estimate), colour = "red") +
   facet_wrap(~term, scales = "free") +
   ggsidekick::theme_sleek()
 
 pdf(here::here("figs", "diagnostics", "par_recovery_sim_box.pdf"))
 sim_box
 dev.off()
+
