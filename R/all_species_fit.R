@@ -152,31 +152,6 @@ spatial_preds <- predict(sp_mod,
 
 ### FIT SATURATED --------------------------------------------------------------
 
-dum <- sdmTMB(
-  n_juv ~ 1 +
-    dist_to_coast_km +
-    s(week, bs = "tp", k = 5) +
-    day_night +
-    s(target_depth, bs = "tp", k = 4) +
-    # target_depth_bin +
-    survey_f,
-  offset = dat_tbl$data[[2]]$effort,
-  data = dat_tbl$data[[2]],
-  mesh = dat_tbl$bspde[[2]],
-  family = sdmTMB::nbinom2(),
-  spatial = "on",
-  spatiotemporal = "AR1",
-  time = "year",
-  anisotropy = FALSE,
-  priors = sdmTMBpriors(
-    matern_s = pc_matern(range_gt = 10, sigma_lt = 80)
-  ),
-  control = sdmTMBcontrol(
-    nlminb_loops = 2,
-    newton_loops = 1
-  )
-)
-
 st_mod <- furrr::future_pmap(
   list(dat_tbl$data, dat_tbl$bspde, dat_tbl$species),
   function (x, spde_in, sp_in) {
@@ -207,11 +182,11 @@ st_mod <- furrr::future_pmap(
   .options = furrr::furrr_options(seed = TRUE)
 )
 
+
 purrr::map(st_mod, sanity)
 purrr::map(st_mod, summary)
 purrr::map(dat_tbl$data, function (x) range(x$n_juv))
 
-dat_tbl$st_mod <- st_mod
 
 saveRDS(dat_tbl, here::here("data", "fits", "st_mod_all_sp.rds"))
 
@@ -251,38 +226,98 @@ pred_obs_list <- purrr::pmap(
 
 ## MAKE FE PREDICTIONS ---------------------------------------------------------
 
-#     dist_to_coast_km + 
-#     s(week, bs = "cc", k = 5) +
-#     day_night +
-#     s(target_depth, bs = "tp", k = 4) +
-#     # target_depth_bin +
-#     survey_f
 
+# make conditional predictive dataframes
 week_dat <- data.frame(
- week = seq(5, 48, length.out = 100),
+ week = seq(5, 45, length.out = 100),
  dist_to_coast_km = median(dat_in$dist_to_coast_km),
  day_night = "DAY",
- target_depth_bin = "0",
+ target_depth = 0,
  survey_f = "hss",
  year = 2011L
 )
-p <- predict(dat_tbl$st_mod[[1]], newdata = week_dat, se_fit = T, re_form = NA)
+dist_dat <- data.frame(
+  week = median(dat_in$week),
+  dist_to_coast_km = seq(min(dat_in$dist_to_coast_km), 
+                         max(dat_in$dist_to_coast_km), length.out = 100),
+  day_night = "DAY",
+  target_depth = 0,
+  survey_f = "hss",
+  year = 2011L
+)
+day_dat <- data.frame(
+  week = median(dat_in$week),
+  dist_to_coast_km = median(dat_in$dist_to_coast_km),
+  day_night = c("DAY", "NIGHT"),
+  target_depth = 0,
+  survey_f = "hss",
+  year = 2011L
+)
+target_dat <- data.frame(
+  week = median(dat_in$week),
+  dist_to_coast_km = median(dat_in$dist_to_coast_km),
+  day_night = "DAY",
+  target_depth = seq(min(dat_in$target_depth), 
+                         max(dat_in$target_depth), length.out = 100),
+  survey_f = "hss",
+  year = 2011L
+)
+survey_dat <- data.frame(
+  week = median(dat_in$week),
+  dist_to_coast_km = median(dat_in$dist_to_coast_km),
+  day_night = "DAY",
+  target_depth = 0,
+  survey_f = c("hss", "ipes"),
+  year = 2011L
+)
+pred_tbl <- tibble(
+  var = c("week", "distance", "day_night", "target_depth", "survey_eff"),
+  data = list(week_dat, dist_dat, day_dat, target_dat, survey_dat)
+)
 
-ggplot(p, 
+
+pred_list <- vector(length = nrow(pred_tbl), mode = "list")
+for (i in 2:5) {#seq_along(pred_tbl$var)) {
+  pred_list[[i]] <- furrr::future_map2(
+    dat_tbl$st_mod, dat_tbl$species, function(x , sp) {
+      predict(x, newdata = pred_tbl$data[[i]], se_fit = T, re_form = NA) %>% 
+        mutate(species = sp)
+    }
+  ) %>% 
+    bind_rows()
+}
+
+pred_tbl$pred_dat <- pred_list 
+
+plot_eff <- function (dat, x_var, name) {
+  pred_tbl$pred_dat[[1]] %>% 
+    mutate(
+      exp_est = exp(est),
+      up = exp(est + 1.96 * est_se),
+      lo = exp(est - 1.96 * est_se)
+    ) %>% 
+    ggplot(
+    ., 
+    aes_string(x_var, "exp_est", ymin = "lo", ymax = "up")
+  ) +
+    geom_line() +
+    geom_ribbon(alpha = 0.3) +
+    facet_wrap(~species, scales = "free_y") +
+    labs(title = name) +
+    ggsidekick::theme_sleek()
+} 
+
+plot_eff(dat = pred_tbl$pred_dat[[1]],
+         x_var = "week",
+         name = pred_tbl$var[[1]])
+
+ggplot(pred_list[[1]], 
        aes(week, exp(est),
            ymin = exp(est - 1.96 * est_se), ymax = exp(est + 1.96 * est_se))) +
-  geom_line() + 
-  geom_ribbon(alpha = 0.4)
-
-d <- data.frame(depth_scaled =
-                  seq(min(d$depth_scaled), max(d$depth_scaled), length.out = 100))
-nd$year <- 2011L
-p <- predict(m_gam, newdata = nd, se_fit = TRUE, re_form = NA)
-ggplot(p, aes(depth_scaled, exp(est),
-              ymin = exp(est - 1.96 * est_se), ymax = exp(est + 1.96 * est_se))) +
-  geom_line() + geom_ribbon(alpha = 0.4)
-
-
+  geom_line() +
+  geom_ribbon(alpha = 0.3) + 
+  facet_wrap(~species, scales = "free_y") +
+  ggsidekick::theme_sleek()
 
 ## MAKE SPATIAL PREDICTIONS ----------------------------------------------------
 
