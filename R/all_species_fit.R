@@ -271,13 +271,18 @@ survey_dat <- data.frame(
   year = 2011L
 )
 pred_tbl <- tibble(
-  var = c("week", "distance", "day_night", "target_depth", "survey_eff"),
-  data = list(week_dat, dist_dat, day_dat, target_dat, survey_dat)
+  var = c("week",
+          "dist_to_coast_km",
+          "day_night",
+          "target_depth",
+          "survey_f"),
+  data = list(week_dat, dist_dat, day_dat, target_dat, survey_dat),
+  plot = c("line", "line", "dot", "line", "dot")
 )
 
 
 pred_list <- vector(length = nrow(pred_tbl), mode = "list")
-for (i in 2:5) {#seq_along(pred_tbl$var)) {
+for (i in seq_along(pred_tbl$var)) {
   pred_list[[i]] <- furrr::future_map2(
     dat_tbl$st_mod, dat_tbl$species, function(x , sp) {
       predict(x, newdata = pred_tbl$data[[i]], se_fit = T, re_form = NA) %>% 
@@ -289,8 +294,8 @@ for (i in 2:5) {#seq_along(pred_tbl$var)) {
 
 pred_tbl$pred_dat <- pred_list 
 
-plot_eff <- function (dat, x_var, name) {
-  pred_tbl$pred_dat[[1]] %>% 
+plot_eff <- function (dat, x_var, type = c("line", "dot")) {
+  p <- dat %>% 
     mutate(
       exp_est = exp(est),
       up = exp(est + 1.96 * est_se),
@@ -300,16 +305,23 @@ plot_eff <- function (dat, x_var, name) {
     ., 
     aes_string(x_var, "exp_est", ymin = "lo", ymax = "up")
   ) +
-    geom_line() +
-    geom_ribbon(alpha = 0.3) +
     facet_wrap(~species, scales = "free_y") +
-    labs(title = name) +
+    labs(title = x_var) +
     ggsidekick::theme_sleek()
+  if (type == "line") {
+    p +
+      geom_line() +
+      geom_ribbon(alpha = 0.3)
+  }
+  if (type == "dot") {
+    p + 
+      geom_pointrange() 
+  }
 } 
 
+purrr::pmap(list(pred_tbl$pred_dat, pred_tbl$var, pred_tbl$plot), plot_eff)
 plot_eff(dat = pred_tbl$pred_dat[[1]],
-         x_var = "week",
-         name = pred_tbl$var[[1]])
+         x_var = pred_tbl$var[[1]])
 
 ggplot(pred_list[[1]], 
        aes(week, exp(est),
