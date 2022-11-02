@@ -128,7 +128,7 @@ purrr::map(spatial_mod, summary)
 sp_mod <- sdmTMB(
   n_juv ~ 1 +  
     dist_to_coast_km +
-    s(week, bs = "cc", k = 4) +
+    s(week, bs = "cc", k = 5) +
     day_night +
     target_depth_bin +
     survey_f,
@@ -144,6 +144,9 @@ sp_mod <- sdmTMB(
   control = sdmTMBcontrol(
     nlminb_loops = 2,
     newton_loops = 1
+  ),
+  knots = list(
+    week = c(0, 52)
   )
 )
 spatial_preds <- predict(sp_mod, 
@@ -158,7 +161,7 @@ st_mod <- furrr::future_pmap(
     sdmTMB(
       n_juv ~ 1 +
         dist_to_coast_km +
-        s(week, bs = "tp", k = 5) +
+        s(week, bs = "cc", k = 5) +
         s(target_depth, bs = "tp", k = 4) +
         day_night +
         survey_f,
@@ -173,6 +176,9 @@ st_mod <- furrr::future_pmap(
       priors = sdmTMBpriors(
         matern_s = pc_matern(range_gt = 10, sigma_lt = 80)
       ),
+      knots = list(
+        week = c(0, 52)
+      ),
       control = sdmTMBcontrol(
         nlminb_loops = 2,
         newton_loops = 1
@@ -185,7 +191,6 @@ st_mod <- furrr::future_pmap(
 
 purrr::map(st_mod, sanity)
 purrr::map(st_mod, summary)
-purrr::map(dat_tbl$data, function (x) range(x$n_juv))
 
 
 saveRDS(dat_tbl, here::here("data", "fits", "st_mod_all_sp.rds"))
