@@ -287,7 +287,7 @@ pred_tbl <- tibble(
 
 
 pred_list <- vector(length = nrow(pred_tbl), mode = "list")
-for (i in seq_along(pred_tbl$var)) {
+for (i in 2:5) { #seq_along(pred_tbl$var)) {
   pred_list[[i]] <- furrr::future_map2(
     dat_tbl$st_mod, dat_tbl$species, function(x , sp) {
       predict(x, newdata = pred_tbl$data[[i]], se_fit = T, re_form = NA) %>% 
