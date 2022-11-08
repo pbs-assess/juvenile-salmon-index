@@ -287,7 +287,7 @@ pred_tbl <- tibble(
 
 
 pred_list <- vector(length = nrow(pred_tbl), mode = "list")
-for (i in 2:5) { #seq_along(pred_tbl$var)) {
+for (i in seq_along(pred_tbl$var)) {
   pred_list[[i]] <- furrr::future_map2(
     dat_tbl$st_mod, dat_tbl$species, function(x , sp) {
       predict(x, newdata = pred_tbl$data[[i]], se_fit = T, re_form = NA) %>% 
@@ -336,6 +336,7 @@ ggplot(pred_list[[1]],
   facet_wrap(~species, scales = "free_y") +
   ggsidekick::theme_sleek()
 
+
 ## MAKE SPATIAL PREDICTIONS ----------------------------------------------------
 
 # spatial distribution of residuals
@@ -347,7 +348,8 @@ grid <- readRDS(here::here("data", "spatial", "pred_ipes_grid.RDS")) %>%
 # add unique years and seasons
 exp_grid <- expand.grid(
   year = unique(dat_in$year),
-  survey_f = unique(dat_in$survey_f)
+  survey_f = unique(dat_in$survey_f),
+  week = c(25, 42)
 ) %>%
   mutate(id = row_number()) %>%
   split(., .$id) %>%
@@ -356,9 +358,8 @@ exp_grid <- expand.grid(
       mutate(
         year = x$year,
         survey_f = x$survey_f,
-        target_depth_bin = "0",
-        # summer week 
-        week = 25,
+        target_depth = 0,
+        week = x$week,
         day_night = "DAY"
       )
   }) %>%
@@ -371,39 +372,39 @@ exp_grid <- expand.grid(
   )
 
 
-dat_tbl$preds <- purrr::map(dat_tbl$st_mod, function (x) {
-  predict(x, newdata = exp_grid)
-})
-
-stock_preds <- dat_tbl %>% 
-  select(species, preds) %>% 
-  unnest(cols = preds) %>% 
-  select(-est, -epsilon_st, -year) %>% 
-  distinct()
-
-
-plot_map <- function(dat, column) {
-  ggplot(dat, aes_string("utm_x_1000", "utm_y_1000", fill = column)) +
-    geom_raster() +
-    coord_fixed() +
-    ggsidekick::theme_sleek()
-}
-
-fe_plot_list <- purrr::map(dat_tbl$preds, function (x) {
-  plot_map(x, "exp(est)") +
-    scale_fill_viridis_c(
-      trans = "sqrt",
-      limits = c(0, quantile(exp(dd$est), 0.995))
-    ) +
-    facet_wrap(~year) +
-    ggtitle("Prediction (fixed effects + all random effects)")
-})
-
-plot_map(stock_preds, "est_rf") +
-  scale_fill_gradient2(
-  ) +
-  ggtitle("Prediction (spatial random effects only)") +
-  facet_wrap(~species)
+# dat_tbl$preds <- purrr::map(dat_tbl$st_mod, function (x) {
+#   predict(x, newdata = exp_grid)
+# })
+# 
+# stock_preds <- dat_tbl %>% 
+#   select(species, preds) %>% 
+#   unnest(cols = preds) %>% 
+#   select(-est, -epsilon_st, -year) %>% 
+#   distinct()
+# 
+# 
+# plot_map <- function(dat, column) {
+#   ggplot(dat, aes_string("utm_x_1000", "utm_y_1000", fill = column)) +
+#     geom_raster() +
+#     coord_fixed() +
+#     ggsidekick::theme_sleek()
+# }
+# 
+# fe_plot_list <- purrr::map(dat_tbl$preds, function (x) {
+#   plot_map(x, "exp(est)") +
+#     scale_fill_viridis_c(
+#       trans = "sqrt",
+#       limits = c(0, quantile(exp(dd$est), 0.995))
+#     ) +
+#     facet_wrap(~year) +
+#     ggtitle("Prediction (fixed effects + all random effects)")
+# })
+# 
+# plot_map(stock_preds, "est_rf") +
+#   scale_fill_gradient2(
+#   ) +
+#   ggtitle("Prediction (spatial random effects only)") +
+#   facet_wrap(~species)
 
 
 
@@ -414,21 +415,42 @@ summer_years <- dat_in %>%
          !year == "2021") %>%
   pull(year) %>% 
   unique()
+fall_years <- dat_in %>% 
+  filter(season_f == "wi",
+         #remove 2021 survey years (too few tows)
+         !year == "2021") %>%
+  pull(year) %>% 
+  unique()
 
 
-# fix to HSS survey
-ind_preds <- purrr::map(dat_tbl$st_mod, function (x) {
-  predict(x, newdata = exp_grid %>% filter(survey_f == "hss"), 
+# fix to HSS survey (can't combine because predictions shouldn't be passed 
+# duplicates, but require tmb_object stored in preds)
+ind_preds_sum <- purrr::map(dat_tbl$st_mod, function (x) {
+  predict(x, newdata = exp_grid %>% filter(survey_f == "hss", week == "25"), 
           return_tmb_object = TRUE)
 })
-index_list <- purrr::map(ind_preds, get_index, bias_correct = TRUE)
-index_df <- purrr::map2(index_list, dat_tbl$species, function (x, sp) {
+index_list_sum <- purrr::map(ind_preds_sum, get_index, bias_correct = TRUE)
+
+index_df_summ <- purrr::map2(index_list_sum, dat_tbl$species, function (x, sp) {
   x$species <- sp
   return(x)
 }) %>% 
   bind_rows()
 
-index_plot <- ggplot(index_df %>% filter(year %in% summer_years), 
+
+ind_preds_fall <- purrr::map(dat_tbl$st_mod, function (x) {
+  predict(x, newdata = exp_grid %>% filter(survey_f == "hss", week == "42"), 
+          return_tmb_object = TRUE)
+})
+index_list_fall <- purrr::map(ind_preds_fall, get_index, bias_correct = TRUE)
+
+
+index_lists <- c(index_list_sum,
+                    index_list_fall)
+saveRDS(index_lists, here::here("data", "fits", "index_list.rds"))
+
+
+index_plot <- ggplot(index_df_summ %>% filter(year %in% summer_years), 
                      aes(year, est)) +
   geom_pointrange(aes(ymin = lwr, ymax = upr)) +
   labs(x = "Year", y = "Count") +
