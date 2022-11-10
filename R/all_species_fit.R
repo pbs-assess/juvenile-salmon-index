@@ -234,7 +234,7 @@ pred_obs_list <- purrr::pmap(
 
 # make conditional predictive dataframes
 week_dat <- data.frame(
- week = seq(5, 45, length.out = 100),
+ week = seq(0, 52, length.out = 100),
  dist_to_coast_km = median(dat_in$dist_to_coast_km),
  day_night = "DAY",
  target_depth = 0,
@@ -314,19 +314,21 @@ plot_eff <- function (dat, x_var, type = c("line", "dot")) {
     labs(title = x_var) +
     ggsidekick::theme_sleek()
   if (type == "line") {
-    p +
+    p2 <- p +
       geom_line() +
       geom_ribbon(alpha = 0.3)
   }
   if (type == "dot") {
-    p + 
+    p2 <- p + 
       geom_pointrange() 
   }
+  return(p2)
 } 
 
 purrr::pmap(list(pred_tbl$pred_dat, pred_tbl$var, pred_tbl$plot), plot_eff)
-plot_eff(dat = pred_tbl$pred_dat[[1]],
-         x_var = pred_tbl$var[[1]])
+plot_eff(dat = pred_list[[1]],
+         x_var = pred_tbl$var[[1]],
+         type = "line")
 
 ggplot(pred_list[[1]], 
        aes(week, exp(est),
@@ -445,17 +447,43 @@ ind_preds_fall <- purrr::map(dat_tbl$st_mod, function (x) {
 index_list_fall <- purrr::map(ind_preds_fall, get_index, bias_correct = TRUE)
 
 
-index_lists <- c(index_list_sum,
-                    index_list_fall)
-saveRDS(index_lists, here::here("data", "fits", "index_list.rds"))
+# index_lists <- c(index_list_sum,
+#                     index_list_fall)
+# saveRDS(index_lists, here::here("data", "fits", "index_list.rds"))
+index_lists <- readRDS(here::here("data", "fits", "index_list.rds")) 
+index_sum <- purrr::map2(
+  index_lists[1:5], dat_tbl$species, function (x, sp) {
+    x$species <- sp
+    x$season <- "su"
+    return(x)
+  }) %>% 
+  bind_rows()
+index_fall <- purrr::map2(
+  index_lists[6:10], dat_tbl$species, function (x, sp) {
+    x$species <- sp
+    x$season <- "fa"
+    return(x)
+  }) %>% 
+  bind_rows()
 
 
-index_plot <- ggplot(index_df_summ %>% filter(year %in% summer_years), 
-                     aes(year, est)) +
-  geom_pointrange(aes(ymin = lwr, ymax = upr)) +
+index_dat <- rbind(index_sum %>% filter(year %in% summer_years), 
+                   index_fall %>% filter(year %in% fall_years)) %>% 
+  mutate(season = factor(season, levels = c("su", "fa"), 
+                         labels = c("summer", "fall")))
+
+
+index_plot <- ggplot(index_dat, 
+                     aes(year, est, fill = season)) +
+  geom_pointrange(aes(ymin = lwr, ymax = upr), shape = 21) +
   labs(x = "Year", y = "Count") +
   ggsidekick::theme_sleek() +
-  facet_wrap(~species, scales = "free_y")
+  facet_grid(species~season, scales = "free_y")
+
+png(here::here("figs", "ms_figs", "hss_index.png"))
+index_plot
+dev.off()
+
 
 
 # separate survey effects
