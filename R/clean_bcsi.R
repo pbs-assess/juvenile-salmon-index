@@ -180,8 +180,12 @@ saveRDS(coast, here::here("data", "spatial", "sbc_sf_utm.rds"))
 
 ## SURVEY FIGS -----------------------------------------------------------------
 
+
+dat_trim <- readRDS(here::here("data", "survey_sbc.rds"))
+coast <- readRDS(here::here("data", "spatial", "sbc_sf_utm.rds"))
+
 min_lat <- min(floor(dat_trim$mean_lat) - 0.1)
-max_lat <- 53#max(dat_trim$mean_lat) + 0.1
+max_lat <- max(dat_trim$mean_lat) + 0.1
 min_lon <- min(floor(dat_trim$mean_lon) - 0.1)
 max_lon <- max(dat_trim$mean_lon) + 0.1
 
@@ -211,13 +215,39 @@ set_map <- ggplot() +
              shape = 21, alpha = 0.4) +
   scale_fill_discrete(name = "Survey") +
   ggsidekick::theme_sleek() +
-  theme(axis.title = element_blank())
+  theme(axis.title = element_blank()) +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0))
   
-  
-png(here::here("figs", "set_map.png"), height = 4, width = 8, res = 250, 
-    units = "in")
+png(here::here("figs", "ms_figs", "set_map.png"), height = 4, width = 4, 
+    units = "in", res = 250)
 set_map
 dev.off()
+
+  
+# set locations by month
+set_map_month <- ggplot() +
+  geom_sf(data = coast, color = "black", fill = "white") +
+  geom_point(data = dat_trim,
+             aes(x = utm_x, y = utm_y, fill = survey_f), 
+             shape = 21, alpha = 0.4) +
+  scale_fill_discrete(name = "Survey") +
+  ggsidekick::theme_sleek() +
+  theme(axis.title = element_blank()) +
+  facet_wrap(~month)
+
+seasonal_effort <- dat_trim %>% 
+  group_by(week) %>% 
+  tally() %>% 
+  ggplot(.) +
+  geom_point(aes(x = week, y = n)) +
+  labs(y = "Number of Tows in Dataset")
+
+pdf(here::here("figs", "set_coverage.pdf"), height = 4, width = 8)
+set_map_month
+seasonal_effort
+dev.off()
+
 
 
 # map of spatial covariates (exclude for now)
@@ -241,12 +271,15 @@ stacked_headrope_depth <- dat_trim %>%
   ggplot(., aes(x = as.factor(year), y = n, fill = target_depth_bin)) +
   geom_bar(position="stack", stat="identity") +
   ggsidekick::theme_sleek() +
-  scale_fill_brewer(type = "seq", palette = 4, 
-                    name = "Target\nHeadrope\nDepth") +
+  scale_fill_brewer(type = "seq", palette = 3, 
+                    name = "Target\nHeadrope\nDepth",
+                    direction = -1) +
   labs(y = "Number of Tows") +
   theme(
     axis.title.x = element_blank()
-  )
+  ) +
+  scale_x_discrete(breaks = seq(1995, 2020, by = 5))
+
 
 png(here::here("figs", "ms_figs", "headrope.png"), height = 3.5, width = 7, 
     units = "in", res = 250)
@@ -265,7 +298,8 @@ stacked_daynight <- dat_trim %>%
   labs(y = "Number of Tows") +
   theme(
     axis.title.x = element_blank()
-  )
+  ) +
+  scale_x_discrete(breaks = seq(1995, 2020, by = 5))
 
 png(here::here("figs", "ms_figs", "dn_tows.png"), height = 3.5, width = 7, 
     units = "in", res = 250)
@@ -295,6 +329,17 @@ png(here::here("figs", "ms_figs", "temp_cov.png"), height = 5.5, width = 5.5,
 bubble_temp_coverage
 dev.off()
 
+
+# histogram of swept volume
+hist_vol_swept <- ggplot(dat_trim) +
+  geom_histogram(aes(x = volume_m3), bins = 50, alpha = 0.6) +
+  ggsidekick::theme_sleek() +
+  labs(x = "Volume Swept (m^3)", y = "Number of Sets")
+
+png(here::here("figs", "ms_figs", "vol_swept.png"), height = 3.5, width = 5.5, 
+    units = "in", res = 250)
+hist_vol_swept
+dev.off()
 
 ## ADD CATCH DATA --------------------------------------------------------------
 

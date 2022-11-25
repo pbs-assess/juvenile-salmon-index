@@ -154,43 +154,43 @@ spatial_preds <- predict(sp_mod,
 
 
 ### FIT SATURATED --------------------------------------------------------------
-
-st_mod <- furrr::future_pmap(
-  list(dat_tbl$data, dat_tbl$bspde, dat_tbl$species),
-  function (x, spde_in, sp_in) {
-    sdmTMB(
-      n_juv ~ 1 +
-        dist_to_coast_km +
-        s(week, bs = "cc", k = 5) +
-        s(target_depth, bs = "tp", k = 4) +
-        day_night +
-        survey_f,
-      offset = x$effort,
-      data = x,
-      mesh = spde_in,
-      family = sdmTMB::nbinom2(),
-      spatial = "on",
-      spatiotemporal = "AR1",
-      time = "year",
-      anisotropy = FALSE,
-      priors = sdmTMBpriors(
-        matern_s = pc_matern(range_gt = 10, sigma_lt = 80)
-      ),
-      knots = list(
-        week = c(0, 52)
-      ),
-      control = sdmTMBcontrol(
-        nlminb_loops = 2,
-        newton_loops = 1
-      )
-    )
-  },
-  .options = furrr::furrr_options(seed = TRUE)
-)
-
-
-purrr::map(st_mod, sanity)
-purrr::map(st_mod, summary)
+# 
+# st_mod <- furrr::future_pmap(
+#   list(dat_tbl$data, dat_tbl$bspde, dat_tbl$species),
+#   function (x, spde_in, sp_in) {
+#     sdmTMB(
+#       n_juv ~ 1 +
+#         dist_to_coast_km +
+#         s(week, bs = "cc", k = 5) +
+#         s(target_depth, bs = "tp", k = 4) +
+#         day_night +
+#         survey_f,
+#       offset = x$effort,
+#       data = x,
+#       mesh = spde_in,
+#       family = sdmTMB::nbinom2(),
+#       spatial = "on",
+#       spatiotemporal = "AR1",
+#       time = "year",
+#       anisotropy = FALSE,
+#       priors = sdmTMBpriors(
+#         matern_s = pc_matern(range_gt = 10, sigma_lt = 80)
+#       ),
+#       knots = list(
+#         week = c(0, 52)
+#       ),
+#       control = sdmTMBcontrol(
+#         nlminb_loops = 2,
+#         newton_loops = 1
+#       )
+#     )
+#   },
+#   .options = furrr::furrr_options(seed = TRUE)
+# )
+# 
+# 
+# purrr::map(st_mod, sanity)
+# purrr::map(st_mod, summary)
 
 
 saveRDS(dat_tbl, here::here("data", "fits", "st_mod_all_sp.rds"))
@@ -427,30 +427,32 @@ fall_years <- dat_in %>%
 
 # fix to HSS survey (can't combine because predictions shouldn't be passed 
 # duplicates, but require tmb_object stored in preds)
-ind_preds_sum <- purrr::map(dat_tbl$st_mod, function (x) {
-  predict(x, newdata = exp_grid %>% filter(survey_f == "hss", week == "25"), 
-          return_tmb_object = TRUE)
-})
-index_list_sum <- purrr::map(ind_preds_sum, get_index, bias_correct = TRUE)
-
-index_df_summ <- purrr::map2(index_list_sum, dat_tbl$species, function (x, sp) {
-  x$species <- sp
-  return(x)
-}) %>% 
-  bind_rows()
-
-
-ind_preds_fall <- purrr::map(dat_tbl$st_mod, function (x) {
-  predict(x, newdata = exp_grid %>% filter(survey_f == "hss", week == "42"), 
-          return_tmb_object = TRUE)
-})
-index_list_fall <- purrr::map(ind_preds_fall, get_index, bias_correct = TRUE)
-
+# ind_preds_sum <- purrr::map(dat_tbl$st_mod, function (x) {
+#   predict(x, newdata = exp_grid %>% filter(survey_f == "hss", week == "25"), 
+#           return_tmb_object = TRUE)
+# })
+# index_list_sum <- purrr::map(ind_preds_sum, get_index, bias_correct = TRUE)
+# 
+# index_df_summ <- purrr::map2(index_list_sum, dat_tbl$species, function (x, sp) {
+#   x$species <- sp
+#   return(x)
+# }) %>% 
+#   bind_rows()
+# 
+# 
+# ind_preds_fall <- purrr::map(dat_tbl$st_mod, function (x) {
+#   predict(x, newdata = exp_grid %>% filter(survey_f == "hss", week == "42"), 
+#           return_tmb_object = TRUE)
+# })
+# index_list_fall <- purrr::map(ind_preds_fall, get_index, bias_correct = TRUE)
+# 
 
 # index_lists <- c(index_list_sum,
 #                     index_list_fall)
 # saveRDS(index_lists, here::here("data", "fits", "index_list.rds"))
 index_lists <- readRDS(here::here("data", "fits", "index_list.rds")) 
+
+
 index_sum <- purrr::map2(
   index_lists[1:5], dat_tbl$species, function (x, sp) {
     x$species <- sp
@@ -469,19 +471,50 @@ index_fall <- purrr::map2(
 
 index_dat <- rbind(index_sum %>% filter(year %in% summer_years), 
                    index_fall %>% filter(year %in% fall_years)) %>% 
-  mutate(season = factor(season, levels = c("su", "fa"), 
-                         labels = c("summer", "fall")))
+  mutate(
+    season = factor(season, levels = c("su", "fa"), 
+                    labels = c("summer", "fall"))
+  ) %>% 
+  group_by(species, season) %>% 
+  mutate(
+    group_mean = mean(est),
+    scaled_est = scale(est, center = TRUE, scale = TRUE) %>% 
+      as.numeric(),
+    anomaly = case_when(
+      lwr > group_mean ~ "pos",
+      upr < group_mean ~ "neg",
+      TRUE ~ "avg"
+    ) %>% 
+      as.factor()
+    ) %>% 
+  ungroup()
 
 
 index_plot <- ggplot(index_dat, 
-                     aes(year, est, fill = season)) +
-  geom_pointrange(aes(ymin = lwr, ymax = upr), shape = 21) +
-  labs(x = "Year", y = "Count") +
+                     aes(year, est)) +
+  geom_pointrange(aes(ymin = lwr, ymax = upr), shape = 21, fill = "white") +
+  labs(x = "Year", y = "Abundance Index") +
   ggsidekick::theme_sleek() +
-  facet_grid(species~season, scales = "free_y")
+  facet_grid(species~season, scales = "free_y") 
+
+
+col_pal <- c("#f5f5f5", "#d8b365", "#5ab4ac")
+names(col_pal) <- levels(index_dat$anomaly)
+
+index_scaled <- ggplot(index_dat) +
+  geom_point(aes(year, scaled_est, fill = anomaly), shape = 21, size = 2) +
+  labs(x = "Year", y = "Scaled Abundance Index") +
+  ggsidekick::theme_sleek() +
+  facet_grid(species~season, scales = "free_y") +
+  scale_fill_manual(values = col_pal)
+
 
 png(here::here("figs", "ms_figs", "hss_index.png"))
 index_plot
+dev.off()
+
+png(here::here("figs", "ms_figs", "hss_index_scaled.png"))
+index_scaled
 dev.off()
 
 
