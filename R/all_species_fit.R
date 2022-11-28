@@ -95,22 +95,22 @@ ggplot(dat_in) +
 spatial_mod <- furrr::future_map2(
   dat_tbl$data, dat_tbl$bspde, function (x, spde_in) {
     sdmTMB(
-      n_juv ~ 1 +  
-        dist_to_coast_km +
-        # s(dist_to_coast_km, bs = "tp", k = 3) +
-        s(week, bs = "cc", k = 4) +
+      n_juv ~ dist_to_coast_km +
+        s(week, bs = "cc", k = 5) +
+        s(target_depth, bs = "tp", k = 4) +
         day_night +
-        target_depth_bin +
         survey_f,
       offset = x$effort,
       data = x,
       mesh = spde_in,
       family = sdmTMB::nbinom2(),
       spatial = "on",
-      # spatiotemporal = "ar1",
       anisotropy = FALSE,
       priors = sdmTMBpriors(
         matern_s = pc_matern(range_gt = 10, sigma_lt = 80)
+      ),
+      knots = list(
+        week = c(0, 52)
       ),
       control = sdmTMBcontrol(
         nlminb_loops = 2,
@@ -124,73 +124,45 @@ spatial_mod <- furrr::future_map2(
 purrr::map(spatial_mod, sanity)
 purrr::map(spatial_mod, summary)
 
-# check single spatial mod
-sp_mod <- sdmTMB(
-  n_juv ~ 1 +  
-    dist_to_coast_km +
-    s(week, bs = "cc", k = 5) +
-    day_night +
-    target_depth_bin +
-    survey_f,
-  offset = dat_tbl$data[[3]]$effort,
-  data = dat_tbl$data[[3]],
-  mesh = dat_tbl$bspde[[3]],
-  family = sdmTMB::nbinom2(),
-  spatial = "on",
-  anisotropy = FALSE,
-  priors = sdmTMBpriors(
-    matern_s = pc_matern(range_gt = 10, sigma_lt = 80)
-  ),
-  control = sdmTMBcontrol(
-    nlminb_loops = 2,
-    newton_loops = 1
-  ),
-  knots = list(
-    week = c(0, 52)
-  )
-)
-spatial_preds <- predict(sp_mod, 
-                         exp_grid %>% filter(year == "2017") %>% distinct())
-
 
 ### FIT SATURATED --------------------------------------------------------------
-# 
-# st_mod <- furrr::future_pmap(
-#   list(dat_tbl$data, dat_tbl$bspde, dat_tbl$species),
-#   function (x, spde_in, sp_in) {
-#     sdmTMB(
-#       n_juv ~ 1 +
-#         dist_to_coast_km +
-#         s(week, bs = "cc", k = 5) +
-#         s(target_depth, bs = "tp", k = 4) +
-#         day_night +
-#         survey_f,
-#       offset = x$effort,
-#       data = x,
-#       mesh = spde_in,
-#       family = sdmTMB::nbinom2(),
-#       spatial = "on",
-#       spatiotemporal = "AR1",
-#       time = "year",
-#       anisotropy = FALSE,
-#       priors = sdmTMBpriors(
-#         matern_s = pc_matern(range_gt = 10, sigma_lt = 80)
-#       ),
-#       knots = list(
-#         week = c(0, 52)
-#       ),
-#       control = sdmTMBcontrol(
-#         nlminb_loops = 2,
-#         newton_loops = 1
-#       )
-#     )
-#   },
-#   .options = furrr::furrr_options(seed = TRUE)
-# )
-# 
-# 
-# purrr::map(st_mod, sanity)
-# purrr::map(st_mod, summary)
+
+st_mod <- furrr::future_pmap(
+  list(dat_tbl$data, dat_tbl$bspde, dat_tbl$species),
+  function (x, spde_in, sp_in) {
+    sdmTMB(
+      n_juv ~ 1 +
+        dist_to_coast_km +
+        s(week, bs = "cc", k = 5) +
+        s(target_depth, bs = "tp", k = 4) +
+        day_night +
+        survey_f,
+      offset = x$effort,
+      data = x,
+      mesh = spde_in,
+      family = sdmTMB::nbinom2(),
+      spatial = "on",
+      spatiotemporal = "AR1",
+      time = "year",
+      anisotropy = FALSE,
+      priors = sdmTMBpriors(
+        matern_s = pc_matern(range_gt = 10, sigma_lt = 80)
+      ),
+      knots = list(
+        week = c(0, 52)
+      ),
+      control = sdmTMBcontrol(
+        nlminb_loops = 2,
+        newton_loops = 1
+      )
+    )
+  },
+  .options = furrr::furrr_options(seed = TRUE)
+)
+
+
+purrr::map(st_mod, sanity)
+purrr::map(st_mod, summary)
 
 
 saveRDS(dat_tbl, here::here("data", "fits", "st_mod_all_sp.rds"))
@@ -218,6 +190,10 @@ hist_list <- purrr::pmap(
     }
   }
 )
+
+purrr::map(dat_tbl$sims, ~ mean(.x[,1]))
+
+
 pred_obs_list <- purrr::pmap(
   list(dat_tbl$data, dat_tbl$sims), function (x, y) {
     for (i in seq_along(samps)) {
@@ -239,7 +215,7 @@ week_dat <- data.frame(
  day_night = "DAY",
  target_depth = 0,
  survey_f = "hss",
- year = 2011L
+ year = 2012L
 )
 dist_dat <- data.frame(
   week = median(dat_in$week),
@@ -248,7 +224,7 @@ dist_dat <- data.frame(
   day_night = "DAY",
   target_depth = 0,
   survey_f = "hss",
-  year = 2011L
+  year = 2012L
 )
 day_dat <- data.frame(
   week = median(dat_in$week),
@@ -256,7 +232,7 @@ day_dat <- data.frame(
   day_night = c("DAY", "NIGHT"),
   target_depth = 0,
   survey_f = "hss",
-  year = 2011L
+  year = 2012L
 )
 target_dat <- data.frame(
   week = median(dat_in$week),
@@ -265,7 +241,7 @@ target_dat <- data.frame(
   target_depth = seq(min(dat_in$target_depth), 
                          max(dat_in$target_depth), length.out = 100),
   survey_f = "hss",
-  year = 2011L
+  year = 2012L
 )
 survey_dat <- data.frame(
   week = median(dat_in$week),
@@ -273,39 +249,65 @@ survey_dat <- data.frame(
   day_night = "DAY",
   target_depth = 0,
   survey_f = c("hss", "ipes"),
-  year = 2011L
-)
-pred_tbl <- tibble(
-  var = c("week",
-          "dist_to_coast_km",
-          "day_night",
-          "target_depth",
-          "survey_f"),
-  data = list(week_dat, dist_dat, day_dat, target_dat, survey_dat),
-  plot = c("line", "line", "dot", "line", "dot")
+  year = 2012L
 )
 
+# pred_tbl <- tibble(
+#   var = c("week",
+#           "dist_to_coast_km",
+#           "day_night",
+#           "target_depth",
+#           "survey_f"),
+#   data = list(week_dat, dist_dat, day_dat, target_dat, survey_dat),
+#   plot = c("line", "line", "dot", "line", "dot")
+# )
+# 
+# # predict
+# pred_list <- vector(length = nrow(pred_tbl), mode = "list")
+# spatial_pred_list <- vector(length = nrow(pred_tbl), mode = "list")
+# for (i in seq_along(pred_tbl$var)) {
+#   pred_list[[i]] <- furrr::future_map2(
+#     dat_tbl$st_mod, dat_tbl$species, function(x , sp) {
+#       predict(x, newdata = pred_tbl$data[[i]], se_fit = T, re_form = NA) %>%
+#         mutate(species = sp,
+#                up = est + 1.96 * est_se,
+#                lo = est - 1.96 * est_se,
+#                exp_est = exp(est),
+#                exp_up = exp(up),
+#                exp_lo = exp(lo))
+#     }
+#   ) %>%
+#     bind_rows()
+#   spatial_pred_list[[i]] <- furrr::future_map2(
+#     dat_tbl$spatial_mod, dat_tbl$species, function(x , sp) {
+#       predict(x, newdata = pred_tbl$data[[i]], se_fit = T, re_form = NA) %>%
+#         mutate(species = sp,
+#                up = est + 1.96 * est_se,
+#                lo = est - 1.96 * est_se,
+#                exp_est = exp(est),
+#                exp_up = exp(up),
+#                exp_lo = exp(lo))
+#     }
+#   ) %>%
+#     bind_rows()
+# }
+# 
+# pred_tbl$pred_dat <- pred_list
+# pred_tbl$spatial_pred_dat <- spatial_pred_list
 
-pred_list <- vector(length = nrow(pred_tbl), mode = "list")
-for (i in seq_along(pred_tbl$var)) {
-  pred_list[[i]] <- furrr::future_map2(
-    dat_tbl$st_mod, dat_tbl$species, function(x , sp) {
-      predict(x, newdata = pred_tbl$data[[i]], se_fit = T, re_form = NA) %>% 
-        mutate(species = sp)
-    }
-  ) %>% 
-    bind_rows()
-}
+# takes a long time so save
+# saveRDS(pred_tbl, here::here("data", "preds", "fe_preds.rds"))
+pred_tbl <- readRDS(here::here("data", "preds", "fe_preds.rds"))
 
-pred_tbl$pred_dat <- pred_list 
 
+# make all plots for quick visualization
 plot_eff <- function (dat, x_var, type = c("line", "dot")) {
   p <- dat %>% 
-    mutate(
-      exp_est = exp(est),
-      up = exp(est + 1.96 * est_se),
-      lo = exp(est - 1.96 * est_se)
-    ) %>% 
+    # mutate(
+    #   exp_est = exp(est),
+    #   up = exp(est + 1.96 * est_se),
+    #   lo = exp(est - 1.96 * est_se)
+    # ) %>% 
     ggplot(
     ., 
     aes_string(x_var, "exp_est", ymin = "lo", ymax = "up")
@@ -325,18 +327,118 @@ plot_eff <- function (dat, x_var, type = c("line", "dot")) {
   return(p2)
 } 
 
+pdf(here::here("figs", "fixed_effects.pdf"), width = 8, height = 5)
 purrr::pmap(list(pred_tbl$pred_dat, pred_tbl$var, pred_tbl$plot), plot_eff)
-plot_eff(dat = pred_list[[1]],
-         x_var = pred_tbl$var[[1]],
-         type = "line")
+dev.off()
 
-ggplot(pred_list[[1]], 
-       aes(week, exp(est),
-           ymin = exp(est - 1.96 * est_se), ymax = exp(est + 1.96 * est_se))) +
+pdf(here::here("figs", "spatial_fixed_effects.pdf"), width = 8, height = 5)
+purrr::pmap(list(pred_tbl$spatial_pred_dat, pred_tbl$var, pred_tbl$plot), 
+            plot_eff)
+dev.off()
+
+
+# make individual plots for ms
+pred_tbl$adj_pred_dat <- purrr::map(
+  pred_tbl$pred_dat,
+  ~ .x %>% 
+    mutate(
+      up = est + 1.96 * est_se,
+      lo = est - 1.96 * est_se,
+      exp_est = exp(est),
+      exp_up = exp(up),
+      exp_lo = exp(lo)
+    )
+) 
+p_dat <- pred_tbl %>% 
+  select(var, adj_pred_dat) %>% 
+  unnest(cols = adj_pred_dat) %>% 
+  mutate(species = tolower(species),
+         day_night = tolower(day_night),
+         survey_f = toupper(survey_f))
+
+col_pal <- c('#7fc97f','#beaed4','#fdc086','#ffff99','#386cb0')
+names(col_pal) <- c('chinook','pink','chum','coho','sockeye')
+
+# line plot function
+pp_foo <- function(dat, x_var, y_var = "exp_est", ymin_var = "exp_lo", 
+                     ymax_var = "exp_up", fill_var = "species") {
+  ggplot(
+    dat,
+    aes_string(x_var, y_var, ymin = ymin_var, ymax = ymax_var,
+               fill = fill_var)
+  ) +
+    ggsidekick::theme_sleek() +
+    scale_fill_manual(values = col_pal) +
+    ylab("Abundance Index")
+}
+
+png(here::here("figs", "ms_figs", "week_preds.png"), height = 4, width = 5,
+    units = "in", res = 200)
+pp_foo(
+  dat = p_dat %>% filter(var == "week"),
+  x_var = "week"
+) +
   geom_line() +
-  geom_ribbon(alpha = 0.3) + 
-  facet_wrap(~species, scales = "free_y") +
-  ggsidekick::theme_sleek()
+  geom_ribbon(alpha = 0.3) +
+  scale_x_continuous(expand = c(0, 0)) +
+  xlab("Week") 
+dev.off()
+
+
+png(here::here("figs", "ms_figs", "depth_preds.png"), height = 4, width = 5,
+    units = "in", res = 200)
+pp_foo(
+  dat = p_dat %>% filter(var == "target_depth"),
+  x_var = "target_depth"
+) +
+  geom_line() +
+  geom_ribbon(alpha = 0.3) +
+  scale_x_continuous(expand = c(0, 0)) +
+  xlab("Target Headrope Depth (m)") 
+dev.off()
+
+
+png(here::here("figs", "ms_figs", "dist_preds.png"), height = 4, width = 5,
+    units = "in", res = 200)
+pp_foo(
+  dat = p_dat %>% filter(var == "dist_to_coast_km"),
+  x_var = "dist_to_coast_km"
+) +
+  geom_line() +
+  geom_ribbon(alpha = 0.3) +
+  scale_x_continuous(expand = c(0, 0)) +
+  xlab("Distance to Nearest Coastline (km)") 
+dev.off()
+
+
+png(here::here("figs", "ms_figs", "dn_preds.png"), height = 3, width = 8,
+    units = "in", res = 200)
+pp_foo(
+  dat = p_dat %>% filter(var == "day_night"),
+  x_var = "day_night"
+) +
+  geom_pointrange(shape = 21) +
+  facet_wrap(~species, nrow = 1) +
+  xlab("Diel Effects") +
+  theme(
+    legend.position = "none"
+  )
+dev.off()
+
+
+png(here::here("figs", "ms_figs", "surv_preds.png"), height = 3, width = 8,
+    units = "in", res = 200)
+pp_foo(
+  dat = p_dat %>% filter(var == "survey_f"),
+  x_var = "survey_f"
+) +
+  geom_pointrange(shape = 21) +
+  facet_wrap(~species, nrow = 1) +
+  xlab("Survey Effects") +
+  theme(
+    legend.position = "none"
+  )
+dev.off()
 
 
 ## MAKE SPATIAL PREDICTIONS ----------------------------------------------------
@@ -374,39 +476,39 @@ exp_grid <- expand.grid(
   )
 
 
-# dat_tbl$preds <- purrr::map(dat_tbl$st_mod, function (x) {
-#   predict(x, newdata = exp_grid)
-# })
-# 
-# stock_preds <- dat_tbl %>% 
-#   select(species, preds) %>% 
-#   unnest(cols = preds) %>% 
-#   select(-est, -epsilon_st, -year) %>% 
-#   distinct()
-# 
-# 
-# plot_map <- function(dat, column) {
-#   ggplot(dat, aes_string("utm_x_1000", "utm_y_1000", fill = column)) +
-#     geom_raster() +
-#     coord_fixed() +
-#     ggsidekick::theme_sleek()
-# }
-# 
-# fe_plot_list <- purrr::map(dat_tbl$preds, function (x) {
-#   plot_map(x, "exp(est)") +
-#     scale_fill_viridis_c(
-#       trans = "sqrt",
-#       limits = c(0, quantile(exp(dd$est), 0.995))
-#     ) +
-#     facet_wrap(~year) +
-#     ggtitle("Prediction (fixed effects + all random effects)")
-# })
-# 
-# plot_map(stock_preds, "est_rf") +
-#   scale_fill_gradient2(
-#   ) +
-#   ggtitle("Prediction (spatial random effects only)") +
-#   facet_wrap(~species)
+dat_tbl$spatial_preds <- purrr::map(dat_tbl$st_mod, function (x) {
+  predict(x, newdata = exp_grid)
+})
+
+stock_preds <- dat_tbl %>%
+  select(species, preds) %>%
+  unnest(cols = preds) %>%
+  select(-est, -epsilon_st, -year) %>%
+  distinct()
+
+
+plot_map <- function(dat, column) {
+  ggplot(dat, aes_string("utm_x_1000", "utm_y_1000", fill = column)) +
+    geom_raster() +
+    coord_fixed() +
+    ggsidekick::theme_sleek()
+}
+
+fe_plot_list <- purrr::map(dat_tbl$preds, function (x) {
+  plot_map(x, "exp(est)") +
+    scale_fill_viridis_c(
+      trans = "sqrt",
+      limits = c(0, quantile(exp(dd$est), 0.995))
+    ) +
+    facet_wrap(~year) +
+    ggtitle("Prediction (fixed effects + all random effects)")
+})
+
+plot_map(stock_preds, "est_rf") +
+  scale_fill_gradient2(
+  ) +
+  ggtitle("Prediction (spatial random effects only)") +
+  facet_wrap(~species)
 
 
 
