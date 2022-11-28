@@ -477,12 +477,12 @@ exp_grid <- expand.grid(
 
 
 dat_tbl$spatial_preds <- purrr::map(dat_tbl$st_mod, function (x) {
-  predict(x, newdata = exp_grid)
+  predict(x, newdata = exp_grid, se_fit = FALSE, re_form = NULL)
 })
 
 stock_preds <- dat_tbl %>%
-  select(species, preds) %>%
-  unnest(cols = preds) %>%
+  select(species, spatial_preds) %>%
+  unnest(cols = spatial_preds) %>%
   select(-est, -epsilon_st, -year) %>%
   distinct()
 
@@ -510,6 +510,18 @@ plot_map(stock_preds, "est_rf") +
   ggtitle("Prediction (spatial random effects only)") +
   facet_wrap(~species)
 
+dd <- stock_preds %>% 
+  filter(year == "2012") %>% 
+  mutate(
+    exp_est = exp(est)
+  )
+plot_map(dd,
+         "est") +
+  scale_fill_viridis_c(
+    # trans = "sqrt",
+    # limits = c(0, quantile(exp(dd$est), 0.995))
+  ) +
+  facet_wrap(~species)
 
 
 # index from summer
