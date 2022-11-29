@@ -65,25 +65,39 @@ inla_mesh2 <- make_mesh(pink_dat,
 # sdmTMB meshes
 sdm_mesh <- make_mesh(pink_dat,
                   c("utm_x_1000", "utm_y_1000"),
-                  type = "kmeans",
                   n_knots = 250)
 
 sdm_mesh2 <- make_mesh(pink_dat,  
                         c("utm_x_1000", "utm_y_1000"),
-                        type = "cutoff",
                         cutoff = 30)
 
-mesh_list <- list(inla_mesh, inla_mesh2, sdm_mesh, sdm_mesh2)
-names(mesh_list) <- c("inla_vfine", "inla_fine", "sdm_coarse", "sdm_vcoarse")
+sdm_mesh3 <- make_mesh(pink_dat,
+                       c("utm_x_1000", "utm_y_1000"),
+                       cutoff = 20)
+inla_mesh3_raw <- INLA::inla.mesh.2d(
+  loc = cbind(pink_dat$utm_x_1000, pink_dat$utm_y_1000),
+  max.edge = c(1, 5) * 1000,
+  cutoff = 20,
+  offset = c(20, 200)
+) 
+inla_mesh3 <- make_mesh(pink_dat, 
+  c("utm_x_1000", "utm_y_1000"),
+  mesh = inla_mesh3_raw) 
+
+mesh_list <- list(inla_mesh, inla_mesh2, sdm_mesh, sdm_mesh2, sdm_mesh3, inla_mesh3)
+names(mesh_list) <- c("inla_vfine", "inla_fine", "sdm_coarse", "sdm_cutoff30", "sdm_cutoff20", "inla_cutoff20")
 
 purrr::map(mesh_list, ~ .x$mesh$n)
-
+par(mfrow = c(2, 3))
+purrr::map2(mesh_list, names(mesh_list), 
+  ~ {plot(.x$mesh, main = "", asp = 1);mtext(.y)})
+par(mfrow = c(1, 1))
 
 ## Fit both models -------------------------------------------------------------
 
 ## Evaluate mesh impacts using spatial model initial
 fit_list <- purrr::map(
-  mesh_list, ~ 
+  mesh_list[3:6], ~
     sdmTMB(
       n_juv ~ 1 +
         as.factor(year) +
@@ -98,7 +112,9 @@ fit_list <- purrr::map(
       family = sdmTMB::nbinom2(),
       spatial = "on",
       spatiotemporal = "iid",
+      share_range = FALSE,
       time = "year",
+      silent = FALSE,
       anisotropy = TRUE,
       knots = list(
         week = c(0, 52)
@@ -108,6 +124,8 @@ fit_list <- purrr::map(
       )
     )
 )
+
+purrr::map(fit_list, plot_anisotropy)
 
 # some differences in intercept estimates 
 purrr::map(
