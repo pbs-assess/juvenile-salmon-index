@@ -296,10 +296,19 @@ coast_utm <- rbind(rnaturalearth::ne_states( "United States of America",
   sf::st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
 
 
-spde <- mesh_list[[3]]
+pink_dat_trim <- pink_dat %>% 
+  filter(!year < 1998)
+
+# first mesh is same as finer res sdmTMB mesh above
+spde <- make_mesh(pink_dat_trim,
+                  c("utm_x_1000", "utm_y_1000"),
+                  type = "kmeans",
+                  n_knots = 250)
 bspde <- add_barrier_mesh(spde, coast_utm, range_fraction = 0.1,
                           # scaling = 1000 since UTMs were rescaled above
                           proj_scaling = 1000)
+
+
 
 ## Compare anisotropy with finer resolution sdmTMB mesh
 fit_list_ani <- purrr::map2(
@@ -312,8 +321,8 @@ fit_list_ani <- purrr::map2(
       target_depth +
       day_night +
       survey_f,
-    offset = pink_dat$effort,
-    data = pink_dat,
+    offset = pink_dat_trim$effort,
+    data = pink_dat_trim,
     mesh = .x,
     family = sdmTMB::nbinom2(),
     spatial = "on",
@@ -328,3 +337,65 @@ fit_list_ani <- purrr::map2(
     )
   )
 )
+
+purrr::map(fit_list_ani, sanity)
+
+
+# spatial predictions for anisotropy
+pred_list_ani <- purrr::map2(
+  fit_list_ani, c("anisotropy", "barrier"),
+  ~ predict(.x, newdata = hss_pred, se_fit = FALSE, re_form = NULL) %>% 
+    mutate(
+      mesh = .y
+    )
+)
+pred_dat_ani <- pred_list_ani %>% 
+  bind_rows() %>% 
+  mutate(
+    exp_est = exp(est)
+  )
+
+pdf(here::here("figs", "mesh_comparison", "anisotropy_spatial_preds.pdf"))
+plot_map(pred_dat_ani, "exp(est)") +
+  scale_fill_viridis_c(
+    trans = "sqrt",
+    limits = c(0, quantile(exp(pred_dat_ani$est), 0.995))
+  ) +
+  facet_grid(year~mesh) +
+  ggtitle("Prediction (fixed effects + all random effects)")
+plot_map(pred_dat_ani %>% filter(year == "2012"), "omega_s") +
+  scale_fill_gradient2() +
+  facet_wrap(~mesh) +
+  ggtitle("Prediction (spatial random effects)")
+plot_map(pred_dat_ani, "epsilon_st") +
+  scale_fill_gradient2() +
+  facet_grid(year~mesh) +
+  ggtitle("Prediction (spatiotemporal random effects)")
+dev.off()
+
+
+# index predictions
+index_preds_ani <- purrr::map(
+  fit_list_ani, 
+  ~ predict(.x, 
+            newdata = dum <- hss_pred2 %>% filter(year %in% pink_dat_trim$year),
+            return_tmb_object = TRUE)
+)
+
+index_preds2_ani <- purrr::map2(
+  index_preds_ani,  c("anisotropy", "barrier"),
+  ~ get_index(.x, bias_correct = TRUE) %>% 
+    mutate(
+      mesh = .y
+    )
+)
+inds_ani <- index_preds2_ani %>% 
+  bind_rows() 
+
+
+pdf(here::here("figs", "mesh_comparison", "anisotropy_indices.pdf"))
+ggplot(inds_ani, aes(x = as.factor(year), y = est , fill = mesh)) + 
+  geom_pointrange(aes(ymin = lwr , ymax = upr , fill = mesh),
+                  position = position_dodge(width = 0.75), shape = 21) +
+  ggsidekick::theme_sleek()
+dev.off()
