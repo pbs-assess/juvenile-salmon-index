@@ -1,176 +1,330 @@
 ### Explore different mesh configurations for high seas juvenile data
+## Assume range = ~120; use pink data since most problematic
+## Compare: 
+## 1) INLA mesh based on max_edge (<1/5 max)
+## 2) sdmTMB n_knots = ~250
+## 3) sdmTMB cutoff = ~30
 ## April 30, 2020
+## Updated Nov 28, 2022
 
 library(tidyverse)
 library(sdmTMB)
 library(ggplot2)
 
-
-bridge <- readRDS(here::here("data", "ipes_hs_merged_bridge.rds")) 
-
-# use bridge data alone for now since ignoring stock composition
-jchin <- bridge %>%
-  #scale UTM coords
-  mutate(xUTM_start = xUTM_start / 10000,
-         yUTM_start = yUTM_start / 10000,
-         season = as.factor(
-           case_when(
-             month %in% c("2", "3") ~ "winter",
-             month %in% c("5", "6", "7", "8") ~ "summer",
-             month %in% c("9", "10", "11" , "12") ~ "fall")
-         ),
-         yday_z = as.vector(scale(yday)[,1]),
-         yday_z2 = yday_z^2,
-         time_f = as.factor(time_f),
-         juv_cpue = ck_juv / dur,
-         offset = dur
+# downscale data and predictive grid
+dat <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>% 
+  mutate(
+    utm_x_1000 = utm_x / 1000,
+    utm_y_1000 = utm_y / 1000,
+    effort = log(volume_m3),
+    week = lubridate::week(date)
   ) %>% 
-  #remove extra vars and stock ppn data
-  dplyr::select(station_id, stable_station:date, time_f, yday, yday_z, yday_z2,
-                offset, 
-                month:dur, head_depth,
-                ck_juv, juv_cpue)
+  droplevels() 
 
-#trim dataset
-jchin1 <- jchin %>% 
-  filter(stable_station == "1",
-         month %in% c(6, 7),
-         head_depth < 21,
-         !juv_cpue > 500 #remove large values that may be skewing results
-  )
+dat_in <- dat %>% 
+  filter(!year == "2022",
+         !bath_depth_mean_m < 0)
+
+pink_dat <- dat_in %>% 
+  filter(grepl("PINK", species))
 
 
 ## Build different meshes ------------------------------------------------------
 
-#alternative mesh using non-convex boundary based on predictive grid (excludes
-#land masses)
-source(here::here("R", "prepPredictionGrid.R"))
-grid <- jchin1 %>% 
-  mutate(xUTM_start = xUTM_start * 10000, #scale up to match reality
-         yUTM_start = yUTM_start * 10000) %>% 
-  make_pred_grid()
-grid <- grid / 10000
+# INLA meshes
+max_edge = 30 # based on 0.2 * 180 
+bound_outer = 150
 
-bnd <- INLA::inla.nonconvex.hull(as.matrix(grid), convex = -0.03)
-plot(bnd$loc)
-mesh.loc <- SpatialPoints(as.matrix(cbind(jchin1$xUTM_start, 
-                                          jchin1$yUTM_start)))
-mesh <- INLA::inla.mesh.2d(loc=mesh.loc,
-                     boundary=list(
-                       bnd,
-                       NULL),
-                     max.edge=c(2.5, 4.5),
-                     min.angle=c(30, 21),
-                     max.n=c(48000, 16000), ## Safeguard against large meshes.
-                     max.n.strict=c(128000, 128000), ## Don't build a huge mesh!
-                     cutoff=1.51, ## Filter away adjacent points.
-                     offset=c(0.1, 0.3)) ## Offset for extra boundaries, if needed.
-plot(mesh)
-jchin1_spde_nch <- make_spde(jchin1$xUTM_start, jchin1$yUTM_start, mesh = mesh)
 
-#default mesh w// approximately same number of nodes
-jchin1_spde <- make_spde(jchin1$xUTM_start, jchin1$yUTM_start, n_knots = 250)
+inla_mesh_raw <- INLA::inla.mesh.2d(
+  loc = cbind(pink_dat$utm_x_1000, pink_dat$utm_y_1000),
+  max.edge = c(1, 5) * max_edge,
+  # - use 5 times max.edge in the outer extension/offset/boundary
+  cutoff = max_edge / 5,
+  offset = c(max_edge, bound_outer)
+) 
+inla_mesh <- make_mesh(pink_dat, 
+                       c("utm_x_1000", "utm_y_1000"),
+                       mesh = inla_mesh_raw)
+# even though this is barely within the 20% of range estimate they suggest,
+# still extremely high resolution
 
-#compare 
-plot_spde(jchin1_spde)
-plot_spde(jchin1_spde_nch)
-plot(jchin1_spde$mesh, main = NA, edge.color = "grey60", asp = 1)
-plot(jchin1_spde_nch$mesh, main = NA, edge.color = "grey60", asp = 1)
+inla_mesh2_raw <- INLA::inla.mesh.2d(
+  loc = cbind(pink_dat$utm_x_1000, pink_dat$utm_y_1000),
+  max.edge = c(1, 5) * 1000,
+  # - use 5 times max.edge in the outer extension/offset/boundary
+  cutoff = max_edge / 5,
+  offset = c(max_edge, bound_outer)
+) 
+inla_mesh2 <- make_mesh(pink_dat, 
+                       c("utm_x_1000", "utm_y_1000"),
+                       mesh = inla_mesh2_raw)
+# even with much larger edge size than recommended n > 1000
+
+
+# sdmTMB meshes
+sdm_mesh <- make_mesh(pink_dat,
+                  c("utm_x_1000", "utm_y_1000"),
+                  type = "kmeans",
+                  n_knots = 250)
+
+sdm_mesh2 <- make_mesh(pink_dat,  
+                        c("utm_x_1000", "utm_y_1000"),
+                        type = "cutoff",
+                        cutoff = 30)
+
+mesh_list <- list(inla_mesh, inla_mesh2, sdm_mesh, sdm_mesh2)
+names(mesh_list) <- c("inla_vfine", "inla_fine", "sdm_coarse", "sdm_vcoarse")
+
+purrr::map(mesh_list, ~ .x$mesh$n)
 
 
 ## Fit both models -------------------------------------------------------------
 
-m <- sdmTMB(ck_juv ~ 0 + as.factor(year) + yday_z + yday_z2 + offset,
-                data = jchin1,
-                time = "year",
-                spde = jchin1_spde,
-                silent = FALSE,
-                anisotropy = TRUE,
-                include_spatial = TRUE,
-                ar1_fields = FALSE,
-                family = nbinom2(link = "log"))
-m_nch <- sdmTMB(ck_juv ~ 0 + as.factor(year) + yday_z + yday_z2 + offset,
-                data = jchin1,
-                time = "year",
-                spde = jchin1_spde_nch,
-                silent = FALSE,
-                anisotropy = TRUE,
-                include_spatial = TRUE,
-                ar1_fields = FALSE,
-                family = nbinom2(link = "log"))
+## Evaluate mesh impacts using spatial model initial
+fit_list <- purrr::map(
+  mesh_list, ~ 
+    sdmTMB(
+      n_juv ~ 1 +
+        as.factor(year) +
+        dist_to_coast_km +
+        s(week, bs = "cc", k = 5) +
+        target_depth +
+        day_night +
+        survey_f,
+      offset = pink_dat$effort,
+      data = pink_dat,
+      mesh = .x,
+      family = sdmTMB::nbinom2(),
+      spatial = "on",
+      spatiotemporal = "iid",
+      time = "year",
+      anisotropy = TRUE,
+      knots = list(
+        week = c(0, 52)
+      ),
+      control = sdmTMBcontrol(
+        newton_loops = 1
+      )
+    )
+)
 
-# examine residuals
-check_res <- function(mod, dat) {
-  dat$resid <- residuals(mod)
-  #histogram
-  hist(dat$resid)
-  # qqplot
-  qqnorm(dat$resid)
-  abline(a = 0, b = 1, col = "red")
-  # map of resids
-  ggplot(dat, aes(xUTM_start, yUTM_start, col = resid)) + 
-    scale_colour_gradient2() +
-    geom_point() + facet_wrap(~year) + coord_fixed()
-}
+# some differences in intercept estimates 
+purrr::map(
+  fit_list, ~ .x$sd_report$par.fixed[3]
+)
 
-check_res(m, jchin1)
-check_res(m_nch, jchin1)
+# qqplot of residuals
+purrr::map(
+  fit_list, 
+  ~ {
+    resid <- residuals(.x)
+    qqnorm(resid)
+    abline(a = 0, b = 1, col = "red")
+  }
+)
 
-# generate predictions using grid from above
-pred_grid <- grid %>% 
-  expand(nesting(X, Y), #make a predictive dataframe
-         year = unique(jchin1$year)) %>%
-  mutate(yday_z = 0,
-         yday_z2 = 0,
-         offset = mean(jchin1$dur))
+# some differences in intercept estimates 
+purrr::map(
+  fit_list, sanity
+)
 
-# look at annual index predictions from each model
-pred <- predict(m, newdata = pred_grid, return_tmb_object = TRUE)
-pred_nch <- predict(m_nch, newdata = pred_grid, return_tmb_object = TRUE)
 
-# Compare predictions from the two datasets
-ind1 <- get_index(pred, bias_correct = FALSE) %>% 
-  mutate(dataset = "def")
-ind2 <- get_index(pred_nch, bias_correct = FALSE) %>% 
-  mutate(dataset = "nch")  
-inds <- rbind(ind1, ind2)
+## SPATIAL PREDICTIONS ---------------------------------------------------------
 
-scale <- 2 * 2  # 2 x 2 km grid 
-ggplot(inds, aes(year, est*scale)) + 
-  geom_line(aes(group = 1)) +
-  geom_ribbon(aes(ymin = lwr*scale, ymax = upr*scale), alpha = 0.4) +
-  xlab('Year') + ylab('Abundance Estimate') +
-  facet_wrap(~dataset)
+# grid of summer survey area
+grid <- readRDS(here::here("data", "spatial", "pred_ipes_grid.RDS")) %>% 
+  mutate(utm_x_1000 = X / 1000,
+         utm_y_1000 = Y / 1000,
+         dist_to_coast_km = shore_dist / 1000)
 
-# Look at output maps
+# add unique years and seasons
+exp_grid <- expand.grid(
+  year = unique(dat_in$year),
+  survey_f = unique(dat_in$survey_f),
+  week = c(25, 42)
+) %>%
+  mutate(id = row_number()) %>%
+  split(., .$id) %>%
+  purrr::map(., function (x) {
+    grid %>% 
+      mutate(
+        year = x$year,
+        survey_f = x$survey_f,
+        target_depth = 0,
+        week = x$week,
+        day_night = "DAY"
+      )
+  }) %>%
+  bind_rows() %>% 
+  mutate(
+    fake_survey = case_when(
+      year > 2016 & survey_f == "hss" ~ "1",
+      year < 2017 & survey_f == "ipes" ~ "1",
+      TRUE ~ "0")
+  )
+
+hss_pred <- exp_grid %>% 
+  filter(
+    # use 2012 as arbitrary reference year
+    year %in% c("2010", "2011", "2012"),
+    week == "42",
+    survey_f == "hss"
+  )
+
+# generate predictions for each mesh type fixed to reference values for cov
+pred_list <- purrr::map2(
+  fit_list, names(mesh_list),
+  ~ predict(.x, newdata = hss_pred, se_fit = FALSE, re_form = NULL) %>% 
+    mutate(
+      mesh = .y
+    )
+)
+pred_dat <- pred_list %>% 
+  bind_rows() %>% 
+  mutate(
+    exp_est = exp(est)
+  )
+
+
 plot_map <- function(dat, column) {
-  ggplot(dat, aes_string("X", "Y", fill = column)) +
+  ggplot(dat, aes_string("utm_x_1000", "utm_y_1000", fill = column)) +
     geom_raster() +
-    facet_wrap(~year) +
-    coord_fixed()
+    coord_fixed() +
+    ggsidekick::theme_sleek()
 }
 
-# Predictions incorporating all fixed and random effects
-# Generally the impacts of different meshes considered here were negligible
-plot_map(pred$data, "exp(est)") +
-  scale_fill_viridis_c(trans = "sqrt") +
+mean_pred <- plot_map(pred_dat, "exp(est)") +
+  scale_fill_viridis_c(
+    trans = "sqrt",
+    limits = c(0, quantile(exp(pred_dat$est), 0.995))
+  ) +
+  facet_wrap(year~mesh) +
   ggtitle("Prediction (fixed effects + all random effects)")
-plot_map(pred_nch$data, "exp(est)") +
-  scale_fill_viridis_c(trans = "sqrt") +
-  ggtitle("Prediction (fixed effects + all random effects)")
+omega_pred <- plot_map(pred_dat %>% filter(year == "2012"), "omega_s") +
+  scale_fill_gradient2() +
+  facet_wrap(~mesh) +
+  ggtitle("Prediction (spatial random effects)")
+epsilon_pred <- plot_map(pred_dat, "epsilon_st") +
+  scale_fill_gradient2() +
+  facet_wrap(year~mesh) +
+  ggtitle("Prediction (spatiotemporal random effects)")
 
-# Spatial random effects (temporally stable factors driving changes in abundance)
-plot_map(pred$data, "omega_s") +
-  ggtitle("Spatial random effects only") +
-  scale_fill_gradient2()
-plot_map(pred_nch$data, "omega_s") +
-  ggtitle("Spatial random effects only") +
-  scale_fill_gradient2()
+pdf(here::here("figs", "mesh_comparison", "mesh_spatial_preds.pdf"))
+mean_pred
+omega_pred
+epsilon_pred
+dev.off()
 
-# Spatiotemporal random effects (dynamic drivers)
-plot_map(pred$data, "epsilon_st") +
-  ggtitle("Spatiotemporal random effects only") +
-  scale_fill_gradient2()
-plot_map(pred_nch$data, "epsilon_st") +
-  ggtitle("Spatiotemporal random effects only") +
-  scale_fill_gradient2()
+
+## INDEX ESTIMATES -------------------------------------------------------------
+
+hss_pred2 <- exp_grid %>% 
+  filter(
+    week == "42",
+    survey_f == "hss"
+  )
+
+index_preds <- purrr::map(
+  fit_list, 
+  ~ predict(.x, newdata = hss_pred2, return_tmb_object = TRUE)
+)
+
+index_preds2 <- purrr::map2(
+  index_preds, names(mesh_list),
+  ~ get_index(.x, bias_correct = TRUE) %>% 
+    mutate(
+      mesh = .y
+    )
+)
+inds <- index_preds2 %>% 
+  bind_rows() %>% 
+  # remove early 90s estimates
+  filter(!year < 1998)
+
+
+pdf(here::here("figs", "mesh_comparison", "mesh_indices.pdf"))
+ggplot(inds, aes(x = as.factor(year), y = est , fill = mesh)) + 
+  geom_pointrange(aes(ymin = lwr , ymax = upr , fill = mesh),
+                  position = position_dodge(width = 0.75), shape = 21) +
+  ggsidekick::theme_sleek()
+dev.off()
+
+
+## COEFFICIENT ESTIMATES -------------------------------------------------------
+
+fix_pars <- purrr::map2(
+  fit_list, names(mesh_list),
+  ~ tidy(.x, conf.int = T) %>% 
+    mutate(
+      mesh = .y
+    )
+) %>% 
+  bind_rows() %>% 
+  filter(!grepl("year", term))
+
+ran_pars <- purrr::map2(
+  fit_list, names(mesh_list),
+  ~ tidy(.x, "ran_pars", conf.int = T) %>% 
+    mutate(
+      mesh = .y
+    )
+) %>% 
+  bind_rows()
+
+
+pdf(here::here("figs", "mesh_comparison", "mesh_par_ests.pdf"))
+ggplot(fix_pars, aes(x = mesh, y = estimate, fill = mesh)) + 
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high), shape = 21) +
+  ggsidekick::theme_sleek() +
+  facet_wrap(~term, scales = "free_y")
+ggplot(ran_pars, aes(x = mesh, y = estimate, fill = mesh)) + 
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high), shape = 21) +
+  ggsidekick::theme_sleek() +
+  facet_wrap(~term, scales = "free_y")
+dev.off()
+
+
+
+## COMPARE ANISOTROPY V. BARRIER MESH ------------------------------------------
+
+coast_utm <- rbind(rnaturalearth::ne_states( "United States of America", 
+                                             returnclass = "sf"), 
+                   rnaturalearth::ne_states( "Canada", returnclass = "sf")) %>% 
+  sf::st_crop(., 
+              xmin = -137, ymin = 47, xmax = -121.25, ymax = 57) %>% 
+  sf::st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
+
+
+spde <- mesh_list[[3]]
+bspde <- add_barrier_mesh(spde, coast_utm, range_fraction = 0.1,
+                          # scaling = 1000 since UTMs were rescaled above
+                          proj_scaling = 1000)
+
+## Compare anisotropy with finer resolution sdmTMB mesh
+fit_list_ani <- purrr::map2(
+  list(spde, bspde), list(TRUE, FALSE), 
+  ~ sdmTMB(
+    n_juv ~ 1 +
+      as.factor(year) +
+      dist_to_coast_km +
+      s(week, bs = "cc", k = 5) +
+      target_depth +
+      day_night +
+      survey_f,
+    offset = pink_dat$effort,
+    data = pink_dat,
+    mesh = .x,
+    family = sdmTMB::nbinom2(),
+    spatial = "on",
+    spatiotemporal = "iid",
+    time = "year",
+    anisotropy = .y,
+    knots = list(
+      week = c(0, 52)
+    ),
+    control = sdmTMBcontrol(
+      newton_loops = 1
+    )
+  )
+)
