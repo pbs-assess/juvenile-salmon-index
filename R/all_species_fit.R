@@ -19,46 +19,35 @@ dat <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>%
     utm_y_1000 = utm_y / 1000,
     effort = log(volume_m3),
     week = lubridate::week(date),
-    vessel = as.factor(vessel),
-    # redefine bins for all species except chinook
-    target_depth_bin = case_when(
-      species %in% c("SOCKEYE", "PINK") & 
-        target_depth_bin %in% c("30", "45", "60") ~ ">30",
-      species %in% c("COHO", "CHUM") & 
-        target_depth_bin %in% c("45", "60") ~ ">45",
-      species == "CHINOOK" & target_depth_bin == "60" ~ ">60",
-      TRUE ~ as.character(target_depth_bin)
-    )
-  ) %>% 
+    vessel = as.factor(vessel)
+    ) %>% 
+  filter(!year %in% c("1997", "2022"),
+         !bath_depth_mean_m < 0) %>% 
   droplevels() 
 
 
 # keep early years in dataset for now but exclude 2022 and consider dropping 
 # years with v. limited summer data
-dat_in <- dat %>% 
-  filter(!year == "2022",
-         !bath_depth_mean_m < 0)
-
-
-coast_utm <- rbind(rnaturalearth::ne_states( "United States of America", 
-                                             returnclass = "sf"), 
-                   rnaturalearth::ne_states( "Canada", returnclass = "sf")) %>% 
-  sf::st_crop(., 
-              xmin = -137, ymin = 47, xmax = -121.25, ymax = 57) %>% 
-  sf::st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
-
-# make meshes (differ among groups because off pooling of depth strata)
-dat_tbl <- dat_in %>% 
+dat_tbl <- dat  %>% 
   group_by(species) %>% 
-  group_nest() %>% 
-  mutate(
-    spde = purrr::map(data, make_mesh,  c("utm_x_1000", "utm_y_1000"), 
-                      cutoff = 15, type = "kmeans"),
-    bspde = purrr::map(spde, add_barrier_mesh,
-                       coast_utm, range_fraction = 0.1,
-                       # scaling = 1000 since UTMs were rescaled above
-                       proj_scaling = 1000)
-  )
+  group_nest() 
+
+
+## coordinates should be common to all species
+dat_coords <- dat %>% 
+  filter(species == "PINK") %>% 
+  cbind(.$utm_x_1000, .$utm_y_1000)
+inla_mesh_raw <- INLA::inla.mesh.2d(
+  loc = dat_coords,
+  max.edge = c(1, 5) * 500,
+  cutoff = 20,
+  offset = c(20, 200)
+) 
+spde <- make_mesh(
+  dat_coords, 
+  c("utm_x_1000", "utm_y_1000"),
+  mesh = inla_mesh_raw
+) 
 
 
 # prep multisession

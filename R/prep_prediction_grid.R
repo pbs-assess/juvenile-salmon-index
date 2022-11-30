@@ -57,15 +57,18 @@ if (Sys.info()['sysname'] == "Windows") {
 #   paste(big_bathy_path, "usgsCeCrm8_703b_754f_94dc.nc", sep = "/"))
 ncin <- nc_open(
   paste(
-    big_bathy_path, "gebco_2022_n58.9197_s47.033_w-137.9622_e-121.9747_ipes.nc",
+    big_bathy_path, 
+    "gebco_2022_n58.9197_s47.033_w-137.9622_e-121.9747_ipes.nc",
     sep = "/"
   )
 )
 
 #specify lat/long
-dep_list <- list(lon = ncvar_get(ncin, "lon"),
-                    lat = ncvar_get(ncin, "lat"),
-                    dep = ncvar_get(ncin, "elevation"))
+dep_list <- list(
+  lon = ncvar_get(ncin, "lon"),
+  lat = ncvar_get(ncin, "lat"),
+  dep = ncvar_get(ncin, "elevation")
+)
 
 # function create dataframe
 dep_dat_f <- function(x) {
@@ -83,25 +86,20 @@ dep_dat_full <- dep_dat_f(dep_list) %>%
 
 # convert each to raster, downscale, and add terrain data to both
 # then convert back to dataframes
-bc_raster <- rasterFromXYZ(dep_dat_full, 
-                           crs = sp::CRS("+proj=longlat +datum=WGS84"))
-bc_raster_utm <- projectRaster(bc_raster,
-                               crs = sp::CRS("+proj=utm +zone=9 +units=m"),
-                               # convert to 1000 m resolution
-                               res = 1000)
+bc_raster <- rasterFromXYZ(
+  dep_dat_full, 
+  crs = sp::CRS("+proj=longlat +datum=WGS84")
+)
+bc_raster_utm <- projectRaster(
+  bc_raster,
+  crs = sp::CRS("+proj=utm +zone=9 +units=m"),
+  # convert to 1000 m resolution
+  res = 1000
+)
 
 # save RDS for manuscript figs
 saveRDS(bc_raster, 
         here::here("data", "spatial", "full_coast_raster_latlon_1000m.RDS"))
-
-
-plot(bc_raster_utm)
-# plot(ipes_grid_raw, 
-#      add = T,
-#      border = "blue")
-plot(ipes_wcvi_grid_raw, 
-     add = T,
-     border = "blue")
 
 
 # crop to survey grid
@@ -110,46 +108,57 @@ ipes_raster_utm <- mask(dum, ipes_grid_raw)
 wcvi_ipes_raster_utm <- mask(dum, ipes_wcvi_grid_raw)
 
 
-
 # # merge and add aspect/slope
-wcvi_ipes_raster_slope <- terrain(wcvi_ipes_raster_utm, opt = 'slope', unit = 'degrees',
-                              neighbors = 8)
-wcvi_ipes_raster_aspect <- terrain(wcvi_ipes_raster_utm, opt = 'aspect', unit = 'degrees',
-                               neighbors = 8)
+wcvi_ipes_raster_slope <- terrain(
+  wcvi_ipes_raster_utm, opt = 'slope', unit = 'degrees',
+  neighbors = 8
+)
+wcvi_ipes_raster_aspect <- terrain(
+  wcvi_ipes_raster_utm, opt = 'aspect', unit = 'degrees',
+  neighbors = 8
+)
 wcvi_ipes_raster_list <- list(
   depth = wcvi_ipes_raster_utm,
   slope = wcvi_ipes_raster_slope,
   aspect = wcvi_ipes_raster_aspect
 )
+ipes_raster_slope <- terrain(
+  ipes_raster_utm, opt = 'slope', unit = 'degrees',
+  neighbors = 8
+)
+ipes_raster_aspect <- terrain(
+  ipes_raster_utm, opt = 'aspect', unit = 'degrees',
+  neighbors = 8
+)
+ipes_raster_list <- list(
+  depth = ipes_raster_utm,
+  slope = ipes_raster_slope,
+  aspect = ipes_raster_aspect
+)
 
-ipes_raster_list <- purrr::map(wcvi_ipes_raster_list, function (x) {
-  dum <- crop(x, extent(ipes_grid_raw))
-  mask(dum, x)
-})
+# combine ipes and wcvi lists for subsequent cleaning
+raster_list <- c(wcvi_ipes_raster_list, ipes_raster_list)
+names(raster_list) <- c(
+  paste("wcvi", names(wcvi_ipes_raster_list), sep = "_"),
+  paste("ipes", names(ipes_raster_list), sep = "_")
+)
 
 saveRDS(bc_raster_utm,
         here::here("data", "spatial", "coast_raster_utm_1000m.RDS"))
-saveRDS(ipes_raster_list,
-        here::here("data", "spatial", "ipes_raster_utm_1000m.RDS"))
+saveRDS(raster_list,
+        here::here("data", "spatial", "wcvi_ipes_raster_utm_1000m.RDS"))
 
 
 
 ## GENERATE GRID ---------------------------------------------------------------
 
-# lower resolution raster list generated above
-ipes_raster_list <- readRDS(
-  here::here("data", "spatial", "ipes_raster_utm_2000m.RDS"))
+# raster list generated above
+raster_list <- readRDS(
+        here::here("data", "spatial", "wcvi_ipes_raster_utm_1000m.RDS"))
 
-
-# boundary box for receiver locations
-min_lat <- min(dat_trim$mean_lat - 0.1)
-max_lat <- max(dat_trim$mean_lat + 0.1)
-min_lon <- min(dat_trim$mean_lon - 0.1)
-max_lon <- max(dat_trim$mean_lon + 0.1)
-
-ipes_sf_list <- purrr::map2(
-  ipes_raster_list,
-  names(ipes_raster_list),
+sf_list <- purrr::map2(
+  raster_list,
+  names(raster_list),
   function (x, y) {
     as(x, 'SpatialPixelsDataFrame') %>%
       as.data.frame() %>%
@@ -160,7 +169,9 @@ ipes_sf_list <- purrr::map2(
 
 
 # join depth and slope data
-ipes_sf <- st_join(ipes_sf_list$depth, ipes_sf_list$slope) 
+wcvi_sf <- st_join(sf_list$wcvi_depth, sf_list$wcvi_slope) 
+ipes_sf <- st_join(sf_list$ipes_depth, sf_list$ipes_slope) 
+
 
 # coast sf for plotting and calculating distance to coastline 
 # (has to be lat/lon for dist2Line)
@@ -170,48 +181,60 @@ coast <- rbind(rnaturalearth::ne_states( "United States of America",
   sf::st_crop(., 
               xmin = min_lon, ymin = 48, xmax = max_lon, ymax = max_lat) 
 
+
 ## convert to lat/lon for coast distance function 
-ipes_sf_deg <- ipes_sf %>%
+wcvi_sf_deg <- wcvi_sf %>%
   st_transform(., crs = st_crs(coast))
 
+# calculate distance to coastline for WCVI SF object
+coast_dist <- geosphere::dist2Line(
+  p = sf::st_coordinates(wcvi_sf_deg),
+  line = as(coast, 'Spatial')
+)
 
-# calculate distance to coastline
-coast_dist <- geosphere::dist2Line(p = sf::st_coordinates(ipes_sf_deg),
-                                   line = as(coast, 'Spatial'))
+# combine all data
+wcvi_grid <- data.frame(
+  st_coordinates(wcvi_sf[ , 1]),
+  depth = wcvi_sf$depth,
+  slope = wcvi_sf$slope,
+  shore_dist = coast_dist[, "distance"]
+)
+# use coast_dist of wcvi_grid for ipes
+ipes_grid <- data.frame(
+  st_coordinates(ipes_sf[ , 1]),
+  depth = ipes_sf$depth,
+  slope = ipes_sf$slope
+) %>% 
+  left_join(., 
+            wcvi_grid %>% select(X, Y, shore_dist),
+            by = c("X", "Y")) 
+
+# interpolate missing data in both 
+wcvi_grid_interp <- VIM::kNN(wcvi_grid, k = 5)
+ipes_grid_interp <- VIM::kNN(ipes_grid, k = 5)
+
 
 coast_utm <- coast %>% 
   sf::st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
 
-
-# combine all data
-ipes_grid <- data.frame(
-  st_coordinates(ipes_sf[ , 1]),
-  depth = ipes_sf$depth,
-  slope = ipes_sf$slope,
-  shore_dist = coast_dist[, "distance"]
-)
-# ipes_grid_trim <- ipes_grid %>% filter(!depth > 500)
-
-# interpolate missing data 
-ipes_grid_interp <- VIM::kNN(ipes_grid, k = 5)
-
-
 ggplot() + 
   geom_sf(data = coast_utm) +
-  geom_raster(data = ipes_grid_interp, aes(x = X, y = Y, fill = depth)) +
+  geom_sf(data = ipes_sf, aes(fill = depth)) +
+  # geom_raster(data = wcvi_grid_interp, aes(x = X, y = Y, fill = depth)) +
   scale_fill_viridis_c() +
-  # geom_point(data = dat_trim, aes(x = utm_x, y = utm_y),
-  #            fill = "white",
-  #            shape = 21) +
   ggsidekick::theme_sleek()
 
 
-# export grid
-saveRDS(ipes_grid_interp %>% 
-          select(-ends_with("imp")),
+# export grids as list
+grid_list <- list(
+  wcvi_grid = wcvi_grid_interp %>% 
+    select(-ends_with("imp")),
+  ipes_grid = ipes_grid_interp %>% 
+    select(-ends_with("imp"))
+)
+
+saveRDS(grid_list,
         here::here("data", "spatial", "pred_ipes_grid.RDS"))
 saveRDS(coast_utm, here::here("data", "spatial", "coast_trim_utm.RDS"))
 
 
-
-### MAKE SIMILAR GRID TO ABOVE THAT INCLUDES INLETS ----------------------------
