@@ -92,37 +92,37 @@ ggplot(dat_in) +
 ### FIT SPATIAL ----------------------------------------------------------------
 
 
-spatial_mod <- furrr::future_map2(
-  dat_tbl$data, dat_tbl$bspde, function (x, spde_in) {
-    sdmTMB(
-      n_juv ~ dist_to_coast_km +
-        s(week, bs = "cc", k = 5) +
-        s(target_depth, bs = "tp", k = 4) +
-        day_night +
-        survey_f,
-      offset = x$effort,
-      data = x,
-      mesh = spde_in,
-      family = sdmTMB::nbinom2(),
-      spatial = "on",
-      anisotropy = FALSE,
-      priors = sdmTMBpriors(
-        matern_s = pc_matern(range_gt = 10, sigma_lt = 80)
-      ),
-      knots = list(
-        week = c(0, 52)
-      ),
-      control = sdmTMBcontrol(
-        nlminb_loops = 2,
-        newton_loops = 1
-      )
-    )
-  },
-  .options = furrr::furrr_options(seed = TRUE)
-)
-
-purrr::map(spatial_mod, sanity)
-purrr::map(spatial_mod, summary)
+# spatial_mod <- furrr::future_map2(
+#   dat_tbl$data, dat_tbl$bspde, function (x, spde_in) {
+#     sdmTMB(
+#       n_juv ~ dist_to_coast_km +
+#         s(week, bs = "cc", k = 5) +
+#         s(target_depth, bs = "tp", k = 4) +
+#         day_night +
+#         survey_f,
+#       offset = x$effort,
+#       data = x,
+#       mesh = spde_in,
+#       family = sdmTMB::nbinom2(),
+#       spatial = "on",
+#       anisotropy = FALSE,
+#       priors = sdmTMBpriors(
+#         matern_s = pc_matern(range_gt = 10, sigma_lt = 80)
+#       ),
+#       knots = list(
+#         week = c(0, 52)
+#       ),
+#       control = sdmTMBcontrol(
+#         nlminb_loops = 2,
+#         newton_loops = 1
+#       )
+#     )
+#   },
+#   .options = furrr::furrr_options(seed = TRUE)
+# )
+# 
+# purrr::map(spatial_mod, sanity)
+# purrr::map(spatial_mod, summary)
 
 
 ### FIT SATURATED --------------------------------------------------------------

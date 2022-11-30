@@ -17,21 +17,7 @@ dat <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>%
     effort = log(volume_m3),
     week = lubridate::week(date),
     vessel = as.factor(vessel),
-    # redefine bins for all species except chinook
-    target_depth_bin = case_when(
-      species %in% c("SOCKEYE", "PINK") & 
-        target_depth_bin %in% c("30", "45", "60") ~ ">30",
-      species %in% c("COHO", "CHUM") & 
-        target_depth_bin %in% c("45", "60") ~ ">45",
-      species == "CHINOOK" & target_depth_bin == "60" ~ ">60",
-      TRUE ~ as.character(target_depth_bin)
-    ),
-    even_year = ifelse(is.even(year), TRUE, FALSE),
-    species = case_when(
-      species == "PINK" & even_year == TRUE ~ "PINK_EVEN",
-      species == "PINK" & even_year == FALSE ~ "PINK_ODD",
-      TRUE ~ species
-    )
+    even_year = ifelse(is.even(year), TRUE, FALSE)
   ) %>% 
   droplevels() 
 
@@ -39,113 +25,59 @@ dat <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>%
 # keep early years in dataset for now but exclude 2022 and consider dropping 
 # years with v. limited summer data
 dat_in <- dat %>% 
-  filter(!year == "2022",
+  filter(!year < 1998,
+         !year == "2022",
          !bath_depth_mean_m < 0)
+dat_pink <- dat_in %>% filter(species == "PINK")
+dat_pink_odd <-  dat_in %>% filter(species == "PINK" & even_year == FALSE)
+dat_pink_even <-  dat_in %>% filter(species == "PINK" & even_year == TRUE)
 
-
-coast_utm <- rbind(rnaturalearth::ne_states( "United States of America", 
-                                             returnclass = "sf"), 
-                   rnaturalearth::ne_states( "Canada", returnclass = "sf")) %>% 
-  sf::st_crop(., 
-              xmin = -137, ymin = 47, xmax = -121.25, ymax = 57) %>% 
-  sf::st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
-
-# make meshes (differ among groups because off pooling of depth strata)
-dat_tbl_temp <- dat_in %>% 
-  filter(species %in% c("PINK_EVEN", "PINK_ODD")) %>% 
-  group_by(species) %>% 
-  group_nest() %>% 
-  mutate(
-    spde = purrr::map(data, make_mesh,  c("utm_x_1000", "utm_y_1000"), 
-                      cutoff = 15, type = "kmeans"),
-    bspde = purrr::map(spde, add_barrier_mesh,
-                       coast_utm, range_fraction = 0.1,
-                       # scaling = 1000 since UTMs were rescaled above
-                       proj_scaling = 1000)
-  )
-
-
-
-pink_st_odd <- sdmTMB(
-  n_juv ~ 1 +
-    dist_to_coast_km +
-    s(week, bs = "cc", k = 5) +
-    target_depth +
-    day_night +
-    survey_f,
-  offset = dat_tbl_temp$data[[2]]$effort,
-  data = dat_tbl_temp$data[[2]],
-  mesh = dat_tbl_temp$bspde[[2]],
-  family = sdmTMB::nbinom2(),
-  spatial = "on",
-  spatiotemporal = "iid",
-  time = "year",
-  anisotropy = FALSE,
-  priors = sdmTMBpriors(
-    matern_s = pc_matern(range_gt = 10, sigma_lt = 80)
-  ),
-  knots = list(
-    week = c(0, 52)
-  ),
-  control = sdmTMBcontrol(
-    nlminb_loops = 2,
-    newton_loops = 1
-  )
+# make meshes
+dat_list <- list(dat_pink, dat_pink_odd, dat_pink_even)
+mesh_list <- purrr::map(
+  dat_list, 
+  ~ {
+    inla_mesh_raw <- INLA::inla.mesh.2d(
+      loc = cbind(.x$utm_x_1000, .x$utm_y_1000),
+      max.edge = c(1, 5) * 500,
+      cutoff = 20,
+      offset = c(20, 200)
+    ) 
+    make_mesh(.x, 
+              c("utm_x_1000", "utm_y_1000"),
+              mesh = inla_mesh_raw) 
+  }
 )
 
-pink_st_even <- sdmTMB(
-  n_juv ~ 1 +
-    dist_to_coast_km +
-    s(week, bs = "cc", k = 5) +
-    target_depth +
-    day_night +
-    survey_f,
-  offset = dat_tbl_temp$data[[1]]$effort,
-  data = dat_tbl_temp$data[[1]],
-  mesh = dat_tbl_temp$bspde[[1]],
-  family = sdmTMB::nbinom2(),
-  spatial = "on",
-  spatiotemporal = "iid",
-  time = "year",
-  anisotropy = FALSE,
-  priors = sdmTMBpriors(
-    matern_s = pc_matern(range_gt = 10, sigma_lt = 80)
-  ),
-  knots = list(
-    week = c(0, 52)
-  ),
-  control = sdmTMBcontrol(
-    nlminb_loops = 2,
-    newton_loops = 1
-  )
-)
-
-
-pink_st_even2 <- sdmTMB(
-  n_juv ~ 1 +
-    # dist_to_coast_km +
-    s(week, bs = "cc", k = 5) +
-    target_depth +
-    # day_night +
-    survey_f,
-  offset = dat_tbl_temp$data[[1]]$effort,
-  data = dat_tbl_temp$data[[1]],
-  mesh = dat_tbl_temp$bspde[[1]],
-  family = sdmTMB::nbinom2(),
-  spatial = "on",
-  spatiotemporal = "iid",
-  time = "year",
-  anisotropy = FALSE,
-  # priors = sdmTMBpriors(
-  #   matern_s = pc_matern(range_gt = 10, sigma_lt = 80)
-  # ),
-  knots = list(
-    week = c(0, 52)
-  ),
-  control = sdmTMBcontrol(
-    nlminb_loops = 2,
-    newton_loops = 1
-  )
+fit_list <- purrr::map2(
+  dat_list, mesh_list, 
+  ~ {
+    sdmTMB(
+      n_juv ~ 1 +
+        as.factor(year) +
+        dist_to_coast_km +
+        s(week, bs = "cc", k = 5) +
+        target_depth +
+        day_night +
+        survey_f,
+      offset = .x$effort,
+      data = .x,
+      mesh = .y,
+      family = sdmTMB::nbinom2(),
+      spatial = "on",
+      spatiotemporal = "iid",
+      time = "year",
+      anisotropy = TRUE,
+      share_range = FALSE,
+      knots = list(
+        week = c(0, 52)
+      ),
+      control = sdmTMBcontrol(
+        newton_loops = 1
+      ),
+      silent = FALSE
+    )
+  }
 )
 
 
@@ -181,10 +113,8 @@ ggplot(pink_dat) +
 
 ### CHECK PREDS ----------------------------------------------------------------
 
-pink_st_list <- list(dat_tbl$st_mod[[4]],
-                     pink_st_odd,
-                     pink_st_even)
-names(pink_st_list) <- c("full", "odd", "even")
+pink_st_list <- fit_list[c(1, 3)] #ignore odd due to convergence issues
+names(pink_st_list) <- c("full", "even")
 
 # new df 
 week_dat <- data.frame(
@@ -195,21 +125,18 @@ week_dat <- data.frame(
   survey_f = "hss",
   year = 2012L
 ) 
-week_dat_odd <- week_dat %>% mutate(year = 2011L)
 
-pred_full <-  predict(dat_tbl$st_mod[[4]], 
+pred_full <-  predict(pink_st_list[[1]], 
                       newdata = week_dat, 
                       se_fit = T, 
                       re_form = NA) %>%
   mutate(model = "full")
-pred_even <-  predict(pink_st_even, 
+pred_even <-  predict(pink_st_list[[2]], 
                       newdata = week_dat, se_fit = T, re_form = NA) %>%
   mutate(model = "even")
-pred_odd <-  predict(pink_st_odd, 
-                      newdata = week_dat_odd, se_fit = T, re_form = NA) %>%
-  mutate(model = "odd")
 
-pink_preds <- list(pred_full, pred_even, pred_odd) %>% 
+pink_preds <- list(pred_full, pred_even#, pred_odd
+                   ) %>% 
   bind_rows() %>% 
   mutate(
     up = est + 1.96 * est_se,
@@ -222,13 +149,13 @@ pink_preds <- list(pred_full, pred_even, pred_odd) %>%
 
 ggplot(
   pink_preds,
-  aes(week, exp_est, ymin = exp_lo, ymax = exp_up,
+  aes(week, exp_est, #ymin = exp_lo, ymax = exp_up,
              fill = model)
 ) +
   ggsidekick::theme_sleek() +
   ylab("Abundance Index") +
   geom_line() +
-  geom_ribbon(alpha = 0.3) +
+  # geom_ribbon(alpha = 0.3) +
   scale_x_continuous(expand = c(0, 0)) 
 
 
