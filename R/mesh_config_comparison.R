@@ -35,9 +35,10 @@ pink_dat <- dat_in %>%
 max_edge = 30 # based on 0.2 * 180 
 bound_outer = 150
 
+pink_points <- cbind(pink_dat$utm_x_1000, pink_dat$utm_y_1000)
 
 inla_mesh_raw <- INLA::inla.mesh.2d(
-  loc = cbind(pink_dat$utm_x_1000, pink_dat$utm_y_1000),
+  loc = pink_points,
   max.edge = c(1, 5) * max_edge,
   # - use 5 times max.edge in the outer extension/offset/boundary
   cutoff = max_edge / 5,
@@ -50,7 +51,7 @@ inla_mesh <- make_mesh(pink_dat,
 # still extremely high resolution
 
 inla_mesh2_raw <- INLA::inla.mesh.2d(
-  loc = cbind(pink_dat$utm_x_1000, pink_dat$utm_y_1000),
+  loc = pink_points,
   max.edge = c(1, 5) * 1000,
   # - use 5 times max.edge in the outer extension/offset/boundary
   cutoff = max_edge / 5,
@@ -75,8 +76,8 @@ sdm_mesh3 <- make_mesh(pink_dat,
                        c("utm_x_1000", "utm_y_1000"),
                        cutoff = 20)
 inla_mesh3_raw <- INLA::inla.mesh.2d(
-  loc = cbind(pink_dat$utm_x_1000, pink_dat$utm_y_1000),
-  max.edge = c(1, 5) * 1000,
+  loc = pink_points,
+  max.edge = c(1, 5) * 500,
   cutoff = 20,
   offset = c(20, 200)
 ) 
@@ -84,14 +85,19 @@ inla_mesh3 <- make_mesh(pink_dat,
   c("utm_x_1000", "utm_y_1000"),
   mesh = inla_mesh3_raw) 
 
-mesh_list <- list(inla_mesh, inla_mesh2, sdm_mesh, sdm_mesh2, sdm_mesh3, inla_mesh3)
-names(mesh_list) <- c("inla_vfine", "inla_fine", "sdm_coarse", "sdm_cutoff30", "sdm_cutoff20", "inla_cutoff20")
+mesh_list <- list(inla_mesh, inla_mesh2, sdm_mesh, sdm_mesh2, 
+                  sdm_mesh3, inla_mesh3)
+names(mesh_list) <- c("inla_vfine", "inla_fine", "sdm_coarse", "sdm_cutoff30",
+                      "sdm_cutoff20", "inla_cutoff20")
 
 purrr::map(mesh_list, ~ .x$mesh$n)
 par(mfrow = c(2, 3))
 purrr::map2(mesh_list, names(mesh_list), 
   ~ {plot(.x$mesh, main = "", asp = 1);mtext(.y)})
 par(mfrow = c(1, 1))
+
+INLA::meshbuilder()
+
 
 ## Fit both models -------------------------------------------------------------
 
