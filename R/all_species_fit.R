@@ -21,22 +21,27 @@ dat <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>%
     week = lubridate::week(date),
     vessel = as.factor(vessel)
     ) %>% 
-  filter(!year %in% c("1997", "2022"),
+  # exclude 1995 and 1997 because sampling sparse
+  filter(!year %in% c("1995", "1997", "2022"),
          !bath_depth_mean_m < 0) %>% 
   droplevels() 
 
 
-# keep early years in dataset for now but exclude 2022 and consider dropping 
 # years with v. limited summer data
 dat_tbl <- dat  %>% 
   group_by(species) %>% 
-  group_nest() 
-
+  group_nest() %>% 
+  mutate(
+    # assign share_range based on AIC (see notes for details)
+    share_range = ifelse(species %in% c("CHINOOK", "SOCKEYE"), FALSE, TRUE)
+  )
 
 ## coordinates should be common to all species
 dat_coords <- dat %>% 
   filter(species == "PINK") %>% 
-  cbind(.$utm_x_1000, .$utm_y_1000)
+  select(utm_x_1000, utm_y_1000) %>% 
+  as.matrix()
+
 inla_mesh_raw <- INLA::inla.mesh.2d(
   loc = dat_coords,
   max.edge = c(1, 5) * 500,
@@ -44,7 +49,7 @@ inla_mesh_raw <- INLA::inla.mesh.2d(
   offset = c(20, 200)
 ) 
 spde <- make_mesh(
-  dat_coords, 
+  dat %>% filter(species == "PINK"),
   c("utm_x_1000", "utm_y_1000"),
   mesh = inla_mesh_raw
 ) 
@@ -116,43 +121,44 @@ ggplot(dat_in) +
 
 ### FIT SATURATED --------------------------------------------------------------
 
-st_mod <- furrr::future_pmap(
-  list(dat_tbl$data, dat_tbl$bspde, dat_tbl$species),
-  function (x, spde_in, sp_in) {
+st_mod <- furrr::future_map2(
+  dat_tbl$data, dat_tbl$share_range,
+  ~ {
     sdmTMB(
       n_juv ~ 1 +
+        as.factor(year) +
         dist_to_coast_km +
         s(week, bs = "cc", k = 5) +
-        s(target_depth, bs = "tp", k = 4) +
+        target_depth +
+        # s(target_depth, bs = "tp", k = 4) +
         day_night +
         survey_f,
-      offset = x$effort,
-      data = x,
-      mesh = spde_in,
+      offset = .x$effort,
+      data = .x,
+      mesh = spde,
       family = sdmTMB::nbinom2(),
       spatial = "on",
-      spatiotemporal = "AR1",
+      spatiotemporal = "iid",
       time = "year",
-      anisotropy = FALSE,
-      priors = sdmTMBpriors(
-        matern_s = pc_matern(range_gt = 10, sigma_lt = 80)
-      ),
+      anisotropy = TRUE,
+      share_range = .y,
       knots = list(
         week = c(0, 52)
       ),
       control = sdmTMBcontrol(
-        nlminb_loops = 2,
         newton_loops = 1
-      )
+      ),
+      silent = FALSE
     )
   },
   .options = furrr::furrr_options(seed = TRUE)
 )
 
-
 purrr::map(st_mod, sanity)
-purrr::map(st_mod, summary)
+## all look good
 
+dat_tbl$st_mod <- st_mod
+# dat_tbl$aic <- purrr::map(st_mod, AIC) %>% as.numeric()
 
 saveRDS(dat_tbl, here::here("data", "fits", "st_mod_all_sp.rds"))
 
@@ -196,93 +202,80 @@ pred_obs_list <- purrr::pmap(
 
 ## MAKE FE PREDICTIONS ---------------------------------------------------------
 
-
 # make conditional predictive dataframes
 week_dat <- data.frame(
  week = seq(0, 52, length.out = 100),
- dist_to_coast_km = median(dat_in$dist_to_coast_km),
+ dist_to_coast_km = median(dat$dist_to_coast_km),
  day_night = "DAY",
  target_depth = 0,
  survey_f = "hss",
  year = 2012L
 )
 dist_dat <- data.frame(
-  week = median(dat_in$week),
-  dist_to_coast_km = seq(min(dat_in$dist_to_coast_km), 
-                         max(dat_in$dist_to_coast_km), length.out = 100),
+  week = median(dat$week),
+  dist_to_coast_km = seq(min(dat$dist_to_coast_km), 
+                         max(dat$dist_to_coast_km), length.out = 100),
   day_night = "DAY",
   target_depth = 0,
   survey_f = "hss",
   year = 2012L
 )
 day_dat <- data.frame(
-  week = median(dat_in$week),
-  dist_to_coast_km = median(dat_in$dist_to_coast_km),
+  week = median(dat$week),
+  dist_to_coast_km = median(dat$dist_to_coast_km),
   day_night = c("DAY", "NIGHT"),
   target_depth = 0,
   survey_f = "hss",
   year = 2012L
 )
 target_dat <- data.frame(
-  week = median(dat_in$week),
-  dist_to_coast_km = median(dat_in$dist_to_coast_km),
+  week = median(dat$week),
+  dist_to_coast_km = median(dat$dist_to_coast_km),
   day_night = "DAY",
-  target_depth = seq(min(dat_in$target_depth), 
-                         max(dat_in$target_depth), length.out = 100),
+  target_depth = seq(min(dat$target_depth), 
+                         max(dat$target_depth), length.out = 100),
   survey_f = "hss",
   year = 2012L
 )
 survey_dat <- data.frame(
-  week = median(dat_in$week),
-  dist_to_coast_km = median(dat_in$dist_to_coast_km),
+  week = median(dat$week),
+  dist_to_coast_km = median(dat$dist_to_coast_km),
   day_night = "DAY",
   target_depth = 0,
   survey_f = c("hss", "ipes"),
   year = 2012L
 )
 
-# pred_tbl <- tibble(
-#   var = c("week",
-#           "dist_to_coast_km",
-#           "day_night",
-#           "target_depth",
-#           "survey_f"),
-#   data = list(week_dat, dist_dat, day_dat, target_dat, survey_dat),
-#   plot = c("line", "line", "dot", "line", "dot")
-# )
-# 
-# # predict
-# pred_list <- vector(length = nrow(pred_tbl), mode = "list")
-# spatial_pred_list <- vector(length = nrow(pred_tbl), mode = "list")
-# for (i in seq_along(pred_tbl$var)) {
-#   pred_list[[i]] <- furrr::future_map2(
-#     dat_tbl$st_mod, dat_tbl$species, function(x , sp) {
-#       predict(x, newdata = pred_tbl$data[[i]], se_fit = T, re_form = NA) %>%
-#         mutate(species = sp,
-#                up = est + 1.96 * est_se,
-#                lo = est - 1.96 * est_se,
-#                exp_est = exp(est),
-#                exp_up = exp(up),
-#                exp_lo = exp(lo))
-#     }
-#   ) %>%
-#     bind_rows()
-#   spatial_pred_list[[i]] <- furrr::future_map2(
-#     dat_tbl$spatial_mod, dat_tbl$species, function(x , sp) {
-#       predict(x, newdata = pred_tbl$data[[i]], se_fit = T, re_form = NA) %>%
-#         mutate(species = sp,
-#                up = est + 1.96 * est_se,
-#                lo = est - 1.96 * est_se,
-#                exp_est = exp(est),
-#                exp_up = exp(up),
-#                exp_lo = exp(lo))
-#     }
-#   ) %>%
-#     bind_rows()
-# }
-# 
-# pred_tbl$pred_dat <- pred_list
-# pred_tbl$spatial_pred_dat <- spatial_pred_list
+pred_tbl <- tibble(
+  var = c("week",
+          "dist_to_coast_km",
+          "day_night",
+          "target_depth",
+          "survey_f"),
+  data = list(week_dat, dist_dat, day_dat, target_dat, survey_dat),
+  plot = c("line", "line", "dot", "line", "dot")
+)
+
+# predict
+pred_list <- vector(length = nrow(pred_tbl), mode = "list")
+spatial_pred_list <- vector(length = nrow(pred_tbl), mode = "list")
+for (i in seq_along(pred_tbl$var)) {
+  pred_list[[i]] <- furrr::future_map2(
+    dat_tbl$st_mod, dat_tbl$species, function(x , sp) {
+      predict(x, newdata = pred_tbl$data[[i]], se_fit = T, re_form = NA) %>%
+        mutate(species = sp,
+               up = est + 1.96 * est_se,
+               lo = est - 1.96 * est_se,
+               exp_est = exp(est),
+               exp_up = exp(up),
+               exp_lo = exp(lo))
+    }
+  ) %>%
+    bind_rows()
+}
+
+pred_tbl$pred_dat <- pred_list
+pred_tbl$spatial_pred_dat <- spatial_pred_list
 
 # takes a long time so save
 # saveRDS(pred_tbl, here::here("data", "preds", "fe_preds.rds"))
@@ -292,14 +285,9 @@ pred_tbl <- readRDS(here::here("data", "preds", "fe_preds.rds"))
 # make all plots for quick visualization
 plot_eff <- function (dat, x_var, type = c("line", "dot")) {
   p <- dat %>% 
-    # mutate(
-    #   exp_est = exp(est),
-    #   up = exp(est + 1.96 * est_se),
-    #   lo = exp(est - 1.96 * est_se)
-    # ) %>% 
     ggplot(
     ., 
-    aes_string(x_var, "exp_est", ymin = "lo", ymax = "up")
+    aes_string(x_var, "exp_est", ymin = "exp_lo", ymax = "exp_up")
   ) +
     facet_wrap(~species, scales = "free_y") +
     labs(title = x_var) +
@@ -320,10 +308,6 @@ pdf(here::here("figs", "fixed_effects.pdf"), width = 8, height = 5)
 purrr::pmap(list(pred_tbl$pred_dat, pred_tbl$var, pred_tbl$plot), plot_eff)
 dev.off()
 
-pdf(here::here("figs", "spatial_fixed_effects.pdf"), width = 8, height = 5)
-purrr::pmap(list(pred_tbl$spatial_pred_dat, pred_tbl$var, pred_tbl$plot), 
-            plot_eff)
-dev.off()
 
 
 # make individual plots for ms
@@ -339,8 +323,8 @@ pred_tbl$adj_pred_dat <- purrr::map(
     )
 ) 
 p_dat <- pred_tbl %>% 
-  select(var, adj_pred_dat) %>% 
-  unnest(cols = adj_pred_dat) %>% 
+  select(var, pred_dat) %>% 
+  unnest(cols = pred_dat) %>% 
   mutate(species = tolower(species),
          day_night = tolower(day_night),
          survey_f = toupper(survey_f))
@@ -361,15 +345,23 @@ pp_foo <- function(dat, x_var, y_var = "exp_est", ymin_var = "exp_lo",
     ylab("Abundance Index")
 }
 
-png(here::here("figs", "ms_figs", "week_preds.png"), height = 4, width = 5,
+png(here::here("figs", "ms_figs", "week_preds.png"), height = 6.5, width = 5,
     units = "in", res = 200)
-pp_foo(
-  dat = p_dat %>% filter(var == "week"),
-  x_var = "week"
+# pp_foo(
+#   dat = p_dat %>% filter(var == "week"),
+#   x_var = "week"
+# ) +
+ggplot(
+  p_dat %>% filter(var == "week"),
+  aes_string(x = "week", y = "exp_est", color = "species")
 ) +
+  ggsidekick::theme_sleek() +
+  scale_color_manual(values = col_pal) +
+  ylab("Abundance Index") + 
   geom_line() +
-  geom_ribbon(alpha = 0.3) +
+  # geom_ribbon(alpha = 0.3) +
   scale_x_continuous(expand = c(0, 0)) +
+  # facet_wrap(~species, ncol = 1) +
   xlab("Week") 
 dev.off()
 
