@@ -534,14 +534,6 @@ fall_years <- dat %>%
   pull(year) %>% 
   unique()
 
-
-# stock_preds <- dat_tbl %>%
-#   select(species, spatial_preds) %>%
-#   unnest(cols = spatial_preds) %>%
-#   select(-est, -epsilon_st, -year) %>%
-#   distinct()
-
-
 plot_map <- function(dat, column) {
   ggplot(dat, aes_string("utm_x_1000", "utm_y_1000", fill = column)) +
     geom_raster() +
@@ -553,72 +545,81 @@ plot_map <- function(dat, column) {
 # fixed effects plots
 summ_tbl <- spatial_pred_tbl %>%
   filter(season == "summer")
-pdf(here::here("figs", "ms_figs", "summer_fe_preds.pdf"), height =8, width = 8)
-summer_fe_plot_list <- purrr::map2(
-    summ_tbl$spatial_preds, summ_tbl$species,
-    ~ {
-      max_est <- quantile(exp(.x$est), 0.995)
-      
-      .x %>% 
-        filter(
-          year %in% summer_years
-        ) %>% 
-        plot_map(., "exp(est)") +
-        scale_fill_viridis_c(
-          trans = "sqrt",
-          limits = c(0, max_est)
-        ) +
-        facet_wrap(~year) +
-        ggtitle(
-          paste(.y, "Prediction (fixed effects + all random effects)")
-        )
-    }
-  )
-dev.off()
+for (i in seq_along(summ_tbl$species)) {
+  .x <- summ_tbl$spatial_preds[[i]]
+  .y <- summ_tbl$species[[i]]
+  max_est <- quantile(exp(.x$est), 0.995)
+  p <- .x %>% 
+    filter(
+      year %in% fall_years
+    ) %>% 
+    plot_map(., "exp(est)") +
+    scale_fill_viridis_c(
+      trans = "sqrt",
+      limits = c(0, max_est)
+    ) +
+    facet_wrap(~year)
+  png(here::here("figs", "ms_figs", "summer_fe_preds",
+                 paste(.y, "summer_pred.png", sep = "_")), 
+      height = 8, width = 8, units = "in", res = 200)
+  print(p)
+  dev.off() 
+}
 
 fall_tbl <- spatial_pred_tbl %>%
   filter(season == "fall")
-pdf(here::here("figs", "ms_figs", "fall_fe_preds.pdf"), height =8, width = 8)
-purrr::map2(
-  fall_tbl$spatial_preds, fall_tbl$species,
-  ~ {
-    max_est <- quantile(exp(.x$est), 0.995)
-    
-    .x %>% 
-      filter(
-        year %in% fall_years
-      ) %>% 
-      plot_map(., "exp(est)") +
-      scale_fill_viridis_c(
-        trans = "sqrt",
-        limits = c(0, max_est)
-      ) +
-      facet_wrap(~year) +
-      ggtitle(
-        paste(.y, "Prediction (fixed effects + all random effects)")
-      )
-  }
-)
+for (i in seq_along(fall_tbl$species)) {
+  .x <- fall_tbl$spatial_preds[[i]] %>% 
+    filter(
+      year %in% fall_years
+    )
+  .y <- fall_tbl$species[[i]]
+  
+  # total effects
+  max_est <- quantile(exp(.x$est), 0.995)
+  p <- .x  %>% 
+    plot_map(., "exp(est)") +
+    scale_fill_viridis_c(
+      trans = "sqrt",
+      limits = c(0, max_est)
+    ) +
+    facet_wrap(~year)
+  png(here::here("figs", "ms_figs", "fall_fe_preds",
+                 paste(.y, "fall_pred.png", sep = "_")), 
+      height = 8, width = 8, units = "in", res = 200)
+  print(p)
+  dev.off() 
+  
+  # epsilon effects
+  q <- .x %>% 
+    plot_map(., "epsilon_st") +
+    scale_fill_gradient2() +
+    facet_wrap(~year)
+  png(here::here("figs", "ms_figs", "fall_fe_preds",
+                 paste(.y, "fall_eps.png", sep = "_")), 
+      height = 8, width = 8, units = "in", res = 200)
+  print(q)
+  dev.off() 
+}
+
+
+# spatial random effects by species and season
+omega_dat <- spatial_pred_tbl %>% 
+  select(-week) %>% 
+  unnest(cols = "spatial_preds") %>% 
+  select(-c(year, fake_survey, est, est_non_rf, est_rf, epsilon_st)) %>%
+  # remove duplicated summer data
+  filter(survey_f == "hss") %>% 
+  distinct() %>% 
+  mutate(season = fct_relevel(season, "fall", after = Inf))
+
+
+png(here::here("figs", "ms_figs", "spatial_rf.png"), 
+    height = 8, width = 5, units = "in", res = 200)
+plot_map(omega_dat, "omega_s") +
+  scale_fill_gradient2() +
+  facet_grid(species~season)
 dev.off()
-
-plot_map(stock_preds, "est_rf") +
-  scale_fill_gradient2(
-  ) +
-  ggtitle("Prediction (spatial random effects only)") +
-  facet_wrap(~species)
-
-dd <- stock_preds %>% 
-  filter(year == "2012") %>% 
-  mutate(
-    exp_est = exp(est)
-  )
-plot_map(dd,
-         "est") +
-  scale_fill_viridis_c(
-    # trans = "sqrt",
-    # limits = c(0, quantile(exp(dd$est), 0.995))
-  ) +
-  facet_wrap(~species)
 
 
 
