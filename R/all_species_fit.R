@@ -447,6 +447,32 @@ pp_foo(
 dev.off()
 
 
+# ## calculate when abundance = median for depth and distance
+# pred_tbl$pred_dat[[2]] %>% 
+#   group_by(species) %>% 
+#   mutate(
+#     mid_est = 0.5 * (max(exp_est) - min(exp_est)),
+#     diff_est = abs(exp_est - mid_est)
+#   ) %>% 
+#   filter(
+#     diff_est == min(diff_est)
+#   ) %>%
+#   select(species, dist_to_coast_km, mid_est, diff_est)
+# 
+# pred_tbl$pred_dat[[4]] %>% 
+#   group_by(species) %>% 
+#   mutate(
+#     max_est = max(exp_est),
+#     min_est = min(exp_est),
+#     mid_est = 0.5 * (max_est - min_est),
+#     diff_est = abs(exp_est - mid_est)
+#   ) %>% 
+#   filter(
+#     diff_est == min(diff_est)
+#   ) %>%
+#   select(species, target_depth, max_est, min_est, mid_est, diff_est)
+
+
 ## MAKE SPATIAL PREDICTIONS ----------------------------------------------------
 
 grid_list <- readRDS(here::here("data", "spatial", "pred_ipes_grid.RDS")) %>% 
@@ -623,32 +649,33 @@ dev.off()
 
 
 
+## INDICES ---------------------------------------------------------------------
 
 
-# fix to HSS survey (can't combine because predictions shouldn't be passed 
+# fix to HSS survey (can't combine because predictions shouldn't be passed
 # duplicates, but require tmb_object stored in preds)
-# ind_preds_sum <- purrr::map(dat_tbl$st_mod, function (x) {
-#   predict(x, newdata = exp_grid %>% filter(survey_f == "hss", week == "25"), 
-#           return_tmb_object = TRUE)
-# })
+# ind_preds_sum <- purrr::map(
+#   dat_tbl$st_mod, 
+#   ~ {
+#     predict(.x, 
+#             newdata = exp_grid %>% filter(survey_f == "hss", week == "25"),
+#             return_tmb_object = TRUE)
+#   }
+# )
 # index_list_sum <- purrr::map(ind_preds_sum, get_index, bias_correct = TRUE)
 # 
-# index_df_summ <- purrr::map2(index_list_sum, dat_tbl$species, function (x, sp) {
-#   x$species <- sp
-#   return(x)
-# }) %>% 
-#   bind_rows()
-# 
-# 
-# ind_preds_fall <- purrr::map(dat_tbl$st_mod, function (x) {
-#   predict(x, newdata = exp_grid %>% filter(survey_f == "hss", week == "42"), 
-#           return_tmb_object = TRUE)
-# })
+# ind_preds_fall <- purrr::map(
+#   dat_tbl$st_mod, 
+#   ~ {
+#     predict(.x, 
+#             newdata = exp_grid %>% filter(survey_f == "hss", week == "42"),
+#             return_tmb_object = TRUE)
+#   }
+# )
 # index_list_fall <- purrr::map(ind_preds_fall, get_index, bias_correct = TRUE)
 # 
-
 # index_lists <- c(index_list_sum,
-#                     index_list_fall)
+#                  index_list_fall)
 # saveRDS(index_lists, here::here("data", "fits", "index_list.rds"))
 index_lists <- readRDS(here::here("data", "fits", "index_list.rds")) 
 
