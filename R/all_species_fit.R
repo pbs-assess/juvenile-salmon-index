@@ -200,6 +200,43 @@ pred_obs_list <- purrr::pmap(
 )
 
 
+## PLOT ANNUAL EFFECTS ---------------------------------------------------------
+
+year_dat <- data.frame(
+  week = 28,
+  dist_to_coast_km = median(dat$dist_to_coast_km),
+  day_night = "DAY",
+  target_depth = 0,
+  survey_f = "hss",
+  year = unique(dat$year)
+)
+
+year_pars <- purrr::map2(
+  dat_tbl$st_mod, dat_tbl$species,
+  ~ tidy(.x, conf.int = T) %>% 
+    mutate(
+      species = .y
+    )
+) %>% 
+  bind_rows() %>% 
+  filter(grepl("year", term)) 
+year_pars$year <- strsplit(year_pars$term, split=')') %>% 
+  purrr::map(., ~ .x[2]) %>% 
+  unlist()
+
+
+ggplot(
+  year_pars,
+  aes(year, estimate, ymin = conf.low, ymax = conf.high,
+             fill = species)
+) +
+  ggsidekick::theme_sleek() +
+  # scale_fill_manual(values = col_pal) +
+  ylab("Abundance Index") +
+  geom_pointrange(shape = 21) +
+  facet_wrap(~species, ncol = 1)
+
+
 ## MAKE FE PREDICTIONS ---------------------------------------------------------
 
 # make conditional predictive dataframes
@@ -309,19 +346,7 @@ purrr::pmap(list(pred_tbl$pred_dat, pred_tbl$var, pred_tbl$plot), plot_eff)
 dev.off()
 
 
-
 # make individual plots for ms
-pred_tbl$adj_pred_dat <- purrr::map(
-  pred_tbl$pred_dat,
-  ~ .x %>% 
-    mutate(
-      up = est + 1.96 * est_se,
-      lo = est - 1.96 * est_se,
-      exp_est = exp(est),
-      exp_up = exp(up),
-      exp_lo = exp(lo)
-    )
-) 
 p_dat <- pred_tbl %>% 
   select(var, pred_dat) %>% 
   unnest(cols = pred_dat) %>% 
@@ -345,28 +370,24 @@ pp_foo <- function(dat, x_var, y_var = "exp_est", ymin_var = "exp_lo",
     ylab("Abundance Index")
 }
 
-png(here::here("figs", "ms_figs", "week_preds.png"), height = 6.5, width = 5,
+png(here::here("figs", "ms_figs", "week_preds.png"), height = 8.5, width = 4,
     units = "in", res = 200)
-# pp_foo(
-#   dat = p_dat %>% filter(var == "week"),
-#   x_var = "week"
-# ) +
-ggplot(
-  p_dat %>% filter(var == "week"),
-  aes_string(x = "week", y = "exp_est", color = "species")
+pp_foo(
+  dat = p_dat %>% filter(var == "week"),
+  x_var = "week"
 ) +
   ggsidekick::theme_sleek() +
-  scale_color_manual(values = col_pal) +
   ylab("Abundance Index") + 
   geom_line() +
-  # geom_ribbon(alpha = 0.3) +
+  geom_ribbon(alpha = 0.3) +
   scale_x_continuous(expand = c(0, 0)) +
-  # facet_wrap(~species, ncol = 1) +
+  facet_wrap(~species, ncol = 1, scales = "free_y") +
+  coord_cartesian(y = c(0, 0.00001)) +
   xlab("Week") 
 dev.off()
 
 
-png(here::here("figs", "ms_figs", "depth_preds.png"), height = 4, width = 5,
+png(here::here("figs", "ms_figs", "depth_preds.png"), height = 8.5, width = 4,
     units = "in", res = 200)
 pp_foo(
   dat = p_dat %>% filter(var == "target_depth"),
@@ -375,11 +396,13 @@ pp_foo(
   geom_line() +
   geom_ribbon(alpha = 0.3) +
   scale_x_continuous(expand = c(0, 0)) +
+  facet_wrap(~species, ncol = 1) +
+  coord_cartesian(y = c(0, 0.00001)) +
   xlab("Target Headrope Depth (m)") 
 dev.off()
 
 
-png(here::here("figs", "ms_figs", "dist_preds.png"), height = 4, width = 5,
+png(here::here("figs", "ms_figs", "dist_preds.png"), height = 8.5, width = 4,
     units = "in", res = 200)
 pp_foo(
   dat = p_dat %>% filter(var == "dist_to_coast_km"),
@@ -388,6 +411,8 @@ pp_foo(
   geom_line() +
   geom_ribbon(alpha = 0.3) +
   scale_x_continuous(expand = c(0, 0)) +
+  facet_wrap(~species, ncol = 1) +
+  coord_cartesian(y = c(0, 0.00001)) +
   xlab("Distance to Nearest Coastline (km)") 
 dev.off()
 
@@ -424,22 +449,34 @@ dev.off()
 
 ## MAKE SPATIAL PREDICTIONS ----------------------------------------------------
 
-# spatial distribution of residuals
-grid <- readRDS(here::here("data", "spatial", "pred_ipes_grid.RDS")) %>% 
-  mutate(utm_x_1000 = X / 1000,
-         utm_y_1000 = Y / 1000,
-         dist_to_coast_km = shore_dist / 1000)
+grid_list <- readRDS(here::here("data", "spatial", "pred_ipes_grid.RDS")) %>% 
+  purrr::map(
+  .,
+  ~ {.x %>% 
+      mutate(utm_x_1000 = X / 1000,
+             utm_y_1000 = Y / 1000,
+             dist_to_coast_km = shore_dist / 1000)}
+)
+
+summer_grid <- grid_list$ipes_grid
+fall_grid <- grid_list$wcvi_grid
 
 # add unique years and seasons
 exp_grid <- expand.grid(
-  year = unique(dat_in$year),
-  survey_f = unique(dat_in$survey_f),
+  year = unique(dat$year),
+  survey_f = unique(dat$survey_f),
   week = c(25, 42)
 ) %>%
+  filter(
+    # remove fall ipes surveys (doesn't meet definition)
+    !(week == "42" & survey_f == "ipes")
+  ) %>% 
   mutate(id = row_number()) %>%
   split(., .$id) %>%
   purrr::map(., function (x) {
-    grid %>% 
+    dum_grid <- if (x$week == "42") fall_grid else summer_grid
+    
+    dum_grid %>% 
       mutate(
         year = x$year,
         survey_f = x$survey_f,
@@ -451,21 +488,58 @@ exp_grid <- expand.grid(
   bind_rows() %>% 
   mutate(
     fake_survey = case_when(
-      year > 2016 & survey_f == "hss" ~ "1",
-      year < 2017 & survey_f == "ipes" ~ "1",
+      year > 2016 & survey_f == "hss" & week == "25" ~ "1",
+      year < 2017 & survey_f == "ipes" & week == "25" ~ "1",
       TRUE ~ "0")
   )
 
 
-dat_tbl$spatial_preds <- purrr::map(dat_tbl$st_mod, function (x) {
-  predict(x, newdata = exp_grid, se_fit = FALSE, re_form = NULL)
-})
+# make spatial 
+spatial_preds <- furrr::future_map(
+  dat_tbl$st_mod, function (x) {
+    predict(x, newdata = exp_grid, se_fit = FALSE, re_form = NULL)
+  },
+  .options = furrr::furrr_options(seed = TRUE)
+)
 
-stock_preds <- dat_tbl %>%
-  select(species, spatial_preds) %>%
-  unnest(cols = spatial_preds) %>%
-  select(-est, -epsilon_st, -year) %>%
-  distinct()
+
+# make new tibble of predictions
+spatial_pred_tbl <- tibble(
+  species = rep(unique(dat$species), each = 2),
+  season = rep(c("summer", "fall"), times = 5),
+  week = rep(unique(exp_grid$week), times = 5),
+)
+# separate seasons into their own list
+spatial_pred_tbl$spatial_preds <- purrr::map(
+  spatial_preds,
+  ~ {
+    split(.x, .x$week)
+  }
+) %>% 
+  do.call(c, .)
+
+
+# which years are viable?
+# index from summer
+summer_years <- dat %>% 
+  filter(season_f == "su",
+         #remove 2021 survey years (too few tows)
+         !year == "2021") %>%
+  pull(year) %>% 
+  unique()
+fall_years <- dat %>% 
+  filter(season_f == "wi",
+         #remove 2021 survey years (too few tows)
+         !year == "2021") %>%
+  pull(year) %>% 
+  unique()
+
+
+# stock_preds <- dat_tbl %>%
+#   select(species, spatial_preds) %>%
+#   unnest(cols = spatial_preds) %>%
+#   select(-est, -epsilon_st, -year) %>%
+#   distinct()
 
 
 plot_map <- function(dat, column) {
@@ -475,15 +549,57 @@ plot_map <- function(dat, column) {
     ggsidekick::theme_sleek()
 }
 
-fe_plot_list <- purrr::map(dat_tbl$preds, function (x) {
-  plot_map(x, "exp(est)") +
-    scale_fill_viridis_c(
-      trans = "sqrt",
-      limits = c(0, quantile(exp(dd$est), 0.995))
-    ) +
-    facet_wrap(~year) +
-    ggtitle("Prediction (fixed effects + all random effects)")
-})
+
+# fixed effects plots
+summ_tbl <- spatial_pred_tbl %>%
+  filter(season == "summer")
+pdf(here::here("figs", "ms_figs", "summer_fe_preds.pdf"), height =8, width = 8)
+summer_fe_plot_list <- purrr::map2(
+    summ_tbl$spatial_preds, summ_tbl$species,
+    ~ {
+      max_est <- quantile(exp(.x$est), 0.995)
+      
+      .x %>% 
+        filter(
+          year %in% summer_years
+        ) %>% 
+        plot_map(., "exp(est)") +
+        scale_fill_viridis_c(
+          trans = "sqrt",
+          limits = c(0, max_est)
+        ) +
+        facet_wrap(~year) +
+        ggtitle(
+          paste(.y, "Prediction (fixed effects + all random effects)")
+        )
+    }
+  )
+dev.off()
+
+fall_tbl <- spatial_pred_tbl %>%
+  filter(season == "fall")
+pdf(here::here("figs", "ms_figs", "fall_fe_preds.pdf"), height =8, width = 8)
+purrr::map2(
+  fall_tbl$spatial_preds, fall_tbl$species,
+  ~ {
+    max_est <- quantile(exp(.x$est), 0.995)
+    
+    .x %>% 
+      filter(
+        year %in% fall_years
+      ) %>% 
+      plot_map(., "exp(est)") +
+      scale_fill_viridis_c(
+        trans = "sqrt",
+        limits = c(0, max_est)
+      ) +
+      facet_wrap(~year) +
+      ggtitle(
+        paste(.y, "Prediction (fixed effects + all random effects)")
+      )
+  }
+)
+dev.off()
 
 plot_map(stock_preds, "est_rf") +
   scale_fill_gradient2(
@@ -505,19 +621,7 @@ plot_map(dd,
   facet_wrap(~species)
 
 
-# index from summer
-summer_years <- dat_in %>% 
-  filter(season_f == "su",
-         #remove 2021 survey years (too few tows)
-         !year == "2021") %>%
-  pull(year) %>% 
-  unique()
-fall_years <- dat_in %>% 
-  filter(season_f == "wi",
-         #remove 2021 survey years (too few tows)
-         !year == "2021") %>%
-  pull(year) %>% 
-  unique()
+
 
 
 # fix to HSS survey (can't combine because predictions shouldn't be passed 
