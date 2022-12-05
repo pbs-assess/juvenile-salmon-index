@@ -165,6 +165,9 @@ saveRDS(dat_tbl, here::here("data", "fits", "st_mod_all_sp.rds"))
 
 dat_tbl <- readRDS(here::here("data", "fits", "st_mod_all_sp.rds"))
 
+purrr::map(
+  dat_tbl$st_mod, summary
+)
 
 ## check residuals
 dat_tbl$sims <- purrr::map(dat_tbl$st_mod, simulate, nsim = 100)
@@ -572,13 +575,15 @@ plot_map <- function(dat, column) {
 summ_tbl <- spatial_pred_tbl %>%
   filter(season == "summer")
 for (i in seq_along(summ_tbl$species)) {
-  .x <- summ_tbl$spatial_preds[[i]]
-  .y <- summ_tbl$species[[i]]
-  max_est <- quantile(exp(.x$est), 0.995)
-  p <- .x %>% 
+  .x <- summ_tbl$spatial_preds[[i]] %>% 
     filter(
-      year %in% fall_years
-    ) %>% 
+      year %in% summer_years
+    )
+  .y <- summ_tbl$species[[i]]
+  
+  # total effects
+  max_est <- quantile(exp(.x$est), 0.995)
+  p <- .x  %>% 
     plot_map(., "exp(est)") +
     scale_fill_viridis_c(
       trans = "sqrt",
@@ -589,6 +594,17 @@ for (i in seq_along(summ_tbl$species)) {
                  paste(.y, "summer_pred.png", sep = "_")), 
       height = 8, width = 8, units = "in", res = 200)
   print(p)
+  dev.off() 
+  
+  # epsilon effects
+  q <- .x %>% 
+    plot_map(., "epsilon_st") +
+    scale_fill_gradient2() +
+    facet_wrap(~year)
+  png(here::here("figs", "ms_figs", "summer_fe_preds",
+                 paste(.y, "summer_eps.png", sep = "_")), 
+      height = 8, width = 8, units = "in", res = 200)
+  print(q)
   dev.off() 
 }
 
@@ -655,9 +671,9 @@ dev.off()
 # fix to HSS survey (can't combine because predictions shouldn't be passed
 # duplicates, but require tmb_object stored in preds)
 # ind_preds_sum <- purrr::map(
-#   dat_tbl$st_mod, 
+#   dat_tbl$st_mod,
 #   ~ {
-#     predict(.x, 
+#     predict(.x,
 #             newdata = exp_grid %>% filter(survey_f == "hss", week == "25"),
 #             return_tmb_object = TRUE)
 #   }
@@ -665,9 +681,9 @@ dev.off()
 # index_list_sum <- purrr::map(ind_preds_sum, get_index, bias_correct = TRUE)
 # 
 # ind_preds_fall <- purrr::map(
-#   dat_tbl$st_mod, 
+#   dat_tbl$st_mod,
 #   ~ {
-#     predict(.x, 
+#     predict(.x,
 #             newdata = exp_grid %>% filter(survey_f == "hss", week == "42"),
 #             return_tmb_object = TRUE)
 #   }
@@ -745,38 +761,77 @@ index_scaled
 dev.off()
 
 
+## correlations in indices
+
+summer_cor <- index_dat %>% 
+  filter(season == "summer") %>% 
+  select(species, year, est) %>% 
+  pivot_wider(names_from = species, 
+              values_from = est) %>%
+  select(-year) %>% 
+  cor(., use = "complete.obs")  %>% 
+  ggcorrplot::ggcorrplot(., 
+                         # hc.order = TRUE, 
+                         type = "lower",
+                       lab = TRUE,
+                       title = "summer") + 
+  ggsidekick::theme_sleek() +
+  theme(axis.title = element_blank())
+
+fall_cor <- index_dat %>% 
+  filter(season == "fall") %>% 
+  select(species, year, est) %>% 
+  pivot_wider(names_from = species, 
+              values_from = est) %>%
+  select(-year) %>% 
+  cor(., use = "complete.obs")  %>% 
+  ggcorrplot::ggcorrplot(., 
+                         # hc.order = TRUE, 
+                         type = "lower",
+                         lab = TRUE,
+                         title = "fall") + 
+  ggsidekick::theme_sleek() +
+  theme(axis.title = element_blank())
+
+png(here::here("figs", "ms_figs", "cor_plot.png"), height = 4, width = 7.5,
+    res = 250, units = "in")
+cowplot::plot_grid(summer_cor,
+                   fall_cor,
+                   ncol = 2)
+dev.off()
+
 
 # separate survey effects
-ind_preds2 <- purrr::map(dat_tbl$st_mod, function (x) {
-  predict(x, newdata = exp_grid %>% filter(fake_survey == "0"), 
-          return_tmb_object = TRUE)
-})
-index_list2 <- purrr::map(ind_preds2, get_index, bias_correct = TRUE)
-index_df2 <- purrr::map2(index_list2, dat_tbl$species, function (x, sp) {
-  x$species <- sp
-  return(x)
-}) %>% 
-  bind_rows()
-
-
-index_list <- list(survey_eff = index_df, no_survey_eff = index_df2)
-
-index1 <- index_list[[1]] %>% mutate(survey = "hss")
-index_combined <- index_list[[2]] %>% 
-  mutate(survey = "ipes") %>% 
-  filter(year > 2016) %>% 
-  rbind(., index1) %>% 
-  filter(year %in% summer_years)
-
-comb_index_plot <- ggplot(index_combined, aes(year, est)) +
-  geom_pointrange(aes(ymin = lwr, ymax = upr, fill = survey), shape = 21) +
-  labs(x = "Year", y = "Count") +
-  ggsidekick::theme_sleek() +
-  facet_wrap(~species, scales = "free_y")
-
-
-pdf(here::here("figs", "diagnostics", "st_index_surv_all_sp.pdf"), height = 7,
-    width = 9)
-index_plot
-comb_index_plot
-dev.off()
+# ind_preds2 <- purrr::map(dat_tbl$st_mod, function (x) {
+#   predict(x, newdata = exp_grid %>% filter(fake_survey == "0"), 
+#           return_tmb_object = TRUE)
+# })
+# index_list2 <- purrr::map(ind_preds2, get_index, bias_correct = TRUE)
+# index_df2 <- purrr::map2(index_list2, dat_tbl$species, function (x, sp) {
+#   x$species <- sp
+#   return(x)
+# }) %>% 
+#   bind_rows()
+# 
+# 
+# index_list <- list(survey_eff = index_df, no_survey_eff = index_df2)
+# 
+# index1 <- index_list[[1]] %>% mutate(survey = "hss")
+# index_combined <- index_list[[2]] %>% 
+#   mutate(survey = "ipes") %>% 
+#   filter(year > 2016) %>% 
+#   rbind(., index1) %>% 
+#   filter(year %in% summer_years)
+# 
+# comb_index_plot <- ggplot(index_combined, aes(year, est)) +
+#   geom_pointrange(aes(ymin = lwr, ymax = upr, fill = survey), shape = 21) +
+#   labs(x = "Year", y = "Count") +
+#   ggsidekick::theme_sleek() +
+#   facet_wrap(~species, scales = "free_y")
+# 
+# 
+# pdf(here::here("figs", "diagnostics", "st_index_surv_all_sp.pdf"), height = 7,
+#     width = 9)
+# index_plot
+# comb_index_plot
+# dev.off()
