@@ -355,7 +355,13 @@ p_dat <- pred_tbl %>%
   unnest(cols = pred_dat) %>% 
   mutate(species = tolower(species),
          day_night = tolower(day_night),
-         survey_f = toupper(survey_f))
+         survey_f = toupper(survey_f)) #%>% 
+  # group_by(species) %>% 
+  # mutate(mean_exp_est = mean(exp_est),
+  #        exp_est_scale = exp_est / mean_exp_est,
+  #        scale_up = exp_up / mean_exp_est,
+  #        scale_lo = exp_lo / mean_exp_est) %>% 
+  # glimpse()
 
 col_pal <- c('#7fc97f','#beaed4','#fdc086','#ffff99','#386cb0')
 names(col_pal) <- c('chinook','pink','chum','coho','sockeye')
@@ -377,7 +383,10 @@ png(here::here("figs", "ms_figs", "week_preds.png"), height = 8.5, width = 4,
     units = "in", res = 200)
 pp_foo(
   dat = p_dat %>% filter(var == "week"),
-  x_var = "week"
+  x_var = "week"#,
+  # y_var = "exp_est_scale",
+  # ymin_var = "scale_lo", 
+  # ymax_var = "scale_up"
 ) +
   ggsidekick::theme_sleek() +
   ylab("Abundance Index") + 
@@ -385,7 +394,7 @@ pp_foo(
   geom_ribbon(alpha = 0.3) +
   scale_x_continuous(expand = c(0, 0)) +
   facet_wrap(~species, ncol = 1, scales = "free_y") +
-  coord_cartesian(y = c(0, 0.00001)) +
+  # coord_cartesian(y = c(0, 0.00001)) +
   xlab("Week") 
 dev.off()
 
@@ -534,7 +543,7 @@ spatial_preds <- furrr::future_map(
 
 # make new tibble of predictions
 spatial_pred_tbl <- tibble(
-  species = rep(unique(dat$species), each = 2),
+  species = rep(tolower(unique(dat$species)), each = 2),
   season = rep(c("summer", "fall"), times = 5),
   week = rep(unique(exp_grid$week), times = 5),
 )
@@ -740,6 +749,13 @@ index_plot <- ggplot(index_dat,
   ggsidekick::theme_sleek() +
   facet_grid(species~season, scales = "free_y") 
 
+log_index_plot <- ggplot(index_dat, 
+       aes(year, log_est)) +
+  geom_pointrange(aes(ymin = log(lwr), ymax = log(upr)), 
+                  shape = 21, fill = "white") +
+  labs(x = "Year", y = "Log Abundance Index") +
+  ggsidekick::theme_sleek() +
+  facet_grid(species~season, scales = "free_y") 
 
 col_pal <- c("#f5f5f5", "#d8b365", "#5ab4ac")
 names(col_pal) <- levels(index_dat$anomaly)
@@ -748,7 +764,7 @@ index_scaled <- ggplot(index_dat) +
   geom_point(aes(year, scaled_est, fill = anomaly), shape = 21, size = 2) +
   labs(x = "Year", y = "Scaled Abundance Index") +
   ggsidekick::theme_sleek() +
-  facet_grid(species~season, scales = "free_y") +
+  facet_grid(species~season) +
   scale_fill_manual(values = col_pal)
 
 
@@ -756,13 +772,24 @@ png(here::here("figs", "ms_figs", "hss_index.png"))
 index_plot
 dev.off()
 
+png(here::here("figs", "ms_figs", "log_hss_index.png"))
+log_index_plot
+dev.off()
+
 png(here::here("figs", "ms_figs", "hss_index_scaled.png"))
 index_scaled
 dev.off()
 
+index_dat %>% 
+  group_by(species, season) %>% 
+  summarize(
+    max_est = max(est),
+    min_est = min(est),
+    relative_diff = max_est / min_est
+  )
+
 
 ## correlations in indices
-
 summer_cor <- index_dat %>% 
   filter(season == "summer") %>% 
   select(species, year, est) %>% 
