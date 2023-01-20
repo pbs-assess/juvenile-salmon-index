@@ -26,8 +26,6 @@ dat <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>%
          !bath_depth_mean_m < 0) %>% 
   droplevels() 
 
-
-# years with v. limited summer data
 dat_tbl <- dat  %>% 
   group_by(species) %>% 
   group_nest() %>% 
@@ -42,6 +40,7 @@ dat_coords <- dat %>%
   select(utm_x_1000, utm_y_1000) %>% 
   as.matrix()
 
+## use INLA mesh based on SA recommendations and model selection (see notes)
 inla_mesh_raw <- INLA::inla.mesh.2d(
   loc = dat_coords,
   max.edge = c(1, 5) * 500,
@@ -130,7 +129,6 @@ st_mod <- furrr::future_map2(
         dist_to_coast_km +
         s(week, bs = "cc", k = 5) +
         target_depth +
-        # s(target_depth, bs = "tp", k = 4) +
         day_night +
         survey_f,
       offset = .x$effort,
@@ -153,6 +151,16 @@ st_mod <- furrr::future_map2(
   },
   .options = furrr::furrr_options(seed = TRUE)
 )
+
+# fit equivalent models but with ar1 fields
+st_mod_eps_ar1 <- furrr::future_map(
+  st_mod,
+  ~ {
+    update(.x, spatiotemporal = "AR1")
+  }
+)
+
+
 
 purrr::map(st_mod, sanity)
 ## all look good

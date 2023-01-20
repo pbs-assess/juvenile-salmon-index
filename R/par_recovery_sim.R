@@ -11,22 +11,25 @@ library(sdmTMB)
 library(ggplot2)
 
 
-# spatial data
-coast_utm <- rbind(rnaturalearth::ne_states( "United States of America", 
-                                             returnclass = "sf"), 
-                   rnaturalearth::ne_states( "Canada", returnclass = "sf")) %>% 
-  sf::st_crop(., 
-              xmin = -137, ymin = 47, xmax = -121.25, ymax = 57) %>% 
-  sf::st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
+# fitted model from all_species_fit.R
+fit_all_sp <- readRDS(here::here("data", "fits", "st_mod_all_sp.rds")) #%>% 
+  # mutate(
+  #   bspde = purrr::map(spde, add_barrier_mesh,
+  #                      coast_utm, range_fraction = 0.1,
+  #                      # scaling = 1000 since UTMs were rescaled above
+  #                      proj_scaling = 1000)
+  # )
+# pull meshes from fitted model to use
+fit_all_sp$mesh <- purrr::map(fit_all_sp$st_mod, ~ .x$mesh)
 
-# fitted model
-fit_all_sp <- readRDS(here::here("data", "fits", "st_mod_all_sp.rds")) %>% 
-  mutate(
-    bspde = purrr::map(spde, add_barrier_mesh,
-                       coast_utm, range_fraction = 0.1,
-                       # scaling = 1000 since UTMs were rescaled above
-                       proj_scaling = 1000)
-  )
+# make mesh to use in parameter 
+# coast_utm <- rbind(rnaturalearth::ne_states( "United States of America",
+#                                              returnclass = "sf"),
+#                    rnaturalearth::ne_states( "Canada", returnclass = "sf")) %>%
+#   sf::st_crop(.,
+#               xmin = -137, ymin = 47, xmax = -121.25, ymax = 57) %>%
+#   sf::st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
+
 
 nsims = 15
 sims_list <- purrr::map(fit_all_sp$st_mod, simulate, nsim = nsims)
@@ -51,7 +54,7 @@ sim_tbl <- purrr::pmap(
   }
 ) %>% 
   bind_rows() %>% 
-  left_join(., fit_all_sp %>% select(species, bspde), by = "species")
+  left_join(., fit_all_sp %>% select(species, mesh), by = "species")
 
 # dd <- sim_tbl[1:3, ] %>% 
 #   mutate(
@@ -65,6 +68,8 @@ sim_tbl <- purrr::pmap(
 # glimpse(dd$bspde[[1]])
 # glimpse(fit_all_sp$bspde[[1]])
 
+
+# TODO: UPDATE WITH REVISED MODEL
 sim_fit_list <- furrr::future_pmap(
   list(sim_tbl$sim_dat, sim_tbl$bspde), function (x, bspde_in) {
     sdmTMB(
