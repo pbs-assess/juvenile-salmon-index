@@ -22,6 +22,37 @@ dat <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>%
          !bath_depth_mean_m < 0) %>% 
   droplevels() 
 
+
+## TOY EXAMPLE FOR BUG ---------------------------------------------------------
+
+dd <- dat %>%
+  filter(species == "CHINOOK",
+         year > 2010) %>% 
+  select(n_juv, volume_m3, utm_x_1000, utm_y_1000)
+
+mesh <- make_mesh(dd, c("utm_x_1000", "utm_y_1000"), cutoff = 20) # excercise
+
+dum <- sdmTMB_cv(
+  n_juv ~ 1,
+  data = dd,
+  mesh = mesh,
+  family = sdmTMB::nbinom2(),
+  spatial = "on",
+  k_folds = 5
+)
+
+dum2 <- sdmTMB_cv(
+  n_juv ~ 1,
+  data = dd,
+  mesh = mesh,
+  offset = log(dd$volume_m3),
+  family = sdmTMB::nbinom2(),
+  spatial = "on",
+  k_folds = 5
+)
+
+
+## -----------------------------------------------------------------------------
 cv_tbl <- dat  %>% 
   group_by(species) %>% 
   group_nest() %>% 
@@ -139,54 +170,4 @@ purrr::map(cv_mods, sanity)
 
 
 
-dd <- dat %>%
-  filter(species == "CHINOOK",
-         year > 2010) %>% 
-  select(n_juv, volume_m3, utm_x_1000, utm_y_1000)
-
-mesh <- make_mesh(dd, c("utm_x_1000", "utm_y_1000"), cutoff = 20) # excercise
-
-dum <- sdmTMB_cv(
-  n_juv ~ 1,
-  data = dd,
-  # offset = dd$effort,
-  mesh = mesh,
-  family = sdmTMB::nbinom2(),
-  spatial = "on",
-  # spatiotemporal = "iid",
-  # anisotropy = TRUE,
-  # share_range = FALSE,
-  # time = "year",
-  # knots = list(
-  #   week = c(0, 52)
-  # ),
-  # extra_time = c(1997),
-  # control = sdmTMBcontrol(
-  #   newton_loops = 1
-  # ),
-  k_folds = 5
-)
-
-dum2 <- sdmTMB_cv(
-  n_juv ~ 1,
-  # spatial = "on",
-  offset = log(dd$volume_m3),
-  family = sdmTMB::nbinom2(),
-  mesh = mesh,
-  data = dd,
-  spatial = "on",
-  # spatial = "on",
-  # spatiotemporal = "iid",
-  # anisotropy = TRUE,
-  # share_range = FALSE,
-  # time = "year",
-  # knots = list(
-  #   week = c(0, 52)
-  # ),
-  # extra_time = c(1997),
-  # control = sdmTMBcontrol(
-  #   newton_loops = 1
-  # ),
-  k_folds = 5
-)
 
