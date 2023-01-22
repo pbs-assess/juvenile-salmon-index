@@ -54,11 +54,6 @@ spde <- make_mesh(
 ) 
 
 
-# prep multisession
-ncores <- parallel::detectCores() 
-future::plan(future::multisession, workers = ncores - 3)
-
-
 ### EXP PLOTS ------------------------------------------------------------------
 
 ggplot(dat_in) +
@@ -120,6 +115,10 @@ ggplot(dat_in) +
 
 ### FIT SATURATED --------------------------------------------------------------
 
+# prep multisession
+ncores <- parallel::detectCores() 
+future::plan(future::multisession, workers = ncores - 3)
+
 st_mod <- furrr::future_map2(
   dat_tbl$data, dat_tbl$share_range,
   ~ {
@@ -152,29 +151,18 @@ st_mod <- furrr::future_map2(
   .options = furrr::furrr_options(seed = TRUE)
 )
 
-# fit equivalent models but with ar1 fields
-st_mod_eps_ar1 <- furrr::future_map(
-  st_mod,
-  ~ {
-    update(.x, spatiotemporal = "AR1")
-  }
-)
-
-
 
 purrr::map(st_mod, sanity)
 ## all look good
 
 dat_tbl$st_mod <- st_mod
-# dat_tbl$aic <- purrr::map(st_mod, AIC) %>% as.numeric()
-
 saveRDS(dat_tbl, here::here("data", "fits", "st_mod_all_sp.rds"))
 
 
 dat_tbl <- readRDS(here::here("data", "fits", "st_mod_all_sp.rds"))
 
 purrr::map(
-  dat_tbl$st_mod, summary
+  dat_tbl$st_mod, sanity
 )
 
 ## check residuals
@@ -323,7 +311,32 @@ for (i in seq_along(pred_tbl$var)) {
 }
 
 pred_tbl$pred_dat <- pred_list
-pred_tbl$spatial_pred_dat <- spatial_pred_list
+
+
+## how to scale CIs?
+dd <- pred_tbl$pred_dat[[1]] %>% 
+  filter(species == "CHINOOK") %>% 
+  select(week:est_se) %>% 
+  mutate(
+    exp_est = exp(est),
+    max_est = max(exp_est),
+    scale_est = exp_est / max_est,
+    up = (est + 1.96 * est_se), #/ max_est,
+    lo = (est - 1.96 * est_se), #/ max_est
+    exp_up = exp(up) / max_est,
+    exp_lo = exp(lo) / max_est
+  )
+
+ggplot(
+    dd, 
+    aes(week, scale_est, ymin = exp_lo, ymax = exp_up)
+  ) +
+  # facet_wrap(~species, scales = "free_y") +
+  ggsidekick::theme_sleek() + 
+  geom_line() +
+  geom_ribbon(alpha = 0.3)
+
+
 
 # takes a long time so save
 # saveRDS(pred_tbl, here::here("data", "preds", "fe_preds.rds"))
