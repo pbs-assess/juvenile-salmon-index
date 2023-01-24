@@ -313,35 +313,26 @@ for (i in seq_along(pred_tbl$var)) {
 pred_tbl$pred_dat <- pred_list
 
 
-## how to scale CIs?
-dd <- pred_tbl$pred_dat[[1]] %>% 
-  filter(species == "CHINOOK") %>% 
-  select(week:est_se) %>% 
-  mutate(
-    exp_est = exp(est),
-    max_est = max(exp_est),
-    scale_est = exp_est / max_est,
-    up = (est + 1.96 * est_se), #/ max_est,
-    lo = (est - 1.96 * est_se), #/ max_est
-    exp_up = exp(up) / max_est,
-    exp_lo = exp(lo) / max_est
-  )
-
-ggplot(
-    dd, 
-    aes(week, scale_est, ymin = exp_lo, ymax = exp_up)
-  ) +
-  # facet_wrap(~species, scales = "free_y") +
-  ggsidekick::theme_sleek() + 
-  geom_line() +
-  geom_ribbon(alpha = 0.3)
-
-
-
 # takes a long time so save
 # saveRDS(pred_tbl, here::here("data", "preds", "fe_preds.rds"))
 pred_tbl <- readRDS(here::here("data", "preds", "fe_preds.rds"))
 
+dum <- purrr::map(
+  pred_tbl$pred_dat,
+  ~ {
+    .x %>% 
+      group_by(species) %>% 
+      mutate(
+        exp_est = exp(est),
+        max_est = max(exp_est),
+        scale_est = exp_est / max_est,
+        up = (est + 1.96 * est_se),
+        lo = (est - 1.96 * est_se), 
+        exp_up = exp(up) / max_est,
+        exp_lo = exp(lo) / max_est
+      )
+  }
+)
 
 # make all plots for quick visualization
 plot_eff <- function (dat, x_var, type = c("line", "dot")) {
