@@ -8,6 +8,11 @@ library(tidyverse)
 library(sdmTMB)
 library(ggplot2)
 
+# prep multisession
+ncores <- parallel::detectCores() 
+future::plan(future::multisession, workers = ncores - 3)
+
+
 # downscale data and predictive grid
 dat <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>% 
   mutate(
@@ -18,7 +23,7 @@ dat <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>%
     vessel = as.factor(vessel)
   ) %>% 
   # exclude 1995 and 1997 because sampling sparse
-  filter(!year %in% c("1995", "1997", "2022"),
+  filter(!year %in% c("1995", "1996", "1997", "2022"),
          !bath_depth_mean_m < 0) %>% 
   droplevels() 
 
@@ -28,7 +33,7 @@ dat <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>%
 dd <- dat %>%
   filter(species == "CHINOOK",
          year > 2010) %>% 
-  select(n_juv, volume_m3, utm_x_1000, utm_y_1000)
+  select(n_juv, volume_m3, utm_x_1000, utm_y_1000, effort)
 
 mesh <- make_mesh(dd, c("utm_x_1000", "utm_y_1000"), cutoff = 20) # excercise
 
@@ -45,7 +50,7 @@ dum2 <- sdmTMB_cv(
   n_juv ~ 1,
   data = dd,
   mesh = mesh,
-  offset = log(dd$volume_m3),
+  offset = "effort",
   family = sdmTMB::nbinom2(),
   spatial = "on",
   k_folds = 5
@@ -94,18 +99,68 @@ spde <- make_mesh(
 ) 
 
 
-# prep multisession
-ncores <- parallel::detectCores() 
-future::plan(future::multisession, workers = ncores - 3)
-
-
-
 # CROSS-VALIDATION -------------------------------------------------------------
+
+fit <- sdmTMB(
+  n_juv ~ 1 +
+    as.factor(year) +
+    dist_to_coast_km +
+    s(week, bs = "cc", k = 5) +
+    target_depth +
+    day_night +
+    survey_f
+    ,
+  offset = "effort",#dat$effort,
+  data = cv_tbl$data[[6]],
+  mesh = spde,
+  family = sdmTMB::nbinom2(),
+  spatial = "on",
+  spatiotemporal = "ar1",
+  anisotropy = TRUE,
+  share_range = TRUE,#cv_tbl$share_range[[6]],
+  time = "year",
+  knots = list(
+    week = c(0, 52)
+  ),
+  # extra_time = c(1997),
+  control = sdmTMBcontrol(
+    newton_loops = 1
+  ))
+
+fit_cv1 <- sdmTMB_cv(
+  n_juv ~ 1 +
+    as.factor(year) +
+    dist_to_coast_km +
+    s(week, bs = "cc", k = 5) +
+    target_depth +
+    day_night +
+    survey_f,
+  offset = "effort",#dat$effort,
+  data = cv_tbl$data[[11]],
+  mesh = spde,
+  family = sdmTMB::nbinom2(),
+  spatial = "on",
+  spatiotemporal = cv_tbl$time_varying[[11]],
+  anisotropy = TRUE,
+  share_range = cv_tbl$share_range[[11]],
+  time = "year",
+  knots = list(
+    week = c(0, 52)
+  ),
+  # extra_time = c(1997),
+  control = sdmTMBcontrol(
+    newton_loops = 1
+  ),
+  use_initial_fit = TRUE,
+  k_folds = 4
+)
+
+
 
 cv_mods <- furrr::future_pmap(
   list(cv_tbl$data, cv_tbl$share_range, cv_tbl$time_varying),
   function(dat, sr, tv) {
-    set.seed(123)
+    set.seed(2022)
     
     if (tv == "off") {
       fit_cv <- sdmTMB_cv(
@@ -116,7 +171,7 @@ cv_mods <- furrr::future_pmap(
           target_depth +
           day_night +
           survey_f,
-        offset = dat$effort,
+        offset = "effort",#dat$effort,
         data = dat,
         mesh = spde,
         family = sdmTMB::nbinom2(),
@@ -128,6 +183,7 @@ cv_mods <- furrr::future_pmap(
         control = sdmTMBcontrol(
           newton_loops = 1
         ),
+        use_initial_fit = TRUE,
         k_folds = 5
       )
     } else {
@@ -139,7 +195,7 @@ cv_mods <- furrr::future_pmap(
           target_depth +
           day_night +
           survey_f,
-        offset = dat$effort,
+        offset = "effort",#dat$effort,
         data = dat,
         mesh = spde,
         family = sdmTMB::nbinom2(),
@@ -155,6 +211,7 @@ cv_mods <- furrr::future_pmap(
         control = sdmTMBcontrol(
           newton_loops = 1
         ),
+        use_initial_fit = TRUE,
         k_folds = 5
       )
     }
