@@ -58,26 +58,22 @@ dum2 <- sdmTMB_cv(
 
 
 ## -----------------------------------------------------------------------------
+
 cv_tbl <- dat  %>% 
   group_by(species) %>% 
-  group_nest() %>% 
-  mutate(
-    # assign share_range based on AIC (see notes for details)
-    share_range = ifelse(species %in% c("CHINOOK", "SOCKEYE"), FALSE, TRUE)
-  )
+  group_nest() 
 
-# specify different spatiotemporal structures
-cv_tbl <- purrr::map(
-  c("off", "iid", "ar1"),
-  # c(NA, "year", "year"),
-  ~ {
-    cv_tbl %>% 
-      mutate(
-        time_varying = .x
-      )
-  }
-  ) %>% 
-  bind_rows()
+# # specify different spatiotemporal structures
+# cv_tbl <- purrr::map(
+#   c("off", "iid", "ar1"),
+#   ~ {
+#     cv_tbl %>% 
+#       mutate(
+#         time_varying = .x
+#       )
+#   }
+#   ) %>% 
+#   bind_rows()
 
 ## coordinates should be common to all species
 dat_coords <- dat %>% 
@@ -99,128 +95,102 @@ spde <- make_mesh(
 ) 
 
 
-# CROSS-VALIDATION -------------------------------------------------------------
-
-fit <- sdmTMB(
-  n_juv ~ 1 +
-    as.factor(year) +
-    dist_to_coast_km +
-    s(week, bs = "cc", k = 5) +
-    target_depth +
-    day_night +
-    survey_f
-    ,
-  offset = "effort",#dat$effort,
-  data = cv_tbl$data[[6]],
-  mesh = spde,
-  family = sdmTMB::nbinom2(),
-  spatial = "on",
-  spatiotemporal = "ar1",
-  anisotropy = TRUE,
-  share_range = TRUE,#cv_tbl$share_range[[6]],
-  time = "year",
-  knots = list(
-    week = c(0, 52)
+# spatial model  
+set.seed(2022)
+cv_spatial <- furrr::future_map(
+  cv_tbl$data,
+  ~ sdmTMB_cv(
+      n_juv ~ 1 +
+        as.factor(year) +
+        dist_to_coast_km +
+        s(week, bs = "cc", k = 5) +
+        target_depth +
+        day_night +
+        survey_f,
+      offset = "effort",#dat$effort,
+      data = .x,
+      mesh = spde,
+      family = sdmTMB::nbinom2(),
+      spatial = "on",
+      anisotropy = TRUE,
+      knots = list(
+        week = c(0, 52)
+      ),
+      control = sdmTMBcontrol(
+        newton_loops = 1
+      ),
+      use_initial_fit = TRUE,
+      k_folds = 5
   ),
-  # extra_time = c(1997),
-  control = sdmTMBcontrol(
-    newton_loops = 1
-  ))
-
-fit_cv1 <- sdmTMB_cv(
-  n_juv ~ 1 +
-    as.factor(year) +
-    dist_to_coast_km +
-    s(week, bs = "cc", k = 5) +
-    target_depth +
-    day_night +
-    survey_f,
-  offset = "effort",#dat$effort,
-  data = cv_tbl$data[[11]],
-  mesh = spde,
-  family = sdmTMB::nbinom2(),
-  spatial = "on",
-  spatiotemporal = cv_tbl$time_varying[[11]],
-  anisotropy = TRUE,
-  share_range = cv_tbl$share_range[[11]],
-  time = "year",
-  knots = list(
-    week = c(0, 52)
-  ),
-  # extra_time = c(1997),
-  control = sdmTMBcontrol(
-    newton_loops = 1
-  ),
-  use_initial_fit = TRUE,
-  k_folds = 4
-)
-
-
-
-cv_mods <- furrr::future_pmap(
-  list(cv_tbl$data, cv_tbl$share_range, cv_tbl$time_varying),
-  function(dat, sr, tv) {
-    set.seed(2022)
-    
-    if (tv == "off") {
-      fit_cv <- sdmTMB_cv(
-        n_juv ~ 1 +
-          as.factor(year) +
-          dist_to_coast_km +
-          s(week, bs = "cc", k = 5) +
-          target_depth +
-          day_night +
-          survey_f,
-        offset = "effort",#dat$effort,
-        data = dat,
-        mesh = spde,
-        family = sdmTMB::nbinom2(),
-        spatial = "on",
-        anisotropy = TRUE,
-        knots = list(
-          week = c(0, 52)
-        ),
-        control = sdmTMBcontrol(
-          newton_loops = 1
-        ),
-        use_initial_fit = TRUE,
-        k_folds = 5
-      )
-    } else {
-      fit_cv <- sdmTMB_cv(
-        n_juv ~ 1 +
-          as.factor(year) +
-          dist_to_coast_km +
-          s(week, bs = "cc", k = 5) +
-          target_depth +
-          day_night +
-          survey_f,
-        offset = "effort",#dat$effort,
-        data = dat,
-        mesh = spde,
-        family = sdmTMB::nbinom2(),
-        spatial = "on",
-        spatiotemporal = tv,
-        anisotropy = TRUE,
-        share_range = sr,
-        time = "year",
-        knots = list(
-          week = c(0, 52)
-        ),
-        extra_time = c(1997),
-        control = sdmTMBcontrol(
-          newton_loops = 1
-        ),
-        use_initial_fit = TRUE,
-        k_folds = 5
-      )
-    }
-    return(fit_cv)
-  },
   .options = furrr::furrr_options(seed = TRUE)
 )
 
-purrr::map(cv_mods, sanity)
+# IID spatiotemporal model
+set.seed(2022)
+cv_st_iid <- furrr::future_map(
+  cv_tbl$data,
+  ~ sdmTMB_cv(
+    n_juv ~ 1 +
+      as.factor(year) +
+      dist_to_coast_km +
+      s(week, bs = "cc", k = 5) +
+      target_depth +
+      day_night +
+      survey_f,
+    offset = "effort",
+    data = .x,
+    mesh = spde,
+    family = sdmTMB::nbinom2(),
+    spatial = "on",
+    spatiotemporal = "iid",
+    anisotropy = TRUE,
+    share_range = TRUE,
+    time = "year",
+    knots = list(
+      week = c(0, 52)
+    ),
+    control = sdmTMBcontrol(
+      newton_loops = 1
+    ),
+    use_initial_fit = TRUE,
+    k_folds = 5
+  ),
+  .options = furrr::furrr_options(seed = TRUE)
+)
+    
+# AR1 spatiotemporal model
+set.seed(2022)
+cv_st_ar1 <- furrr::future_map(
+  cv_tbl$data,
+  ~ sdmTMB_cv(
+    n_juv ~ 1 +
+      as.factor(year) +
+      dist_to_coast_km +
+      s(week, bs = "cc", k = 5) +
+      target_depth +
+      day_night +
+      survey_f,
+    offset = "effort",
+    data = .x,
+    mesh = spde,
+    family = sdmTMB::nbinom2(),
+    spatial = "on",
+    spatiotemporal = "ar1",
+    anisotropy = TRUE,
+    share_range = TRUE,
+    time = "year",
+    knots = list(
+      week = c(0, 52)
+    ),
+    control = sdmTMBcontrol(
+      newton_loops = 1
+    ),
+    use_initial_fit = TRUE,
+    k_folds = 5
+  ),
+  .options = furrr::furrr_options(seed = TRUE)
+)
+
 
 
 
