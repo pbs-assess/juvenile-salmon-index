@@ -63,18 +63,6 @@ cv_tbl <- dat  %>%
   group_by(species) %>% 
   group_nest() 
 
-# # specify different spatiotemporal structures
-# cv_tbl <- purrr::map(
-#   c("off", "iid", "ar1"),
-#   ~ {
-#     cv_tbl %>% 
-#       mutate(
-#         time_varying = .x
-#       )
-#   }
-#   ) %>% 
-#   bind_rows()
-
 ## coordinates should be common to all species
 dat_coords <- dat %>% 
   filter(species == "PINK") %>% 
@@ -192,9 +180,28 @@ cv_st_ar1 <- furrr::future_map(
 )
 
 
+cv_tbl <- purrr::map(
+  c("off", "iid"
+    #, "ar1"
+    ),
+  ~ {
+    cv_tbl %>%
+      mutate(
+        time_varying = .x
+      )
+  }
+  ) %>%
+  bind_rows()
+
+cv_tbl$cv_fits <- c(cv_spatial, cv_st_iid)
+
+cv_tbl$elpd <- purrr::map(cv_tbl$cv_fits, ~ .x$elpd) %>% as.numeric()
+
+old <- options(pillar.sigfig = 7)
+cv_tbl %>% 
+  arrange(species, elpd) %>% 
+  select(species, time_varying, elpd) 
 
 
-
-
-
-
+# export
+saveRDS(cv_tbl, here::here("data", "fits", "st_structure_cv_fts.rds"))
