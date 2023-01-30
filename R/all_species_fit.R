@@ -19,7 +19,8 @@ dat <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>%
     utm_y_1000 = utm_y / 1000,
     effort = log(volume_m3),
     week = lubridate::week(date),
-    vessel = as.factor(vessel)
+    vessel = as.factor(vessel),
+    species = tolower(species)
     ) %>% 
   # exclude 1995 and 1997 because sampling sparse
   filter(!year %in% c("1995", "1997", "2022"),
@@ -31,12 +32,12 @@ dat_tbl <- dat  %>%
   group_nest() %>% 
   mutate(
     # assign share_range based on AIC (see notes for details)
-    share_range = ifelse(species %in% c("CHINOOK", "SOCKEYE"), FALSE, TRUE)
+    share_range = ifelse(species %in% c("chinook", "sockeye"), FALSE, TRUE)
   )
 
 ## coordinates should be common to all species
 dat_coords <- dat %>% 
-  filter(species == "PINK") %>% 
+  filter(species == "pink") %>% 
   select(utm_x_1000, utm_y_1000) %>% 
   as.matrix()
 
@@ -48,35 +49,64 @@ inla_mesh_raw <- INLA::inla.mesh.2d(
   offset = c(20, 200)
 ) 
 spde <- make_mesh(
-  dat %>% filter(species == "PINK"),
+  dat %>% filter(species == "pink"),
   c("utm_x_1000", "utm_y_1000"),
   mesh = inla_mesh_raw
 ) 
 
+## plotting color palette
+col_pal <- c('#7fc97f','#beaed4','#fdc086','#ffff99','#386cb0')
+names(col_pal) <- c('chinook','pink','chum','coho','sockeye')
+
+
 
 ### EXP PLOTS ------------------------------------------------------------------
 
-ggplot(dat_in) +
+ggplot(dat) +
   geom_boxplot(aes(x = target_depth_bin, y = log(n_juv))) +
   facet_wrap(~species, scales = "free_x")
 
-ggplot(dat_in) +
+ggplot(dat) +
   geom_point(aes(x = bath_depth_mean_m, y = log(n_juv))) +
   facet_wrap(~species)
 
-ggplot(dat_in) +
+ggplot(dat) +
   geom_point(aes(x = dist_to_coast_km, y = log(n_juv))) +
   facet_wrap(~species)
 
-ggplot(dat_in) +
+ggplot(dat) +
   geom_point(aes(x = week, y = log(n_juv))) +
   facet_wrap(~species)
 
-ggplot(dat_in) +
+ggplot(dat) +
   geom_boxplot(aes(x = day_night, y = log(n_juv))) +
   facet_wrap(~species)
 
 
+### HISTOGRAMS OF CATCH --------------------------------------------------------
+
+catch_hist <- dat %>% 
+  filter(n_juv > 0) %>% 
+  group_by(species) %>% 
+  mutate(median_catch = mean(n_juv)) %>% 
+  ungroup() %>% 
+  ggplot(.) +
+  geom_histogram(aes(x = n_juv, fill = species), colour = "black") +
+  scale_fill_manual(values = col_pal) +
+  scale_x_continuous(trans='log10') +
+  geom_vline(aes(xintercept = median_catch), lty = 2, colour = "red") +
+  facet_wrap(~species, ncol = 1) +
+  labs(x = "Number of Individuals", y = "Number of Tows") +
+  ggsidekick::theme_sleek() +
+  theme(legend.position = "none")
+
+
+png(here::here("figs", "ms_figs", "catch_histogram.png"), height = 8.5, 
+    width = 4, units = "in", res = 200)
+catch_hist
+dev.off()
+
+  
 ### FIT SPATIAL ----------------------------------------------------------------
 
 
@@ -374,9 +404,6 @@ p_dat <- pred_tbl %>%
   #        scale_up = exp_up / mean_exp_est,
   #        scale_lo = exp_lo / mean_exp_est) %>% 
   # glimpse()
-
-col_pal <- c('#7fc97f','#beaed4','#fdc086','#ffff99','#386cb0')
-names(col_pal) <- c('chinook','pink','chum','coho','sockeye')
 
 # line plot function
 pp_foo <- function(dat, x_var, y_var = "exp_est", ymin_var = "exp_lo", 
