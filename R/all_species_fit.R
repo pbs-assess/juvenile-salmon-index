@@ -324,18 +324,11 @@ pred_tbl <- tibble(
 
 # predict
 pred_list <- vector(length = nrow(pred_tbl), mode = "list")
-spatial_pred_list <- vector(length = nrow(pred_tbl), mode = "list")
 for (i in seq_along(pred_tbl$var)) {
   pred_list[[i]] <- furrr::future_map2(
     dat_tbl$st_mod, dat_tbl$species, function(x , sp) {
-      predict(x, newdata = pred_tbl$data[[i]], se_fit = T, re_form = NA) %>%
-        mutate(species = sp,
-               up = est + 1.96 * est_se,
-               lo = est - 1.96 * est_se,
-               exp_est = exp(est),
-               exp_up = exp(up),
-               exp_lo = exp(lo))
-    }
+      predict(x, newdata = pred_tbl$data[[i]], se_fit = T, re_form = NA)
+      }
   ) %>%
     bind_rows()
 }
@@ -347,7 +340,7 @@ pred_tbl$pred_dat <- pred_list
 # saveRDS(pred_tbl, here::here("data", "preds", "fe_preds.rds"))
 pred_tbl <- readRDS(here::here("data", "preds", "fe_preds.rds"))
 
-dum <- purrr::map(
+pred_tbl$pred_dat <- purrr::map(
   pred_tbl$pred_dat,
   ~ {
     .x %>% 
@@ -357,9 +350,11 @@ dum <- purrr::map(
         max_est = max(exp_est),
         scale_est = exp_est / max_est,
         up = (est + 1.96 * est_se),
-        lo = (est - 1.96 * est_se), 
-        exp_up = exp(up) / max_est,
-        exp_lo = exp(lo) / max_est
+        lo = (est - 1.96 * est_se),
+        exp_up = exp(up),
+        exp_lo = exp(lo),
+        scale_up = exp(up) / max_est,
+        scale_lo = exp(lo) / max_est
       )
   }
 )
@@ -397,17 +392,11 @@ p_dat <- pred_tbl %>%
   unnest(cols = pred_dat) %>% 
   mutate(species = tolower(species),
          day_night = tolower(day_night),
-         survey_f = toupper(survey_f)) #%>% 
-  # group_by(species) %>% 
-  # mutate(mean_exp_est = mean(exp_est),
-  #        exp_est_scale = exp_est / mean_exp_est,
-  #        scale_up = exp_up / mean_exp_est,
-  #        scale_lo = exp_lo / mean_exp_est) %>% 
-  # glimpse()
+         survey_f = toupper(survey_f)) 
 
 # line plot function
-pp_foo <- function(dat, x_var, y_var = "exp_est", ymin_var = "exp_lo", 
-                     ymax_var = "exp_up", fill_var = "species") {
+pp_foo <- function(dat, x_var, y_var = "scale_est", ymin_var = "scale_lo", 
+                     ymax_var = "scale_up", fill_var = "species") {
   ggplot(
     dat,
     aes_string(x_var, y_var, ymin = ymin_var, ymax = ymax_var,
@@ -422,18 +411,15 @@ png(here::here("figs", "ms_figs", "week_preds.png"), height = 8.5, width = 4,
     units = "in", res = 200)
 pp_foo(
   dat = p_dat %>% filter(var == "week"),
-  x_var = "week"#,
-  # y_var = "exp_est_scale",
-  # ymin_var = "scale_lo", 
-  # ymax_var = "scale_up"
+  x_var = "week"
 ) +
   ggsidekick::theme_sleek() +
   ylab("Abundance Index") + 
   geom_line() +
   geom_ribbon(alpha = 0.3) +
   scale_x_continuous(expand = c(0, 0)) +
-  facet_wrap(~species, ncol = 1, scales = "free_y") +
-  # coord_cartesian(y = c(0, 0.00001)) +
+  facet_wrap(~species, ncol = 1) +
+  coord_cartesian(y = c(0, 2.5)) +
   xlab("Week") 
 dev.off()
 
@@ -448,7 +434,7 @@ pp_foo(
   geom_ribbon(alpha = 0.3) +
   scale_x_continuous(expand = c(0, 0)) +
   facet_wrap(~species, ncol = 1) +
-  coord_cartesian(y = c(0, 0.00001)) +
+  coord_cartesian(y = c(0, 2.5)) +
   xlab("Target Headrope Depth (m)") 
 dev.off()
 
@@ -463,7 +449,7 @@ pp_foo(
   geom_ribbon(alpha = 0.3) +
   scale_x_continuous(expand = c(0, 0)) +
   facet_wrap(~species, ncol = 1) +
-  coord_cartesian(y = c(0, 0.00001)) +
+  coord_cartesian(y = c(0, 2.5)) +
   xlab("Distance to Nearest Coastline (km)") 
 dev.off()
 
@@ -496,32 +482,6 @@ pp_foo(
     legend.position = "none"
   )
 dev.off()
-
-
-# ## calculate when abundance = median for depth and distance
-# pred_tbl$pred_dat[[2]] %>% 
-#   group_by(species) %>% 
-#   mutate(
-#     mid_est = 0.5 * (max(exp_est) - min(exp_est)),
-#     diff_est = abs(exp_est - mid_est)
-#   ) %>% 
-#   filter(
-#     diff_est == min(diff_est)
-#   ) %>%
-#   select(species, dist_to_coast_km, mid_est, diff_est)
-# 
-# pred_tbl$pred_dat[[4]] %>% 
-#   group_by(species) %>% 
-#   mutate(
-#     max_est = max(exp_est),
-#     min_est = min(exp_est),
-#     mid_est = 0.5 * (max_est - min_est),
-#     diff_est = abs(exp_est - mid_est)
-#   ) %>% 
-#   filter(
-#     diff_est == min(diff_est)
-#   ) %>%
-#   select(species, target_depth, max_est, min_est, mid_est, diff_est)
 
 
 ## MAKE SPATIAL PREDICTIONS ----------------------------------------------------
