@@ -148,8 +148,9 @@ cv_st_iid <- furrr::future_map(
     
 # AR1 spatiotemporal model
 set.seed(2022)
-cv_st_ar1 <- furrr::future_map(
-  cv_tbl$data,
+#cv_st_ar1 
+dum <- furrr::future_map(
+  cv_tbl$data[2:4],
   ~ sdmTMB_cv(
     n_juv ~ 1 +
       as.factor(year) +
@@ -171,14 +172,15 @@ cv_st_ar1 <- furrr::future_map(
       week = c(0, 52)
     ),
     control = sdmTMBcontrol(
-      newton_loops = 1
+      nlminb_loops = 2
+      # newton_loops = 1
     ),
     use_initial_fit = TRUE,
     k_folds = 5
   ),
   .options = furrr::furrr_options(seed = TRUE)
 )
-
+cv_tbl$cv_fits[2:4] <- dum
 
 cv_tbl <- purrr::map(
   c("off", "iid"
@@ -204,4 +206,4 @@ cv_tbl %>%
 
 
 # export
-saveRDS(cv_tbl, here::here("data", "fits", "st_structure_cv_fts.rds"))
+saveRDS(cv_tbl, here::here("data", "fits", "st_structure_cv_fts_ar1_only.rds"))
