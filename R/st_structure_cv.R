@@ -28,35 +28,6 @@ dat <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>%
   droplevels() 
 
 
-## TOY EXAMPLE FOR BUG ---------------------------------------------------------
-
-dd <- dat %>%
-  filter(species == "CHINOOK",
-         year > 2010) %>% 
-  select(n_juv, volume_m3, utm_x_1000, utm_y_1000, effort)
-
-mesh <- make_mesh(dd, c("utm_x_1000", "utm_y_1000"), cutoff = 20) # excercise
-
-dum <- sdmTMB_cv(
-  n_juv ~ 1,
-  data = dd,
-  mesh = mesh,
-  family = sdmTMB::nbinom2(),
-  spatial = "on",
-  k_folds = 5
-)
-
-dum2 <- sdmTMB_cv(
-  n_juv ~ 1,
-  data = dd,
-  mesh = mesh,
-  offset = "effort",
-  family = sdmTMB::nbinom2(),
-  spatial = "on",
-  k_folds = 5
-)
-
-
 ## -----------------------------------------------------------------------------
 
 cv_tbl <- dat  %>% 
@@ -148,9 +119,8 @@ cv_st_iid <- furrr::future_map(
     
 # AR1 spatiotemporal model
 set.seed(2022)
-#cv_st_ar1 
-dum <- furrr::future_map(
-  cv_tbl$data[2:4],
+cv_st_ar1 <- furrr::future_map(
+  cv_tbl$data,
   ~ sdmTMB_cv(
     n_juv ~ 1 +
       as.factor(year) +
@@ -180,11 +150,10 @@ dum <- furrr::future_map(
   ),
   .options = furrr::furrr_options(seed = TRUE)
 )
-cv_tbl$cv_fits[2:4] <- dum
+
 
 cv_tbl <- purrr::map(
-  c("off", "iid"
-    #, "ar1"
+  c("off", "iid", "ar1"
     ),
   ~ {
     cv_tbl %>%
@@ -195,7 +164,13 @@ cv_tbl <- purrr::map(
   ) %>%
   bind_rows()
 
-cv_tbl$cv_fits <- c(cv_spatial, cv_st_iid)
+
+# import previous fits (note that AR1 coho did not converge)
+cv_sp_iid <- readRDS(here::here("data", "fits", "st_structure_cv_fts.rds"))
+cv_ar <- readRDS(here::here("data", "fits", "st_structure_cv_fts_ar1_only.rds"))
+
+
+cv_tbl$cv_fits <- c(cv_sp_iid$cv_fits, cv_ar$cv_fits)
 
 cv_tbl$elpd <- purrr::map(cv_tbl$cv_fits, ~ .x$elpd) %>% as.numeric()
 
