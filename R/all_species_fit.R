@@ -23,7 +23,7 @@ dat <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>%
     species = tolower(species)
     ) %>% 
   # exclude 1995 and 1997 because sampling sparse
-  filter(!year %in% c("1995", "1997", "2022"),
+  filter(!year %in% c("1995", "1996", "1997", "2022"),
          !bath_depth_mean_m < 0) %>% 
   droplevels() 
 

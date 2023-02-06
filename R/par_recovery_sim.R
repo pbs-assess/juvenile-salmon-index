@@ -5,44 +5,38 @@
 ## Reran Oct 26: parameters recovered well for most species except range biased 
 # high and headrope depth coefficients uncertain for chum in particular;
 # consider rerunning with smooth for headrope, not cat. effects
+## Reran Jan 31: "final" model after comparing spatiotemporal structures with
+# cross validation
+
 
 library(tidyverse)
 library(sdmTMB)
 library(ggplot2)
 
+ncores <- parallel::detectCores() 
+future::plan(future::multisession, workers = ncores - 3)
+
 
 # fitted model from all_species_fit.R
-fit_all_sp <- readRDS(here::here("data", "fits", "st_mod_all_sp.rds")) #%>% 
-  # mutate(
-  #   bspde = purrr::map(spde, add_barrier_mesh,
-  #                      coast_utm, range_fraction = 0.1,
-  #                      # scaling = 1000 since UTMs were rescaled above
-  #                      proj_scaling = 1000)
-  # )
+fit_all_sp <- readRDS(here::here("data", "fits", "st_mod_all_sp.rds"))  
 # pull meshes from fitted model to use
 fit_all_sp$mesh <- purrr::map(fit_all_sp$st_mod, ~ .x$mesh)
 
-# make mesh to use in parameter 
-# coast_utm <- rbind(rnaturalearth::ne_states( "United States of America",
-#                                              returnclass = "sf"),
-#                    rnaturalearth::ne_states( "Canada", returnclass = "sf")) %>%
-#   sf::st_crop(.,
-#               xmin = -137, ymin = 47, xmax = -121.25, ymax = 57) %>%
-#   sf::st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
 
-
-nsims = 15
-sims_list <- purrr::map(fit_all_sp$st_mod, simulate, nsim = nsims)
+# simulate 20 MC draws from fitted models 
+set.seed(1234)
+nsims = 20
+sims_list <- purrr::map(
+  fit_all_sp$st_mod, simulate, nsim = nsims, re_form = ~0,
+)
 
 
 ## for each simulated dataset, refit model, recover pars and store
-library(furrr)
-plan(multisession, workers = 6)
-
 
 # make a tibble for each species simulations
 sim_tbl <- purrr::pmap(
-  list(fit_all_sp$species, fit_all_sp$data, sims_list), function (sp, dat, x) {
+  list(fit_all_sp$species, fit_all_sp$data, sims_list),
+  function (sp, dat, x) {
     tibble(
       species = sp,
       iter = seq(1, nsims, by = 1),
@@ -54,59 +48,95 @@ sim_tbl <- purrr::pmap(
   }
 ) %>% 
   bind_rows() %>% 
-  left_join(., fit_all_sp %>% select(species, mesh), by = "species")
-
-# dd <- sim_tbl[1:3, ] %>% 
-#   mutate(
-#     spde = purrr::map(sim_dat, make_mesh,  c("utm_x_1000", "utm_y_1000"),
-#                       cutoff = 15, type = "kmeans"),
-#     bspde = purrr::map(spde, add_barrier_mesh,
-#                        coast_utm, range_fraction = 0.1,
-#                        # scaling = 1000 since UTMs were rescaled above
-#                        proj_scaling = 1000)
-#   )
-# glimpse(dd$bspde[[1]])
-# glimpse(fit_all_sp$bspde[[1]])
+  left_join(., 
+            fit_all_sp %>% select(species, share_range, mesh), 
+            by = "species")
 
 
-# TODO: UPDATE WITH REVISED MODEL
-sim_fit_list <- furrr::future_pmap(
-  list(sim_tbl$sim_dat, sim_tbl$bspde), function (x, bspde_in) {
-    sdmTMB(
-      sim_catch ~ 1 +
-        dist_to_coast_km + 
-        s(week, bs = "cc", k = 5) +
-        day_night +
-        target_depth_bin +
-        survey_f,
-      offset = x$effort,
-      data = x,
-      mesh = bspde_in,
-      family = sdmTMB::nbinom2(),
-      spatial = "on",
-      spatiotemporal = "AR1",
-      time = "year",
-      anisotropy = FALSE,
-      priors = sdmTMBpriors(
-        matern_s = pc_matern(range_gt = 10, sigma_lt = 80)
-      ),
-      control = sdmTMBcontrol(
-        nlminb_loops = 2,
-        newton_loops = 1
-      )
-    )
-  }
+## test w/ single model
+dum <- sdmTMB(
+  sim_catch ~ 1 +
+    as.factor(year) +
+    dist_to_coast_km +
+    s(week, bs = "cc", k = 5) +
+    target_depth +
+    day_night +
+    survey_f,
+  offset = sim_tbl$sim_dat[[1]]$effort,
+  data = sim_tbl$sim_dat[[1]],
+  mesh = sim_tbl$mesh[[1]],
+  family = sdmTMB::nbinom2(),
+  spatial = "on",
+  spatiotemporal = "iid",
+  time = "year",
+  anisotropy = TRUE,
+  share_range = sim_tbl$share_range[[1]],
+  knots = list(
+    week = c(0, 52)
+  ),
+  control = sdmTMBcontrol(
+    newton_loops = 1
+  )
 )
 
-sim_tbl$sim_fit <- sim_fit_list
+sp_vec <- unique(sim_tbl$species)
+for (i in seq_along(sp_vec)) {
+  sim_tbl_sub <- sim_tbl %>% filter(species == sp_vec[i])
+  fit <- furrr::future_pmap(
+    list(sim_tbl_sub$sim_dat, sim_tbl_sub$share_range, sim_tbl_sub$mesh), 
+    function (x, sr, mesh) {
+      sdmTMB(
+        sim_catch ~ 1 +
+          as.factor(year) +
+          dist_to_coast_km +
+          s(week, bs = "cc", k = 5) +
+          target_depth +
+          day_night +
+          survey_f,
+        offset = x$effort,
+        data = x,
+        mesh = mesh,
+        family = sdmTMB::nbinom2(),
+        spatial = "on",
+        spatiotemporal = "iid",
+        time = "year",
+        anisotropy = TRUE,
+        share_range = sr,
+        knots = list(
+          week = c(0, 52)
+        ),
+        control = sdmTMBcontrol(
+          nlminb_loops = 2
+          # newton_loops = 1
+        )
+      )
+    },
+    .options = furrr::furrr_options(seed = TRUE)
+  )
+  saveRDS(
+    fit,
+    here::here("data", "fits", "sim_fit", paste(sp_vec[i], ".rds", sep = ""))
+    )
+}
 
-# check one model's summary
-summary(sim_tbl$sim_fit[[1]])
+
+# import saved sim fits 
+sim_fit_list <- purrr::map(
+  sp_vec,
+  ~ readRDS(
+    here::here("data", "fits", "sim_fit", paste(.x, ".rds", sep = ""))
+  )
+)
+sim_tbl$sim_fit <- do.call(c, sim_fit_list)
+
+
+# how many had convergence issues by species?
+purrr::map(sim_fit_list, ~ .x$converged) 
+
 
 # extract fixed and ran effects pars from simulations
 sim_tbl$pars <- purrr::map(
   sim_tbl$sim_fit, function (x) {
-    # x <- sim_tbl$sim_fit[[2]]
     fix <- tidy(x, effects = "fixed")
     ran <- tidy(x, effects = "ran_pars")
     rbind(fix, ran) 
@@ -117,7 +147,12 @@ sim_pars <- sim_tbl %>%
   select(species, iter, pars) %>% 
   unnest(cols = c(pars)) %>% 
   mutate(iter = as.factor(iter),
-         species = abbreviate(species, minlength = 3))
+         species = abbreviate(species, minlength = 3)) %>% 
+  # add unique identifier for second range term
+  group_by(iter, species, term) %>% 
+  mutate(par_id = row_number(),
+         term = ifelse(par_id > 1, paste(term, par_id, sep = "_"), term)) %>% 
+  ungroup()
 saveRDS(sim_pars, here::here("data", "preds", "sim_pars.rds"))
 
 
@@ -127,7 +162,14 @@ fit_effs <- purrr::map2(
     fix <- tidy(x, effects = "fixed")
     ran <- tidy(x, effects = "ran_pars")
     rbind(fix, ran) %>% 
-      mutate(species = abbreviate(sp, minlength = 3))
+      mutate(species = abbreviate(sp, minlength = 3)) %>% 
+      # add unique identifier for second range term
+      group_by(species, term) %>% 
+      mutate(
+        par_id = row_number(),
+        term = ifelse(par_id > 1, paste(term, par_id, sep = "_"), term)
+      ) %>% 
+      ungroup()
   }
 ) %>% 
   bind_rows() 
@@ -138,7 +180,7 @@ sim_box <- ggplot() +
   facet_wrap(~term, scales = "free") +
   ggsidekick::theme_sleek()
 
-pdf(here::here("figs", "diagnostics", "par_recovery_sim_box.pdf"), 
-    height = 7, width = 11)
+png(here::here("figs", "ms_figs", "par_recovery_sim_box.png"), 
+    height = 7, width = 11, units = "in", res = 250)
 sim_box
 dev.off()
