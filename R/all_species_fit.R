@@ -23,7 +23,9 @@ dat <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>%
     species = tolower(species)
     ) %>% 
   # exclude 1995 and 1997 because sampling sparse
-  filter(!year %in% c("1995", "1996", "1997", "2022"),
+  filter(!year %in% c("1995",
+                      "1996",
+                      "1997", "2022"),
          !bath_depth_mean_m < 0) %>% 
   droplevels() 
 
@@ -57,6 +59,10 @@ spde <- make_mesh(
 ## plotting color palette
 col_pal <- c('#7fc97f','#beaed4','#fdc086','#ffff99','#386cb0')
 names(col_pal) <- c('chinook','pink','chum','coho','sockeye')
+
+# prep multisession
+ncores <- parallel::detectCores() 
+future::plan(future::multisession, workers = ncores - 3)
 
 
 
@@ -145,55 +151,53 @@ dev.off()
 
 ### FIT SATURATED --------------------------------------------------------------
 
-# prep multisession
-ncores <- parallel::detectCores() 
-future::plan(future::multisession, workers = ncores - 3)
-
-st_mod <- furrr::future_map2(
-  dat_tbl$data, dat_tbl$share_range,
-  ~ {
-    sdmTMB(
-      n_juv ~ 1 +
-        as.factor(year) +
-        dist_to_coast_km +
-        s(week, bs = "cc", k = 5) +
-        target_depth +
-        day_night +
-        survey_f,
-      offset = .x$effort,
-      data = .x,
-      mesh = spde,
-      family = sdmTMB::nbinom2(),
-      spatial = "on",
-      spatiotemporal = "iid",
-      time = "year",
-      anisotropy = TRUE,
-      share_range = .y,
-      knots = list(
-        week = c(0, 52)
-      ),
-      control = sdmTMBcontrol(
-        newton_loops = 1
-      ),
-      silent = FALSE
-    )
-  },
-  .options = furrr::furrr_options(seed = TRUE)
-)
-
-
-purrr::map(st_mod, sanity)
-## all look good
-
-dat_tbl$st_mod <- st_mod
-saveRDS(dat_tbl, here::here("data", "fits", "st_mod_all_sp.rds"))
+# st_mod_ar1 <- furrr::future_map2(
+#   dat_tbl$data, dat_tbl$share_range,
+#   ~ {
+#     sdmTMB(
+#       n_juv ~ 0 +
+#         as.factor(year) +
+#         dist_to_coast_km +
+#         s(week, bs = "cc", k = 5) +
+#         target_depth +
+#         day_night +
+#         survey_f,
+#       offset = .x$effort,
+#       data = .x,
+#       mesh = spde,
+#       family = sdmTMB::nbinom2(),
+#       spatial = "on",
+#       spatiotemporal = "ar1",
+#       time = "year",
+#       anisotropy = TRUE,
+#       share_range = TRUE,#.y,
+#       knots = list(
+#         week = c(0, 52)
+#       ),
+#       control = sdmTMBcontrol(
+#         newton_loops = 1
+#       ),
+#       silent = FALSE
+#     )
+#   },
+#   .options = furrr::furrr_options(seed = TRUE)
+# )
+# 
+# 
+# purrr::map(st_mod_ar1, sanity)
+# ## all look good
+# 
+# dat_tbl$st_mod <- st_mod_ar1
+# saveRDS(dat_tbl, here::here("data", "fits", "st_mod_all_sp_ar1.rds"))
 
 
-dat_tbl <- readRDS(here::here("data", "fits", "st_mod_all_sp.rds"))
+# dat_tbl <- readRDS(here::here("data", "fits", "st_mod_all_sp.rds"))
+dat_tbl <- readRDS(here::here("data", "fits", "st_mod_all_sp_ar1.rds"))
 
 purrr::map(
   dat_tbl$st_mod, sanity
 )
+
 
 ## check residuals
 dat_tbl$sims <- purrr::map(dat_tbl$st_mod, simulate, nsim = 100)
@@ -215,9 +219,6 @@ hist_list <- purrr::pmap(
   }
 )
 
-purrr::map(dat_tbl$sims, ~ mean(.x[,1]))
-
-
 pred_obs_list <- purrr::pmap(
   list(dat_tbl$data, dat_tbl$sims), function (x, y) {
     for (i in seq_along(samps)) {
@@ -227,43 +228,6 @@ pred_obs_list <- purrr::pmap(
     }
   }
 )
-
-
-## PLOT ANNUAL EFFECTS ---------------------------------------------------------
-
-year_dat <- data.frame(
-  week = 28,
-  dist_to_coast_km = median(dat$dist_to_coast_km),
-  day_night = "DAY",
-  target_depth = 0,
-  survey_f = "hss",
-  year = unique(dat$year)
-)
-
-year_pars <- purrr::map2(
-  dat_tbl$st_mod, dat_tbl$species,
-  ~ tidy(.x, conf.int = T) %>% 
-    mutate(
-      species = .y
-    )
-) %>% 
-  bind_rows() %>% 
-  filter(grepl("year", term)) 
-year_pars$year <- strsplit(year_pars$term, split=')') %>% 
-  purrr::map(., ~ .x[2]) %>% 
-  unlist()
-
-
-ggplot(
-  year_pars,
-  aes(year, estimate, ymin = conf.low, ymax = conf.high,
-             fill = species)
-) +
-  ggsidekick::theme_sleek() +
-  # scale_fill_manual(values = col_pal) +
-  ylab("Abundance Index") +
-  geom_pointrange(shape = 21) +
-  facet_wrap(~species, ncol = 1)
 
 
 ## MAKE FE PREDICTIONS ---------------------------------------------------------
@@ -327,7 +291,8 @@ pred_list <- vector(length = nrow(pred_tbl), mode = "list")
 for (i in seq_along(pred_tbl$var)) {
   pred_list[[i]] <- furrr::future_map2(
     dat_tbl$st_mod, dat_tbl$species, function(x , sp) {
-      predict(x, newdata = pred_tbl$data[[i]], se_fit = T, re_form = NA)
+      predict(x, newdata = pred_tbl$data[[i]], se_fit = T, re_form = NA) %>% 
+        mutate(species = sp)
       }
   ) %>%
     bind_rows()
@@ -337,7 +302,7 @@ pred_tbl$pred_dat <- pred_list
 
 
 # takes a long time so save
-# saveRDS(pred_tbl, here::here("data", "preds", "fe_preds.rds"))
+saveRDS(pred_tbl, here::here("data", "preds", "fe_preds.rds"))
 pred_tbl <- readRDS(here::here("data", "preds", "fe_preds.rds"))
 
 pred_tbl$pred_dat <- purrr::map(
@@ -359,33 +324,6 @@ pred_tbl$pred_dat <- purrr::map(
   }
 )
 
-# make all plots for quick visualization
-plot_eff <- function (dat, x_var, type = c("line", "dot")) {
-  p <- dat %>% 
-    ggplot(
-    ., 
-    aes_string(x_var, "exp_est", ymin = "exp_lo", ymax = "exp_up")
-  ) +
-    facet_wrap(~species, scales = "free_y") +
-    labs(title = x_var) +
-    ggsidekick::theme_sleek()
-  if (type == "line") {
-    p2 <- p +
-      geom_line() +
-      geom_ribbon(alpha = 0.3)
-  }
-  if (type == "dot") {
-    p2 <- p + 
-      geom_pointrange() 
-  }
-  return(p2)
-} 
-
-pdf(here::here("figs", "fixed_effects.pdf"), width = 8, height = 5)
-purrr::pmap(list(pred_tbl$pred_dat, pred_tbl$var, pred_tbl$plot), plot_eff)
-dev.off()
-
-
 # make individual plots for ms
 p_dat <- pred_tbl %>% 
   select(var, pred_dat) %>% 
@@ -394,13 +332,11 @@ p_dat <- pred_tbl %>%
          day_night = tolower(day_night),
          survey_f = toupper(survey_f)) 
 
-# line plot function
-pp_foo <- function(dat, x_var, y_var = "scale_est", ymin_var = "scale_lo", 
-                     ymax_var = "scale_up", fill_var = "species") {
+
+pp_foo <- function(dat, ...) {
   ggplot(
     dat,
-    aes_string(x_var, y_var, ymin = ymin_var, ymax = ymax_var,
-               fill = fill_var)
+    mapping = aes(!!!ensyms(...))
   ) +
     ggsidekick::theme_sleek() +
     scale_fill_manual(values = col_pal) +
@@ -411,7 +347,8 @@ png(here::here("figs", "ms_figs", "week_preds.png"), height = 8.5, width = 4,
     units = "in", res = 200)
 pp_foo(
   dat = p_dat %>% filter(var == "week"),
-  x_var = "week"
+  x = "week", y = "scale_est", ymin = "scale_lo", 
+  ymax = "scale_up", fill = "species"
 ) +
   ggsidekick::theme_sleek() +
   ylab("Abundance Index") + 
@@ -428,7 +365,8 @@ png(here::here("figs", "ms_figs", "depth_preds.png"), height = 8.5, width = 4,
     units = "in", res = 200)
 pp_foo(
   dat = p_dat %>% filter(var == "target_depth"),
-  x_var = "target_depth"
+  x = "target_depth", y = "scale_est", ymin = "scale_lo", 
+  ymax = "scale_up", fill = "species"
 ) +
   geom_line() +
   geom_ribbon(alpha = 0.3) +
@@ -443,7 +381,8 @@ png(here::here("figs", "ms_figs", "dist_preds.png"), height = 8.5, width = 4,
     units = "in", res = 200)
 pp_foo(
   dat = p_dat %>% filter(var == "dist_to_coast_km"),
-  x_var = "dist_to_coast_km"
+  x = "dist_to_coast_km", y = "scale_est", ymin = "scale_lo", 
+  ymax = "scale_up", fill = "species"
 ) +
   geom_line() +
   geom_ribbon(alpha = 0.3) +
@@ -458,7 +397,8 @@ png(here::here("figs", "ms_figs", "dn_preds.png"), height = 3, width = 8,
     units = "in", res = 200)
 pp_foo(
   dat = p_dat %>% filter(var == "day_night"),
-  x_var = "day_night"
+  x = "day_night", y = "scale_est", ymin = "scale_lo", 
+  ymax = "scale_up", fill = "species"
 ) +
   geom_pointrange(shape = 21) +
   facet_wrap(~species, nrow = 1) +
@@ -473,7 +413,8 @@ png(here::here("figs", "ms_figs", "surv_preds.png"), height = 3, width = 8,
     units = "in", res = 200)
 pp_foo(
   dat = p_dat %>% filter(var == "survey_f"),
-  x_var = "survey_f"
+  x = "survey_f", y = "scale_est", ymin = "scale_lo", 
+  ymax = "scale_up", fill = "species"
 ) +
   geom_pointrange(shape = 21) +
   facet_wrap(~species, nrow = 1) +
@@ -482,6 +423,68 @@ pp_foo(
     legend.position = "none"
   )
 dev.off()
+
+
+## PARAMETER ESTIMATES ---------------------------------------------------------
+
+## random parameter estimates
+ran_pars <- purrr::map2(
+  dat_tbl$st_mod, dat_tbl$species,
+  ~ tidy(.x, effects = "ran_par", conf.int = T) %>% 
+    mutate(
+      species = .y
+    )
+) %>% 
+  bind_rows()  
+
+png(here::here("figs", "ms_figs", "ran_pars.png"), height = 3, width = 8,
+    units = "in", res = 200)
+ggplot(
+  ran_pars,
+  aes(species, estimate, ymin = conf.low, ymax = conf.high,
+      fill = species)
+) +
+  ggsidekick::theme_sleek() +
+  scale_fill_manual(values = col_pal) +
+  ylab("Parameter Estimate") +
+  geom_pointrange(shape = 21) +
+  facet_wrap(~term, scales = "free_y") +
+  theme(
+    legend.position = "none"
+  )
+dev.off()
+
+
+# fixed parameter estimates
+fix_pars <- purrr::map2(
+  dat_tbl$st_mod, dat_tbl$species,
+  ~ tidy(.x, effects = "fixed", conf.int = T) %>% 
+    mutate(
+      species = .y
+    )
+) %>% 
+  bind_rows()  
+
+ggplot(
+  fix_pars %>% filter(term == "survey_fipes"),
+  aes(species, estimate, ymin = conf.low, ymax = conf.high)
+) +
+  ggsidekick::theme_sleek() +
+  geom_pointrange(shape = 21) 
+
+
+# year_pars <- purrr::map2(
+#   dat_tbl$st_mod, dat_tbl$species,
+#   ~ tidy(.x, conf.int = T) %>% 
+#     mutate(
+#       species = .y
+#     )
+# ) %>% 
+#   bind_rows() %>% 
+#   filter(grepl("year", term)) 
+# year_pars$year <- strsplit(year_pars$term, split=')') %>% 
+#   purrr::map(., ~ .x[2]) %>% 
+#   unlist()
 
 
 ## MAKE SPATIAL PREDICTIONS ----------------------------------------------------
@@ -671,6 +674,10 @@ plot_map(omega_dat, "omega_s") +
   facet_grid(species~season)
 dev.off()
 
+
+## SOPO MAPS -------------------------------------------------------------------
+
+# use subset of predictions above to make maps of 2022
 
 
 ## INDICES ---------------------------------------------------------------------
