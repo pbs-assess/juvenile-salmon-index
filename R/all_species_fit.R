@@ -735,25 +735,36 @@ index_dat <- rbind(index_sum %>% filter(year %in% summer_years),
   ) %>% 
   group_by(species, season) %>% 
   mutate(
-    group_mean = mean(est),
-    scaled_est = scale(est, center = TRUE, scale = TRUE) %>% 
-      as.numeric(),
-    anomaly = case_when(
-      lwr > group_mean ~ "pos",
-      upr < group_mean ~ "neg",
-      TRUE ~ "avg"
-    ) %>% 
-      as.factor()
+    # group_mean = mean(est),
+    # scaled_est = scale(est, center = TRUE, scale = TRUE) %>% 
+    #   as.numeric(),
+    # anomaly = case_when(
+    #   lwr > group_mean ~ "pos",
+    #   upr < group_mean ~ "neg",
+    #   TRUE ~ "avg"
+    # ) %>% 
+    #   as.factor()
+    max_est = max(est),
+    scale_est = est / max_est,
+    scale_lwr = lwr / max_est,
+    scale_upr = upr / max_est
     ) %>% 
   ungroup()
 
 
-index_plot <- ggplot(index_dat, 
-                     aes(year, est)) +
-  geom_pointrange(aes(ymin = lwr, ymax = upr), shape = 21, fill = "white") +
+# col_pal <- c("#f5f5f5", "#d8b365", "#5ab4ac")
+# names(col_pal) <- levels(index_dat$anomaly)
+
+
+index_scaled <- ggplot(index_dat, 
+                     aes(year, scale_est)) +
+  geom_pointrange(aes(ymin = scale_lwr, ymax = scale_upr), 
+                  shape = 21, fill = "white") +
   labs(x = "Year", y = "Abundance Index") +
   ggsidekick::theme_sleek() +
-  facet_grid(species~season, scales = "free_y") 
+  facet_grid(species~season, scales = "free_y") +
+  coord_cartesian(y = c(0, 2.5))
+  
 
 log_index_plot <- ggplot(index_dat, 
        aes(year, log_est)) +
@@ -763,15 +774,6 @@ log_index_plot <- ggplot(index_dat,
   ggsidekick::theme_sleek() +
   facet_grid(species~season, scales = "free_y") 
 
-col_pal <- c("#f5f5f5", "#d8b365", "#5ab4ac")
-names(col_pal) <- levels(index_dat$anomaly)
-
-index_scaled <- ggplot(index_dat) +
-  geom_point(aes(year, scaled_est, fill = anomaly), shape = 21, size = 2) +
-  labs(x = "Year", y = "Scaled Abundance Index") +
-  ggsidekick::theme_sleek() +
-  facet_grid(species~season) +
-  scale_fill_manual(values = col_pal)
 
 
 png(here::here("figs", "ms_figs", "hss_index.png"))
