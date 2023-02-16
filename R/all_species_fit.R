@@ -776,10 +776,6 @@ log_index_plot <- ggplot(index_dat,
 
 
 
-png(here::here("figs", "ms_figs", "hss_index.png"))
-index_plot
-dev.off()
-
 png(here::here("figs", "ms_figs", "log_hss_index.png"))
 log_index_plot
 dev.off()
