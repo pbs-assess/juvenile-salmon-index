@@ -1,40 +1,46 @@
 ## Clean BCSI Data
-# Uses .csv files produced by Amy Tabata May 2022 (updated Oct 2022)
+# Uses .csv files produced by Amy Tabata May 2022 (updated Feb 2023)
 
 library(tidyverse)
 library(sf)
 library(sp)
 
-# chin <- read.csv(
-#   here::here("data", "BCSI_Juv_CHINOOK_Counts_True20220504.csv")
-# ) %>% 
-#   janitor::clean_names()
-bridge_raw <- read.csv(here::here("data", "BCSI_Bridge_Info_20220929.csv")) %>% 
-  janitor::clean_names() 
+
+bridge_raw <- read.csv(here::here("data", "BCSI_TowInfo_2023215.csv")) %>% 
+  #read.csv(here::here("data", "BCSI_Bridge_Info_20220929.csv")) %>% 
+  janitor::clean_names()  %>%
+  # exclude some absurdly deep tows
+  filter(!target_depth > 75) %>% 
+  mutate(
+    # missing day/night classifier for 2022 fall survey 
+    day_night = ifelse(trip_id == "2022-011", "DAY", day_night),
+    # calculate mean depth 
+    mean_bottom_depth = ifelse(
+      !is.na(end_bottom_depth),
+      (start_bottom_depth + end_bottom_depth) / 2,
+      start_bottom_depth
+    )
+  )
+
 synoptic_stations <- read.csv(here::here("data", "synoptic_stations.csv")) %>% 
   janitor::clean_names()
 
-# target headrope depths generated separately
-target_depth <- read.csv(
-  here::here("data", "bcsi_bridge_target_depth_20221009.csv")) %>% 
-  janitor::clean_names()
+# target headrope depths generated separately (now included in updated tow info)
+# target_depth <- read.csv(
+#   here::here("data", "bcsi_bridge_target_depth_20221009.csv")) %>% 
+#   janitor::clean_names()
 
-bridge_raw2 <- left_join(bridge_raw, target_depth, by = "unique_event") %>% 
-  # exclude some absurdly deep tows
-  filter(!target_depth > 75)
+
 
 
 ## INTERSECTION WITH IPES GRID -------------------------------------------------
 
 ## import and transform IPES grid
 # ipes_sf_deg <- readRDS(here::here("data", "spatial", "ipes_sf_list_deg.RDS"))
-ipes_grid_raw <- rgdal::readOGR(
-  here::here("data", "spatial", "ipes_shapefiles", "IPES_Grid_UTM9.shp"))
-
-# convert shapefile to sf, then points, then combine into single polygon
-ipes_sf <- as(ipes_grid_raw, 'SpatialPolygonsDataFrame')
-ipes_sf_pts <- st_as_sf(ipes_grid_raw, as_points = TRUE, merge = TRUE)
-ipes_sf_poly <- st_union(ipes_sf_pts, by_feature = FALSE)
+ipes_sf_poly <- st_read(
+  here::here("data", "spatial", "ipes_shapefiles", "IPES_Grid_UTM9.shp")) %>% 
+  #convert into single polygon
+  st_union(., by_feature = FALSE)
 
 
 ## add UTM to bridge and convert to sf
@@ -51,52 +57,88 @@ get_utm <- function(x, y, zone, loc){
   }
 }
 
-bridge <- bridge_raw2 %>% 
+bridge <- bridge_raw %>% 
   mutate(
-    mean_lat = ifelse(is.na(end_latitude),
-                      start_latitude,
-                      (start_latitude + end_latitude) / 2),
-    mean_lon = ifelse(is.na(end_longitude),
-                      start_longitude,
-                      (start_longitude + end_longitude) / 2),
-    utm_x = get_utm(mean_lon, mean_lat, zone = "9", loc = "x"),
-    utm_y = get_utm(mean_lon, mean_lat, zone = "9", loc = "y"),
-    # bin target depths
-    target_depth_bin = cut(
-      target_depth, 
-      breaks = c(-Inf, 14, 29, 44, 59, Inf), 
-      labels=c("0", "15", "30", "45", "60")
-    ) %>% 
-      as.factor()
+    utm_x = get_utm(start_longitude, start_latitude, zone = "9", loc = "x"),
+    utm_y = get_utm(start_longitude, start_latitude, zone = "9", loc = "y")
   ) 
 
 bridge_sf <- bridge %>% 
-  select(unique_event, mean_lat, mean_lon) %>% 
-  st_as_sf(., coords = c("mean_lon", "mean_lat"), 
-           crs = sp::CRS("+proj=longlat +datum=WGS84")) 
+  select(unique_event, utm_y, utm_x) %>% 
+  st_as_sf(., coords = c("utm_x", "utm_y"), 
+           crs = st_crs(ipes_sf_poly))
 
-bridge_sf2 <- bridge_sf %>% 
-  st_transform(., crs = st_crs(ipes_sf_poly))
-    
+# check
 ggplot() +
-  geom_sf(data = st_intersection(bridge_sf2, ipes_sf_poly))
+  geom_sf(data = st_intersection(bridge_sf, ipes_sf_poly))
 
 # extract events within ipes survey grid
-ipes_grid_events <- st_intersection(bridge_sf2, ipes_sf_poly) %>% 
+ipes_grid_events <- st_intersection(bridge_sf, ipes_sf_poly) %>% 
   pull(., unique_event)
 
 
+## MISSING BATHY DATA ----------------------------------------------------------
+
+missing_bathy <- bridge_raw %>% filter(
+  is.na(mean_bottom_depth)
+)
+
+bathy_grid <- marmap::getNOAA.bathy(
+  lon1 = min(missing_bathy$start_longitude),
+  lon2 = max(missing_bathy$start_longitude),
+  lat1 = min(missing_bathy$start_latitude),
+  lat2 = max(missing_bathy$start_latitude),
+  resolution = 0.5
+)
+
+bathy_df <- data.frame(
+  lon = rep(rownames(bathy_grid), 
+            each = length(unique(colnames(bathy_grid)))),
+  lat = rep(colnames(bathy_grid), 
+            times = length(unique(rownames(bathy_grid)))),
+  depth = NA
+) 
+for (i in 1:nrow(bathy_grid)) {
+  bathy_df$depth[i] <- bathy_grid[bathy_df$lon[i], bathy_df$lat[i]]
+}
+
+# subset to remove missing depths that are on land or inshore of 50 m isobath
+bathy_df_trim <- bathy_df %>% 
+  filter(!is.na(depth),
+         !depth > -50)
+
+# identify closest depth data
+tt <- hutilscpp::match_nrst_haversine(
+  lat = missing_bathy$start_latitude,
+  lon = missing_bathy$start_longitude,
+  addresses_lat = as.numeric(bathy_df_trim$lat),
+  addresses_lon = as.numeric(bathy_df_trim$lon)
+)
+
+missing_bathy$est_mean_bottom_depth <- -1 * bathy_df_trim$depth[tt$pos] 
+
+ggplot(missing_bathy) +
+  geom_point(aes(x = start_longitude, y = start_latitude, fill = est_mean_bottom_depth),
+             shape = 21)
+ggplot() +
+  geom_point(data = bridge_raw, 
+             aes(x = start_longitude, y = start_latitude, fill = mean_bottom_depth),
+             shape = 21) +
+  geom_point(data = missing_bathy,
+             aes(x = start_longitude, y = start_latitude, fill = est_mean_bottom_depth),
+             shape = 23, colour = "red")
+
 ## CLEAN AND MERGE -------------------------------------------------------------
 
-# impute missing bridge data
+# impute missing bridge data (generally because distance travelled not tracked);
+# based on vessel name, year, location, target_depth, net_desc, mouth_km2
 imp_dat <- bridge %>% 
-  # replace 0s
   mutate(
-    vessel_speed = ifelse(vessel_speed == "0", NaN, vessel_speed),
-    distance_km = ifelse(distance_km == "0", NaN, distance_km),
-    height_km = ifelse(height_km == "0", NaN, height_km),
-    ) %>% 
-  select(utm_x, utm_y, trip_id, tow_length_hour, target_depth, vessel_speed, 
+    # replace 0s
+    volume_km3 = ifelse(volume_km3 == "0", NaN, volume_km3)
+  ) %>% 
+  select(utm_x, utm_y, trip_id, target_depth, tow_length_minute, net_desc, 
+         mouth_km2, 
          bath_depth_mean_m, dist_to_coast_km, distance_km:height_km) 
 imp_dat2 <- VIM::kNN(imp_dat, k = 5)
 imp_dat2 <- imp_dat2 %>% 
@@ -341,7 +383,10 @@ png(here::here("figs", "ms_figs", "vol_swept.png"), height = 3.5, width = 5.5,
 hist_vol_swept
 dev.off()
 
+
 ## ADD CATCH DATA --------------------------------------------------------------
+
+BCSI_SalmonCounts_2023215.csv
 
 # import all species
 sp_files <- list.files(path = here::here("data"), pattern = "BCSI_Juv_")
@@ -353,6 +398,9 @@ sp_catch <- purrr::map(
 ) %>% 
   bind_rows() %>% 
   janitor::clean_names()
+
+sp_catch2 <- read.csv(here::here("data", "BCSI_SalmonCounts_2023215.csv"),
+                      fileEncoding="UTF-8-BOM")
 
 catch_dat <- left_join(dat_trim, sp_catch, by = "unique_event") 
 
