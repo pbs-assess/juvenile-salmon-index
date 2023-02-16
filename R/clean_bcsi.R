@@ -10,17 +10,7 @@ bridge_raw <- read.csv(here::here("data", "BCSI_TowInfo_2023215.csv")) %>%
   #read.csv(here::here("data", "BCSI_Bridge_Info_20220929.csv")) %>% 
   janitor::clean_names()  %>%
   # exclude some absurdly deep tows
-  filter(!target_depth > 75) %>% 
-  mutate(
-    # missing day/night classifier for 2022 fall survey 
-    day_night = ifelse(trip_id == "2022-011", "DAY", day_night),
-    # calculate mean depth 
-    mean_bottom_depth = ifelse(
-      !is.na(end_bottom_depth),
-      (start_bottom_depth + end_bottom_depth) / 2,
-      start_bottom_depth
-    )
-  )
+  filter(!target_depth > 75) 
 
 synoptic_stations <- read.csv(here::here("data", "synoptic_stations.csv")) %>% 
   janitor::clean_names()
@@ -60,7 +50,15 @@ get_utm <- function(x, y, zone, loc){
 bridge <- bridge_raw %>% 
   mutate(
     utm_x = get_utm(start_longitude, start_latitude, zone = "9", loc = "x"),
-    utm_y = get_utm(start_longitude, start_latitude, zone = "9", loc = "y")
+    utm_y = get_utm(start_longitude, start_latitude, zone = "9", loc = "y"),
+    # missing day/night classifier for 2022 fall survey 
+    day_night = ifelse(trip_id == "2022-011", "DAY", day_night),
+    # calculate mean depth 
+    mean_bottom_depth = ifelse(
+      !is.na(end_bottom_depth),
+      (start_bottom_depth + end_bottom_depth) / 2,
+      start_bottom_depth
+    )
   ) 
 
 bridge_sf <- bridge %>% 
@@ -79,7 +77,7 @@ ipes_grid_events <- st_intersection(bridge_sf, ipes_sf_poly) %>%
 
 ## MISSING BATHY DATA ----------------------------------------------------------
 
-missing_bathy <- bridge_raw %>% filter(
+missing_bathy <- bridge %>% filter(
   is.na(mean_bottom_depth)
 )
 
@@ -91,21 +89,36 @@ bathy_grid <- marmap::getNOAA.bathy(
   resolution = 0.5
 )
 
-bathy_df <- data.frame(
-  lon = rep(rownames(bathy_grid), 
-            each = length(unique(colnames(bathy_grid)))),
-  lat = rep(colnames(bathy_grid), 
-            times = length(unique(rownames(bathy_grid)))),
-  depth = NA
-) 
-for (i in 1:nrow(bathy_grid)) {
-  bathy_df$depth[i] <- bathy_grid[bathy_df$lon[i], bathy_df$lat[i]]
+bathy_matrix <- matrix(data = NA, 
+                       nrow = nrow(bathy_grid), ncol = ncol(bathy_grid))
+for (i in 1:nrow(bathy_matrix)) {
+  bathy_matrix[i, ] <- bathy_grid[i, ] %>% as.numeric()
 }
+dimnames(bathy_matrix) <- dimnames(bathy_grid)
+bathy_df <- data.frame(
+  lon = rownames(bathy_matrix),
+  bathy_matrix) %>% 
+  pivot_longer(., cols = -(lon), names_to = "lat",
+               names_prefix = "X", values_to = "depth") %>%
+  mutate(lon = as.numeric(lon),
+         lat = as.numeric(lat)) %>% 
+  glimpse()
 
+# bathy_df <- data.frame(
+#   lon = rep(rownames(bathy_grid) %>% as.numeric(),
+#             each = length(unique(colnames(bathy_grid)))),
+#   lat = rep(colnames(bathy_grid) %>% as.numeric(),
+#             times = length(unique(rownames(bathy_grid)))),
+#   depth = NA
+# )
+# for (i in 1:nrow(bathy_df)) {
+#   bathy_df$depth[i] <- bathy_grid[bathy_df$lon[i], bathy_df$lat[i]]
+# }
+ 
 # subset to remove missing depths that are on land or inshore of 50 m isobath
-bathy_df_trim <- bathy_df %>% 
+bathy_df_trim <- bathy_df %>%
   filter(!is.na(depth),
-         !depth > -50)
+         !depth > -50) 
 
 # identify closest depth data
 tt <- hutilscpp::match_nrst_haversine(
@@ -114,33 +127,48 @@ tt <- hutilscpp::match_nrst_haversine(
   addresses_lat = as.numeric(bathy_df_trim$lat),
   addresses_lon = as.numeric(bathy_df_trim$lon)
 )
+missing_bathy$pred_mean_bottom_depth <- bathy_df_trim$depth[tt$pos]
 
-missing_bathy$est_mean_bottom_depth <- -1 * bathy_df_trim$depth[tt$pos] 
+set1sp <- SpatialPoints(missing_bathy[,c("start_longitude", "start_latitude")])
+set2sp <- SpatialPoints(bathy_df_trim[, c("lon", "lat")])
+bathy_df_trim$nearest_in_set2 <- apply(rgeos::gDistance(set1sp, set2sp, byid=TRUE), 1, which.min)
 
-ggplot(missing_bathy) +
-  geom_point(aes(x = start_longitude, y = start_latitude, fill = est_mean_bottom_depth),
-             shape = 21)
+
+
+# missing_bathy$est_mean_bottom_depth <- -1 * bathy_df_trim$depth[tt$pos] 
+
+# impute missing mean_bottom_depth based on location
+imp_bathy <- bridge %>% 
+  select(utm_x, utm_y, mean_bottom_depth) %>% 
+  VIM::kNN(.)
+
 ggplot() +
-  geom_point(data = bridge_raw, 
-             aes(x = start_longitude, y = start_latitude, fill = mean_bottom_depth),
-             shape = 21) +
-  geom_point(data = missing_bathy,
-             aes(x = start_longitude, y = start_latitude, fill = est_mean_bottom_depth),
-             shape = 23, colour = "red")
+  geom_point(data = bridge %>% filter(!is.na(mean_bottom_depth)),
+             aes(x = utm_x, y = utm_y, fill = mean_bottom_depth,
+             ), shape = 21) +
+# geom_point(data = bathy_df,
+  #             aes(x = lon, y = lat))
+  geom_point(data = missing_bathy, 
+             aes(x = utm_x, y = utm_y, fill = pred_mean_bottom_depth,
+                ), colour = "red", shape = 21)
+
+
 
 ## CLEAN AND MERGE -------------------------------------------------------------
 
 # impute missing bridge data (generally because distance travelled not tracked);
 # based on vessel name, year, location, target_depth, net_desc, mouth_km2
-imp_dat <- bridge %>% 
+imp_eff <- bridge %>% 
   mutate(
     # replace 0s
-    volume_km3 = ifelse(volume_km3 == "0", NaN, volume_km3)
+    volume_km3 = ifelse(volume_km3 == "0", NaN, volume_km3),
+    mouth_km2 = ifelse(mouth_km2 == "0", NaN, mouth_km2),
+    tow_length_minute = ifelse(tow_length_minute == "0", NaN, tow_length_minute),
+    distance_travelled = ifelse(distance_travelled == "0", NaN, distance_travelled)
   ) %>% 
-  select(utm_x, utm_y, trip_id, target_depth, tow_length_minute, net_desc, 
-         mouth_km2, 
-         bath_depth_mean_m, dist_to_coast_km, distance_km:height_km) 
-imp_dat2 <- VIM::kNN(imp_dat, k = 5)
+  select(utm_x, utm_y, target_depth, vessel_name, net_desc, mouth_km2, 
+         tow_length_minute, distance_km) 
+imp_dat2 <- VIM::kNN(imp_eff, k = 5)
 imp_dat2 <- imp_dat2 %>% 
   select(-ends_with("imp")) %>% 
   mutate(unique_event = bridge$unique_event)
