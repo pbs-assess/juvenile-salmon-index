@@ -15,11 +15,11 @@ bridge_raw <- read.csv(here::here("data", "BCSI_TowInfo_2023215.csv")) %>%
 synoptic_stations <- read.csv(here::here("data", "synoptic_stations.csv")) %>% 
   janitor::clean_names()
 
-# target headrope depths generated separately (now included in updated tow info)
-# target_depth <- read.csv(
-#   here::here("data", "bcsi_bridge_target_depth_20221009.csv")) %>% 
-#   janitor::clean_names()
 
+# distance to coast and mean depth (still some gaps)
+depth_bathy_dat <- read.csv(
+  here::here("data", "full_depths_from_bathy_2023215.csv")) %>% 
+  janitor::clean_names() 
 
 
 
@@ -52,13 +52,7 @@ bridge <- bridge_raw %>%
     utm_x = get_utm(start_longitude, start_latitude, zone = "9", loc = "x"),
     utm_y = get_utm(start_longitude, start_latitude, zone = "9", loc = "y"),
     # missing day/night classifier for 2022 fall survey 
-    day_night = ifelse(trip_id == "2022-011", "DAY", day_night),
-    # calculate mean depth 
-    mean_bottom_depth = ifelse(
-      !is.na(end_bottom_depth),
-      (start_bottom_depth + end_bottom_depth) / 2,
-      start_bottom_depth
-    )
+    day_night = ifelse(trip_id == "2022-011", "DAY", day_night)
   ) 
 
 bridge_sf <- bridge %>% 
@@ -77,16 +71,17 @@ ipes_grid_events <- st_intersection(bridge_sf, ipes_sf_poly) %>%
 
 ## MISSING BATHY DATA ----------------------------------------------------------
 
-missing_bathy <- bridge %>% filter(
-  is.na(mean_bottom_depth)
-)
+missing_bathy <- bridge %>%
+  left_join(., depth_bathy_dat, by = "unique_event") %>% 
+  filter(
+    is.na(depth_mean_m) | depth_mean_m < 0)
 
 bathy_grid <- marmap::getNOAA.bathy(
   lon1 = min(missing_bathy$start_longitude),
   lon2 = max(missing_bathy$start_longitude),
   lat1 = min(missing_bathy$start_latitude),
   lat2 = max(missing_bathy$start_latitude),
-  resolution = 0.5
+  resolution = 1
 )
 
 bathy_matrix <- matrix(data = NA, 
@@ -104,17 +99,6 @@ bathy_df <- data.frame(
          lat = as.numeric(lat)) %>% 
   glimpse()
 
-# bathy_df <- data.frame(
-#   lon = rep(rownames(bathy_grid) %>% as.numeric(),
-#             each = length(unique(colnames(bathy_grid)))),
-#   lat = rep(colnames(bathy_grid) %>% as.numeric(),
-#             times = length(unique(rownames(bathy_grid)))),
-#   depth = NA
-# )
-# for (i in 1:nrow(bathy_df)) {
-#   bathy_df$depth[i] <- bathy_grid[bathy_df$lon[i], bathy_df$lat[i]]
-# }
- 
 # subset to remove missing depths that are on land or inshore of 50 m isobath
 bathy_df_trim <- bathy_df %>%
   filter(!is.na(depth),
@@ -127,77 +111,81 @@ tt <- hutilscpp::match_nrst_haversine(
   addresses_lat = as.numeric(bathy_df_trim$lat),
   addresses_lon = as.numeric(bathy_df_trim$lon)
 )
-missing_bathy$pred_mean_bottom_depth <- bathy_df_trim$depth[tt$pos]
-
-set1sp <- SpatialPoints(missing_bathy[,c("start_longitude", "start_latitude")])
-set2sp <- SpatialPoints(bathy_df_trim[, c("lon", "lat")])
-bathy_df_trim$nearest_in_set2 <- apply(rgeos::gDistance(set1sp, set2sp, byid=TRUE), 1, which.min)
-
-
-
-# missing_bathy$est_mean_bottom_depth <- -1 * bathy_df_trim$depth[tt$pos] 
-
-# impute missing mean_bottom_depth based on location
-imp_bathy <- bridge %>% 
-  select(utm_x, utm_y, mean_bottom_depth) %>% 
-  VIM::kNN(.)
-
-ggplot() +
-  geom_point(data = bridge %>% filter(!is.na(mean_bottom_depth)),
-             aes(x = utm_x, y = utm_y, fill = mean_bottom_depth,
-             ), shape = 21) +
-# geom_point(data = bathy_df,
-  #             aes(x = lon, y = lat))
-  geom_point(data = missing_bathy, 
-             aes(x = utm_x, y = utm_y, fill = pred_mean_bottom_depth,
-                ), colour = "red", shape = 21)
-
+missing_bathy$pred_depth_mean_m <- -1 * bathy_df_trim$depth[tt$pos]
 
 
 ## CLEAN AND MERGE -------------------------------------------------------------
 
 # impute missing bridge data (generally because distance travelled not tracked);
 # based on vessel name, year, location, target_depth, net_desc, mouth_km2
-imp_eff <- bridge %>% 
+imp_eff <- left_join(bridge, 
+                     depth_bathy_dat %>% select(unique_event, dist_to_coast_km), 
+                     by = "unique_event") %>% 
   mutate(
     # replace 0s
     volume_km3 = ifelse(volume_km3 == "0", NaN, volume_km3),
     mouth_km2 = ifelse(mouth_km2 == "0", NaN, mouth_km2),
     tow_length_minute = ifelse(tow_length_minute == "0", NaN, tow_length_minute),
-    distance_travelled = ifelse(distance_travelled == "0", NaN, distance_travelled)
+    distance_km = ifelse(distance_km == "0", NaN, distance_km),
+    dist_to_coast_km = ifelse(dist_to_coast_km == "0", NaN, dist_to_coast_km),
   ) %>% 
-  select(utm_x, utm_y, target_depth, vessel_name, net_desc, mouth_km2, 
-         tow_length_minute, distance_km) 
-imp_dat2 <- VIM::kNN(imp_eff, k = 5)
-imp_dat2 <- imp_dat2 %>% 
-  select(-ends_with("imp")) %>% 
-  mutate(unique_event = bridge$unique_event)
-  
-dat <- bridge %>% 
-  # remove values and replace with imputed data above
-  select(-c(utm_x, utm_y, trip_id, tow_length_hour, target_depth, vessel_speed, 
-            bath_depth_mean_m, dist_to_coast_km, distance_km:height_km)) %>% 
-  left_join(., imp_dat2, by = "unique_event") %>% 
-  # left_join(., chin, by = "unique_event") %>%
+  select(unique_event, 
+         utm_x, utm_y, target_depth, vessel_name, net_desc, mouth_km2, 
+         tow_length_minute, distance_km, volume_km3, dist_to_coast_km) %>% 
+  VIM::kNN(.) 
+imp_eff$unique_event <- bridge$unique_event
+
+sum(imp_eff$mouth_km2_imp) / nrow(imp_eff)
+sum(imp_eff$tow_length_minute_imp) / nrow(imp_eff)
+sum(imp_eff$distance_km_imp) / nrow(imp_eff)
+sum(imp_eff$volume_km3_imp) / nrow(imp_eff)
+sum(imp_eff$dist_to_coast_km_imp) / nrow(imp_eff)
+# impute <1% to 4%
+
+
+bridge2 <- bridge %>% 
+  #remove data imputed above
+  select(-c(utm_x, utm_y, target_depth, vessel_name, net_desc, mouth_km2, 
+            tow_length_minute, distance_km, volume_km3)) %>% 
+  # add bathy data
+  left_join(
+    ., 
+    depth_bathy_dat %>% select(unique_event, depth_mean_m),
+    by = "unique_event"
+  ) %>% 
+  # add missing bathy data
+  left_join(
+    ., 
+    missing_bathy %>% select(unique_event, pred_depth_mean_m), 
+    by = "unique_event"
+  ) %>% 
+  # add imputed effort data
+  left_join(
+    ., 
+    imp_eff %>% select(-ends_with("imp")),
+    by = "unique_event") %>% 
   mutate(
+    depth_mean_m = ifelse(
+      is.na(pred_depth_mean_m), depth_mean_m, pred_depth_mean_m
+    ),
     date = as.POSIXct(date,
-                           format = "%Y-%m-%d",
-                           tz = "America/Los_Angeles"),
+                      format = "%Y-%m-%d",
+                      tz = "America/Los_Angeles"),
     month = lubridate::month(date),
     week = lubridate::week(date),
-    season = case_when(
+    season_f = case_when(
       month %in% c("2", "3", "4") ~ "sp",
       month %in% c("5", "6", "7", "8") ~ "su",
       month %in% c("9", "10", "11", "12") ~ "wi"
-    ),
-    season_f = as.factor(season),
+    ) %>% 
+      as.factor(.),
     # define core area as southern BC and SEAK excluding SoG
     synoptic_station = ifelse(
-      mean_lat > 47 & mean_lat < 56 & !grepl("GS", station_name) & 
+      mean_lat > 47 & mean_lat < 56 & !grepl("GS", unique_event) & 
         mean_lon > -135,
       TRUE,
       FALSE
-      ),
+    ),
     # define IPES based on intersections with grid
     ipes_grid = ifelse(
       unique_event %in% ipes_grid_events,
@@ -210,32 +198,16 @@ dat <- bridge %>%
       "hss"
     ) %>% 
       as.factor(),
-    year_f = as.factor(year),
-    vessel_name = tolower(vessel_name),
-    vessel = case_when(
-      grepl("crest", vessel_name) ~ "sea crest",
-      grepl("franklin", vessel_name) ~ "franklin",
-      grepl("ricker", vessel_name) ~ "ricker",
-      grepl("viking", vessel_name) ~ "viking storm",
-      grepl("nordic pearl", vessel_name) ~ "nordic pearl",
-      grepl("anita", vessel_name) ~ "anita j",
-      grepl("frosti", vessel_name) ~ "frosti",
-      grepl("columbia", vessel_name) ~ "columbia",
-      grepl("ocean selector", vessel_name) ~ "ocean selector"
-    ),
-    volume_m3 = (distance_km * 1000) * (height_km * 1000) * (width_km * 1000)
+    year_f = as.factor(year)
   ) %>% 
-  dplyr::select(unique_event, date, year, month, week, day, day_night, season_f,
-         stratum:station_name, pfma = dfo_stat_area_code,
-         synoptic_station, ipes_grid, survey_f,
-         mean_lat, mean_lon, utm_x, utm_y,
-         vessel, distance_km, vessel_speed, target_depth, target_depth_bin, 
-         bath_depth_mean_m, dist_to_coast_km, height_km, width_km, 
-         volume_m3
-         # , ck_juv = n_juv, ck_ad = n_ad
-         ) 
-
-
+  dplyr::select(
+    unique_event, date, year_f, month, week, day, day_night, season_f,
+    pfma = dfo_stat_area_code, synoptic_station, ipes_grid, survey_f,
+    lat = start_latitude, lon = start_longitude, utm_x, utm_y,
+    target_depth, dist_to_coast_km, volume_km3, depth_mean_m
+  ) 
+  
+  
 # subset to core area and remove rows with missing data
 dat_trim <- dat %>%
   filter(synoptic_station == TRUE,
