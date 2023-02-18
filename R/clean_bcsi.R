@@ -10,10 +10,8 @@ bridge_raw <- read.csv(here::here("data", "BCSI_TowInfo_2023215.csv")) %>%
   #read.csv(here::here("data", "BCSI_Bridge_Info_20220929.csv")) %>% 
   janitor::clean_names()  %>%
   # exclude some absurdly deep tows
-  filter(!target_depth > 75) 
-
-synoptic_stations <- read.csv(here::here("data", "synoptic_stations.csv")) %>% 
-  janitor::clean_names()
+  filter(!target_depth > 75,
+         !usable == "N") 
 
 
 # distance to coast and mean depth (still some gaps)
@@ -21,6 +19,10 @@ depth_bathy_dat <- read.csv(
   here::here("data", "full_depths_from_bathy_2023215.csv")) %>% 
   janitor::clean_names() 
 
+
+# event dates (missing from updated bridge log)
+event_dates <- read.csv(here::here("data", "BCSI_event_dates.csv")) %>% 
+  janitor::clean_names()
 
 
 ## INTERSECTION WITH IPES GRID -------------------------------------------------
@@ -47,13 +49,20 @@ get_utm <- function(x, y, zone, loc){
   }
 }
 
-bridge <- bridge_raw %>% 
+bridge <- left_join(bridge_raw, event_dates, by = "unique_event") %>% 
   mutate(
     utm_x = get_utm(start_longitude, start_latitude, zone = "9", loc = "x"),
     utm_y = get_utm(start_longitude, start_latitude, zone = "9", loc = "y"),
     # missing day/night classifier for 2022 fall survey 
-    day_night = ifelse(trip_id == "2022-011", "DAY", day_night)
+    day_night = ifelse(trip_id == "2022-011", "DAY", day_night),
+    date = as.POSIXct(date, format="%m/%d/%Y"),
+    month = lubridate::month(date),
+    week = lubridate::week(date)
   ) 
+
+# still have some missing dates
+missing_dates <- bridge %>% 
+  filter(is.na(date))
 
 bridge_sf <- bridge %>% 
   select(unique_event, utm_y, utm_x) %>% 
@@ -61,8 +70,8 @@ bridge_sf <- bridge %>%
            crs = st_crs(ipes_sf_poly))
 
 # check
-ggplot() +
-  geom_sf(data = st_intersection(bridge_sf, ipes_sf_poly))
+# ggplot() +
+#   geom_sf(data = st_intersection(bridge_sf, ipes_sf_poly))
 
 # extract events within ipes survey grid
 ipes_grid_events <- st_intersection(bridge_sf, ipes_sf_poly) %>% 
@@ -129,7 +138,7 @@ imp_eff <- left_join(bridge,
     distance_km = ifelse(distance_km == "0", NaN, distance_km),
     dist_to_coast_km = ifelse(dist_to_coast_km == "0", NaN, dist_to_coast_km),
   ) %>% 
-  select(unique_event, 
+  select(unique_event, year, week,
          utm_x, utm_y, target_depth, vessel_name, net_desc, mouth_km2, 
          tow_length_minute, distance_km, volume_km3, dist_to_coast_km) %>% 
   VIM::kNN(.) 
@@ -140,13 +149,13 @@ sum(imp_eff$tow_length_minute_imp) / nrow(imp_eff)
 sum(imp_eff$distance_km_imp) / nrow(imp_eff)
 sum(imp_eff$volume_km3_imp) / nrow(imp_eff)
 sum(imp_eff$dist_to_coast_km_imp) / nrow(imp_eff)
-# impute <1% to 4%
+# impute <1% to 3%
 
 
 bridge2 <- bridge %>% 
   #remove data imputed above
   select(-c(utm_x, utm_y, target_depth, vessel_name, net_desc, mouth_km2, 
-            tow_length_minute, distance_km, volume_km3)) %>% 
+            tow_length_minute, distance_km, volume_km3, year, week)) %>% 
   # add bathy data
   left_join(
     ., 
@@ -163,16 +172,11 @@ bridge2 <- bridge %>%
   left_join(
     ., 
     imp_eff %>% select(-ends_with("imp")),
-    by = "unique_event") %>% 
+    by = "unique_event") %>%
   mutate(
     depth_mean_m = ifelse(
       is.na(pred_depth_mean_m), depth_mean_m, pred_depth_mean_m
     ),
-    date = as.POSIXct(date,
-                      format = "%Y-%m-%d",
-                      tz = "America/Los_Angeles"),
-    month = lubridate::month(date),
-    week = lubridate::week(date),
     season_f = case_when(
       month %in% c("2", "3", "4") ~ "sp",
       month %in% c("5", "6", "7", "8") ~ "su",
@@ -181,8 +185,8 @@ bridge2 <- bridge %>%
       as.factor(.),
     # define core area as southern BC and SEAK excluding SoG
     synoptic_station = ifelse(
-      mean_lat > 47 & mean_lat < 56 & !grepl("GS", unique_event) & 
-        mean_lon > -135,
+      start_latitude > 47 & start_latitude < 56 & !grepl("GS", unique_event) & 
+        start_longitude > -135,
       TRUE,
       FALSE
     ),
@@ -198,38 +202,46 @@ bridge2 <- bridge %>%
       "hss"
     ) %>% 
       as.factor(),
-    year_f = as.factor(year)
+    year_f = as.factor(year),
+    #used for plots even though not fit in model
+    target_depth_bin = cut(
+      target_depth, 
+      breaks = c(-Inf, 14, 29, 44, 59, Inf), 
+      labels=c("0", "15", "30", "45", "60")
+    ) %>% 
+      as.factor()
   ) %>% 
   dplyr::select(
-    unique_event, date, year_f, month, week, day, day_night, season_f,
+    unique_event, date, year, year_f, month, week, day, day_night, season_f,
     pfma = dfo_stat_area_code, synoptic_station, ipes_grid, survey_f,
     lat = start_latitude, lon = start_longitude, utm_x, utm_y,
-    target_depth, dist_to_coast_km, volume_km3, depth_mean_m
-  ) 
+    target_depth, target_depth_bin, dist_to_coast_km, volume_km3, depth_mean_m
+  )
   
   
 # subset to core area and remove rows with missing data
-dat_trim <- dat %>%
+dat_trim <- bridge2 %>%
   filter(synoptic_station == TRUE,
          # exclude SoG and Puget Sound PFMAs
-         !pfma %in% c("13", "14", "15", "16", "17", "18", "19", "PS")) %>%
+         !pfma %in% c("13", "14", "15", "16", "17", "18", "19", "PS"),
+         # remove one station clearly on land
+         !unique_event  == "HS201466-JF02") %>%
   droplevels()
 
 
 saveRDS(dat_trim, here::here("data", "survey_sbc.rds"))
-saveRDS(coast, here::here("data", "spatial", "sbc_sf_utm.rds"))
 
 
 ## SURVEY FIGS -----------------------------------------------------------------
 
 
 dat_trim <- readRDS(here::here("data", "survey_sbc.rds"))
-coast <- readRDS(here::here("data", "spatial", "sbc_sf_utm.rds"))
 
-min_lat <- min(floor(dat_trim$mean_lat) - 0.1)
-max_lat <- max(dat_trim$mean_lat) + 0.1
-min_lon <- min(floor(dat_trim$mean_lon) - 0.1)
-max_lon <- max(dat_trim$mean_lon) + 0.1
+
+min_lat <- min(floor(dat_trim$lat) - 0.1)
+max_lat <- max(dat_trim$lat) + 0.1
+min_lon <- min(floor(dat_trim$lon) - 0.1)
+max_lon <- max(dat_trim$lon) + 0.1
 
 coast <- rbind(rnaturalearth::ne_states( "United States of America", 
                                          returnclass = "sf"), 
@@ -308,9 +320,9 @@ dev.off()
 
 # stacked bar plots for headrope depth and ppn day/night
 stacked_headrope_depth <- dat_trim %>%
-  group_by(target_depth_bin, year) %>%
+  group_by(target_depth_bin, year_f) %>%
   summarize(n = length(unique_event), .groups = "drop") %>% 
-  ggplot(., aes(x = as.factor(year), y = n, fill = target_depth_bin)) +
+  ggplot(., aes(x = year_f, y = n, fill = target_depth_bin)) +
   geom_bar(position="stack", stat="identity") +
   ggsidekick::theme_sleek() +
   scale_fill_brewer(type = "seq", palette = 3, 
@@ -320,7 +332,7 @@ stacked_headrope_depth <- dat_trim %>%
   theme(
     axis.title.x = element_blank()
   ) +
-  scale_x_discrete(breaks = seq(1995, 2020, by = 5))
+  scale_x_discrete(breaks = seq(1998, 2020, by = 5))
 
 
 png(here::here("figs", "ms_figs", "headrope.png"), height = 3.5, width = 7, 
@@ -386,23 +398,35 @@ dev.off()
 
 ## ADD CATCH DATA --------------------------------------------------------------
 
-BCSI_SalmonCounts_2023215.csv
+sp_dat <- read.csv(here::here("data", "BCSI_SalmonCounts_2023215.csv")) %>% 
+  janitor::clean_names() %>% 
+  mutate(
+    species = case_when(
+      scientific_name == "ONCORHYNCHUS GORBUSCHA" ~ "pink",
+      scientific_name == "ONCORHYNCHUS KETA" ~ "chum",
+      scientific_name == "ONCORHYNCHUS KISUTCH" ~ "coho",
+      scientific_name == "ONCORHYNCHUS MYKISS" ~ "steelhead",
+      scientific_name == "ONCORHYNCHUS NERKA" ~ "sockeye",
+      scientific_name == "ONCORHYNCHUS TSHAWYTSCHA" ~ "chinook"
+    )
+  ) %>% 
+  select(
+    -scientific_name
+  )
 
-# import all species
-sp_files <- list.files(path = here::here("data"), pattern = "BCSI_Juv_")
-sp_catch <- purrr::map(
-  sp_files, function (x) {
-    read.csv(paste(here::here("data"), x, sep = "/"),
-             fileEncoding="UTF-8-BOM")
-  }
-) %>% 
-  bind_rows() %>% 
-  janitor::clean_names()
+# # import all species
+# sp_files <- list.files(path = here::here("data"), pattern = "BCSI_Juv_")
+# sp_catch <- purrr::map(
+#   sp_files, function (x) {
+#     read.csv(paste(here::here("data"), x, sep = "/"),
+#              fileEncoding="UTF-8-BOM")
+#   }
+# ) %>% 
+#   bind_rows() %>% 
+#   janitor::clean_names()
 
-sp_catch2 <- read.csv(here::here("data", "BCSI_SalmonCounts_2023215.csv"),
-                      fileEncoding="UTF-8-BOM")
 
-catch_dat <- left_join(dat_trim, sp_catch, by = "unique_event") 
+catch_dat <- left_join(dat_trim, sp_dat, by = "unique_event") 
 
 saveRDS(catch_dat, here::here("data", "catch_survey_sbc.rds"))
 
