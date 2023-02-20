@@ -1,6 +1,8 @@
 ### Juvenile all species fit 
 ## Use chinook_fit as a template to fit different species models
-## 1) Fit spatial model for each species to ensure reasonable convergence
+## 1) Fit spatial model for each species to ensure reasonable convergence and
+## to test for effects of survey domain on fixed effect estimates 
+## (all_species_fit_spatial.R)
 ## 2) Fit saturated spatiotemporal model to each species
 ## 3) Calculate index for summer and fall (assuming surface and day tow)
 ## 4) Calculate fixed effects for spatial covariates
@@ -17,24 +19,16 @@ dat <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>%
   mutate(
     utm_x_1000 = utm_x / 1000,
     utm_y_1000 = utm_y / 1000,
-    effort = log(volume_m3),
-    week = lubridate::week(date),
-    vessel = as.factor(vessel),
-    species = tolower(species)
+    effort = log(volume_m3)
     ) %>% 
-  # exclude 1995 and 1997 because sampling sparse
-  filter(!year %in% c("1995",
-                      "1996",
-                      "1997", "2022"),
-         !bath_depth_mean_m < 0) %>% 
-  droplevels() 
+  filter(!species == "steelhead") %>% 
+  droplevels()
 
 dat_tbl <- dat  %>% 
   group_by(species) %>% 
   group_nest() %>% 
   mutate(
-    # assign share_range based on AIC (see notes for details)
-    share_range = ifelse(species %in% c("chinook", "sockeye"), FALSE, TRUE)
+    anisotropy = ifelse(species == "pink", FALSE, TRUE)
   )
 
 ## coordinates should be common to all species
@@ -97,7 +91,8 @@ catch_hist <- dat %>%
   mutate(median_catch = mean(n_juv)) %>% 
   ungroup() %>% 
   ggplot(.) +
-  geom_histogram(aes(x = n_juv, fill = species), colour = "black") +
+  geom_histogram(aes(x = n_juv, fill = species), colour = "black",
+                 bins = 30) +
   scale_fill_manual(values = col_pal) +
   scale_x_continuous(trans='log10') +
   geom_vline(aes(xintercept = median_catch), lty = 2, colour = "red") +
@@ -112,86 +107,49 @@ png(here::here("figs", "ms_figs", "catch_histogram.png"), height = 8.5,
 catch_hist
 dev.off()
 
-  
-### FIT SPATIAL ----------------------------------------------------------------
-
-
-# spatial_mod <- furrr::future_map2(
-#   dat_tbl$data, dat_tbl$bspde, function (x, spde_in) {
-#     sdmTMB(
-#       n_juv ~ dist_to_coast_km +
-#         s(week, bs = "cc", k = 5) +
-#         s(target_depth, bs = "tp", k = 4) +
-#         day_night +
-#         survey_f,
-#       offset = x$effort,
-#       data = x,
-#       mesh = spde_in,
-#       family = sdmTMB::nbinom2(),
-#       spatial = "on",
-#       anisotropy = FALSE,
-#       priors = sdmTMBpriors(
-#         matern_s = pc_matern(range_gt = 10, sigma_lt = 80)
-#       ),
-#       knots = list(
-#         week = c(0, 52)
-#       ),
-#       control = sdmTMBcontrol(
-#         nlminb_loops = 2,
-#         newton_loops = 1
-#       )
-#     )
-#   },
-#   .options = furrr::furrr_options(seed = TRUE)
-# )
-# 
-# purrr::map(spatial_mod, sanity)
-# purrr::map(spatial_mod, summary)
-
 
 ### FIT SATURATED --------------------------------------------------------------
 
-# st_mod_ar1 <- furrr::future_map2(
-#   dat_tbl$data, dat_tbl$share_range,
-#   ~ {
-#     sdmTMB(
-#       n_juv ~ 0 +
-#         as.factor(year) +
-#         dist_to_coast_km +
-#         s(week, bs = "cc", k = 5) +
-#         target_depth +
-#         day_night +
-#         survey_f,
-#       offset = .x$effort,
-#       data = .x,
-#       mesh = spde,
-#       family = sdmTMB::nbinom2(),
-#       spatial = "on",
-#       spatiotemporal = "ar1",
-#       time = "year",
-#       anisotropy = TRUE,
-#       share_range = TRUE,#.y,
-#       knots = list(
-#         week = c(0, 52)
-#       ),
-#       control = sdmTMBcontrol(
-#         newton_loops = 1
-#       ),
-#       silent = FALSE
-#     )
-#   },
-#   .options = furrr::furrr_options(seed = TRUE)
-# )
-# 
-# 
-# purrr::map(st_mod_ar1, sanity)
-# ## all look good
-# 
-# dat_tbl$st_mod <- st_mod_ar1
-# saveRDS(dat_tbl, here::here("data", "fits", "st_mod_all_sp_ar1.rds"))
+st_mod_ar1 <- furrr::future_map2(
+  dat_tbl$data, dat_tbl$anisotropy,
+  ~ {
+    sdmTMB(
+      n_juv ~ 0 +
+        year_f +
+        dist_to_coast_km +
+        s(week, bs = "cc", k = 5) +
+        target_depth +
+        day_night +
+        survey_f,
+      offset = .x$effort,
+      data = .x,
+      mesh = spde,
+      family = sdmTMB::nbinom2(),
+      spatial = "on",
+      spatiotemporal = "ar1",
+      time = "year",
+      anisotropy = .y, #TRUE,
+      share_range = FALSE,
+      knots = list(
+        week = c(0, 52)
+      ),
+      control = sdmTMBcontrol(
+        newton_loops = 1
+      ),
+      silent = FALSE
+    )
+  },
+  .options = furrr::furrr_options(seed = TRUE)
+)
+
+purrr::map(st_mod_ar1, sanity)
+## all look good
 
 
-# dat_tbl <- readRDS(here::here("data", "fits", "st_mod_all_sp.rds"))
+dat_tbl$st_mod <- st_mod_ar1[1:5]
+saveRDS(dat_tbl, here::here("data", "fits", "st_mod_all_sp_ar1.rds"))
+
+
 dat_tbl <- readRDS(here::here("data", "fits", "st_mod_all_sp_ar1.rds"))
 
 purrr::map(
@@ -304,6 +262,7 @@ pred_tbl$pred_dat <- pred_list
 # takes a long time so save
 saveRDS(pred_tbl, here::here("data", "preds", "fe_preds.rds"))
 pred_tbl <- readRDS(here::here("data", "preds", "fe_preds.rds"))
+
 
 pred_tbl$pred_dat <- purrr::map(
   pred_tbl$pred_dat,

@@ -183,9 +183,9 @@ bridge2 <- bridge %>%
       month %in% c("9", "10", "11", "12") ~ "wi"
     ) %>% 
       as.factor(.),
-    # define core area as southern BC and SEAK excluding SoG
+    # define core area as southern BC and CBC excluding SoG
     synoptic_station = ifelse(
-      start_latitude > 47 & start_latitude < 56 & !grepl("GS", unique_event) & 
+      start_latitude > 47 & start_latitude < 53 & !grepl("GS", unique_event) & 
         start_longitude > -135,
       TRUE,
       FALSE
@@ -209,19 +209,23 @@ bridge2 <- bridge %>%
       breaks = c(-Inf, 14, 29, 44, 59, Inf), 
       labels=c("0", "15", "30", "45", "60")
     ) %>% 
-      as.factor()
+      as.factor(),
+    volume_m3 = volume_km3 * 1e09
   ) %>% 
   dplyr::select(
     unique_event, date, year, year_f, month, week, day, day_night, season_f,
     pfma = dfo_stat_area_code, synoptic_station, ipes_grid, survey_f,
     lat = start_latitude, lon = start_longitude, utm_x, utm_y,
-    target_depth, target_depth_bin, dist_to_coast_km, volume_km3, depth_mean_m
+    target_depth, target_depth_bin, dist_to_coast_km, volume_m3, volume_km3, 
+    depth_mean_m
   )
   
   
 # subset to core area and remove rows with missing data
 dat_trim <- bridge2 %>%
   filter(synoptic_station == TRUE,
+         # exclude low sample size years
+         year >= 1998,
          # exclude SoG and Puget Sound PFMAs
          !pfma %in% c("13", "14", "15", "16", "17", "18", "19", "PS"),
          # remove one station clearly on land
@@ -235,9 +239,8 @@ saveRDS(dat_trim, here::here("data", "survey_sbc.rds"))
 ## SURVEY FIGS -----------------------------------------------------------------
 
 
-dat_trim <- readRDS(here::here("data", "survey_sbc.rds"))
-
-
+dat_trim <- readRDS(here::here("data", "survey_sbc.rds")) 
+  
 min_lat <- min(floor(dat_trim$lat) - 0.1)
 max_lat <- max(dat_trim$lat) + 0.1
 min_lon <- min(floor(dat_trim$lon) - 0.1)
@@ -301,7 +304,6 @@ pdf(here::here("figs", "set_coverage.pdf"), height = 4, width = 8)
 set_map_month
 seasonal_effort
 dev.off()
-
 
 
 # map of spatial covariates (exclude for now)
@@ -428,7 +430,27 @@ sp_dat <- read.csv(here::here("data", "BCSI_SalmonCounts_2023215.csv")) %>%
 
 catch_dat <- left_join(dat_trim, sp_dat, by = "unique_event") 
 
-saveRDS(catch_dat, here::here("data", "catch_survey_sbc.rds"))
+# catch data excludes stations w/ 0 catches for all species; correct and check
+missing_catches <- catch_dat %>% 
+  filter(is.na(n_total))
+sp_vec <- unique(sp_dat$species)
+catch_list <- vector(mode = "list", length = length(sp_vec))
+for (i in seq_along(catch_list)) {
+  catch_list[[i]] <- missing_catches %>% 
+    mutate(
+      n_juv = 0,
+      n_ad = 0,
+      n_total = 0,
+      species = sp_vec[i]
+    )
+} 
+
+catch_out <- catch_dat %>% 
+  filter(!is.na(n_total)) %>% 
+  rbind(., bind_rows(catch_list)) 
+
+
+saveRDS(catch_out, here::here("data", "catch_survey_sbc.rds"))
 
 
 ## DATA EXPLORE ----------------------------------------------------------------
