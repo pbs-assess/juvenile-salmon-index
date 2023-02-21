@@ -544,7 +544,6 @@ for (i in seq_along(fall_tbl$species)) {
   
   # total effects
   max_est <- quantile(.x$scale_est, 0.999)
-  # max_est <- quantile(exp(.x$est), 0.995)
   p <-  ggplot() + 
     geom_raster(data = .x, aes(X, Y, fill = scale_est)) +
     coord_fixed() +
@@ -554,7 +553,9 @@ for (i in seq_along(fall_tbl$species)) {
       trans = "sqrt",
       limits = c(0, max_est)
     ) +
-    facet_wrap(~year)
+    facet_wrap(~year) +
+    theme(axis.title = element_blank(),
+          axis.text = element_blank())
   png(here::here("figs", "ms_figs", "fall_fe_preds",
                  paste(.y, "fall_pred.png", sep = "_")), 
       height = 8, width = 8, units = "in", res = 200)
@@ -562,13 +563,17 @@ for (i in seq_along(fall_tbl$species)) {
   dev.off() 
   
   # epsilon effects
+  epsilon_max <- max(abs(.x$epsilon_st))
   q <- ggplot() +
     geom_raster(data = .x, aes(X, Y, fill = epsilon_st)) +
     coord_fixed() +
     geom_sf(data = coast, color = "black", fill = "white") +
     ggsidekick::theme_sleek() +
-    scale_fill_gradient2() +
-    facet_wrap(~year)
+    scale_fill_distiller(palette = "Spectral", 
+                         limits = c(-1 * epsilon_max, epsilon_max)) +
+    facet_wrap(~year) +
+    theme(axis.title = element_blank(),
+          axis.text = element_blank())
   png(here::here("figs", "ms_figs", "fall_fe_preds",
                  paste(.y, "fall_eps.png", sep = "_")), 
       height = 8, width = 8, units = "in", res = 200)
@@ -586,23 +591,65 @@ omega_dat <- spatial_pred_tbl %>%
   filter(survey_f == "hss",
          season == "fall") %>% 
   distinct()
-
+omega_max <- max(abs(omega_dat$omega_s))
 
 png(here::here("figs", "ms_figs", "spatial_rf.png"), 
-    height = 8, width = 5, units = "in", res = 200)
+    height = 6, width = 7.5, units = "in", res = 200)
 ggplot() +
   geom_raster(data = omega_dat, aes(X, Y, fill = omega_s)) +
-  coord_fixed() +
   geom_sf(data = coast, color = "black", fill = "white") +
   ggsidekick::theme_sleek() +
-  scale_fill_gradient2() +
-  facet_wrap(~species)
+  scale_fill_distiller(palette = "Spectral", 
+                       limits = c(-1 * omega_max, omega_max),
+                       name = "Spatial\nField") +
+  facet_wrap(~species) +
+  theme(
+    axis.title = element_blank(),
+    legend.position = "top",
+    axis.text = element_blank(),
+    legend.key.size = unit(1, 'cm')
+  )
 dev.off()
 
 
 ## SOPO MAPS -------------------------------------------------------------------
 
-# use subset of predictions above to make maps of 2022 preds (FEs), 
+# use subset of predictions above to make maps of 2022 preds (FEs) and random 
+# effects
+
+fall_22 <- fall_tbl %>% 
+  select(-week) %>% 
+  unnest(cols = spatial_preds) %>% 
+  filter(
+    year %in% fall_years
+  ) %>% 
+  group_by(species) %>% 
+  mutate(
+    scale_est = exp(est) / max(exp(est))
+  ) %>% 
+  filter(
+    year == "2022"
+  )
+
+max_est <- quantile(fall_22$scale_est, 0.999)
+
+png(here::here("figs", "ms_figs", "fixed_preds_2022.png"), 
+    height = 6, width = 7.5, units = "in", res = 200)
+ggplot() + 
+  geom_raster(data = fall_22, aes(X, Y, fill = scale_est)) +
+  geom_sf(data = coast, color = "black", fill = "white") +
+  ggsidekick::theme_sleek() +
+  scale_fill_viridis_c(
+    trans = "sqrt",
+    limits = c(0, max_est),
+    name = "Scaled\nAbundance"
+  ) +
+  facet_wrap(~species) +
+  theme(axis.title = element_blank(),
+        axis.text = element_blank(),
+        legend.position = "top",
+        legend.key.size = unit(1, 'cm'))
+dev.off()
 
 
 ## INDICES ---------------------------------------------------------------------
