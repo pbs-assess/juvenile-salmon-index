@@ -241,16 +241,17 @@ saveRDS(dat_trim, here::here("data", "survey_sbc.rds"))
 
 dat_trim <- readRDS(here::here("data", "survey_sbc.rds")) 
   
-min_lat <- min(floor(dat_trim$lat) - 0.1)
-max_lat <- max(dat_trim$lat) + 0.1
-min_lon <- min(floor(dat_trim$lon) - 0.1)
-max_lon <- max(dat_trim$lon) + 0.1
+min_lat <- min(floor(dat_trim$lat) - 0.25)
+max_lat <- max(dat_trim$lat) + 0.25
+min_lon <- min(floor(dat_trim$lon) - 0.25)
+max_lon <- max(dat_trim$lon) + 0.25
 
 coast <- rbind(rnaturalearth::ne_states( "United States of America", 
                                          returnclass = "sf"), 
                rnaturalearth::ne_states( "Canada", returnclass = "sf")) %>% 
-  st_crop(., xmin = min_lon, ymin = min_lat, xmax = max_lon, ymax = max_lat) %>% 
-  st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
+  st_crop(., xmin = min_lon, ymin = min_lat, xmax = max_lon, ymax = max_lat) %>%
+  st_transform(., crs = sp::CRS("+proj=longlat +datum=WGS84"))
+  # st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
 
 # 
 # ggplot() +
@@ -266,17 +267,20 @@ coast <- rbind(rnaturalearth::ne_states( "United States of America",
 
 # map of set locations
 set_map <- ggplot() +
-  geom_sf(data = coast, color = "black", fill = "white") +
+  geom_sf(data = coast, color = "black", fill = "white", size = 1.25) +
   geom_point(data = dat_trim,
-             aes(x = utm_x, y = utm_y, fill = survey_f), 
+             aes(x = lon, y = lat, fill = survey_f), 
              shape = 21, alpha = 0.4) +
   scale_fill_discrete(name = "Survey") +
   ggsidekick::theme_sleek() +
   theme(axis.title = element_blank()) +
   scale_x_continuous(expand = c(0, 0)) +
-  scale_y_continuous(expand = c(0, 0))
+  scale_y_continuous(expand = c(0, 0)) +
+  # hacky way to ensure borders are correct
+  coord_sf(ylim = c(min_lat + 0.15, max_lat - 0.15), 
+           xlim = c(min_lon + 0.15, max_lon - 0.15))
   
-png(here::here("figs", "ms_figs", "set_map.png"), height = 4, width = 4, 
+png(here::here("figs", "ms_figs", "set_map.png"), height = 5, width = 5, 
     units = "in", res = 250)
 set_map
 dev.off()

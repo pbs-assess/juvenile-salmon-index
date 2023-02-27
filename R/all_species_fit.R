@@ -146,7 +146,7 @@ purrr::map(st_mod_ar1, sanity)
 ## all look good
 
 
-dat_tbl$st_mod <- st_mod_ar1[1:5]
+dat_tbl$st_mod <- st_mod_ar1
 saveRDS(dat_tbl, here::here("data", "fits", "st_mod_all_sp_ar1.rds"))
 
 
@@ -186,6 +186,23 @@ pred_obs_list <- purrr::pmap(
     }
   }
 )
+
+resid_list <- purrr::pmap(
+  list(dat_tbl$data, dat_tbl$species, dat_tbl$st_mod), function (x, y, z) {
+    x$resids <- residuals(z)
+    ggplot(x, aes(utm_x_1000, utm_y_1000, col = resids)) +
+      scale_colour_gradient2() +
+      geom_point() +
+      facet_wrap(~year_f) +
+      coord_fixed() +
+      labs(title = y) +
+      ggsidekick::theme_sleek()
+  }
+)
+
+pdf(here::here("figs", "diagnostics", "spatial_resids.pdf"))
+resid_list
+dev.off()
 
 
 ## MAKE FE PREDICTIONS ---------------------------------------------------------
@@ -318,7 +335,6 @@ pp_foo(
   ymax = "scale_up", fill = "species"
 ) +
   ggsidekick::theme_sleek() +
-  ylab("Abundance Index") + 
   geom_line() +
   geom_ribbon(alpha = 0.3) +
   scale_x_continuous(expand = c(0, 0)) +
@@ -361,9 +377,7 @@ dev.off()
 
 
 
-
 ## PARAMETER ESTIMATES ---------------------------------------------------------
-
 
 ## survey and DN estimates
 # fixed parameter estimates
@@ -381,7 +395,7 @@ fix_pars <- purrr::map2(
                                 "Nocturnal Sampling" = "day_nightNIGHT")
     )
 
-png(here::here("figs", "ms_figs", "fix_ints.png"), height = 3, width = 5.5,
+png(here::here("figs", "ms_figs", "fix_ints.png"), height = 3, width = 4,
     units = "in", res = 200)
 ggplot(
   fix_pars,
@@ -520,7 +534,9 @@ spatial_pred_tbl$spatial_preds <- purrr::map(
 # which years are viable?
 # index from summer
 summer_years <- dat %>% 
-  filter(season_f == "su") %>%
+  filter(season_f == "su", 
+         # remove 2021 since only partial survey
+         !year_f == "2021") %>%
   pull(year) %>% 
   unique()
 fall_years <- dat %>% 
@@ -589,7 +605,8 @@ omega_dat <- spatial_pred_tbl %>%
   select(-c(year, fake_survey, est, est_non_rf, est_rf, epsilon_st)) %>%
   # remove duplicated summer data
   filter(survey_f == "hss",
-         season == "fall") %>% 
+         season == "fall"
+         ) %>% 
   distinct()
 omega_max <- max(abs(omega_dat$omega_s))
 
@@ -603,6 +620,7 @@ ggplot() +
                        limits = c(-1 * omega_max, omega_max),
                        name = "Spatial\nField") +
   facet_wrap(~species) +
+  # facet_grid(season~species) +
   theme(
     axis.title = element_blank(),
     legend.position = "top",
@@ -843,7 +861,7 @@ comb_index <- ggplot(index_combined, aes(year, est)) +
   facet_wrap(~species, scales = "free_y")
 
 
-pdf(here::here("figs", "diagnostics", "st_index_surv_all_sp.pdf"), height = 7,
+pdf(here::here("figs", "ms_figs", "st_index_surv_all_sp.pdf"), height = 7,
     width = 9)
 comb_index_scaled
 comb_index_log
