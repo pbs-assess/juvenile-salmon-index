@@ -1,14 +1,16 @@
 ## Make predictive grid for sdmTMB models
 # 1) Prep bathymetric data based on chinTagging/R/prep_bathymetry 
-# (ignore American data for now); use UTM to ensure equal spacing in grid
+# (ignore American data for now); use UTM to ensure equal spacing in grid with
+# a resolution of 4 km (~ median tow length)
 # 2) Back-convert to lat/lon to use coastdistance function
 # 3) Combine and export
 # Updated May 17, 2022
+# Updated March 2, 2022
 
 
 library(sf)
 library(raster)
-library(rgdal)
+# library(rgdal)
 library(tidyverse)
 library(ncdf4)
 # library(maptools)
@@ -19,12 +21,12 @@ library(rnaturalearthdata)
 
 
 # chinook dataset
-dat_trim <- readRDS(here::here("data", "chin_catch_sbc.rds"))
+dat_trim <- readRDS(here::here("data", "catch_survey_sbc.rds"))
 
 # shapefiles for IPES survey grid and combined WCVI/IPES grid
-ipes_grid_raw <- readOGR(
+ipes_grid_raw <- raster::shapefile(
   here::here("data", "spatial", "ipes_shapefiles", "IPES_Grid_UTM9.shp"))
-ipes_wcvi_grid_raw <- readOGR(
+ipes_wcvi_grid_raw <- raster::shapefile(
   here::here("data", "spatial", "wcvi_ipes_shapefiles", 
              "IPES_WCVI_boundary_UTM9.shp"))
 
@@ -63,9 +65,11 @@ ncin <- nc_open(
 )
 
 #specify lat/long
-dep_list <- list(lon = ncvar_get(ncin, "lon"),
-                    lat = ncvar_get(ncin, "lat"),
-                    dep = ncvar_get(ncin, "elevation"))
+dep_list <- list(
+  lon = ncvar_get(ncin, "lon"),
+  lat = ncvar_get(ncin, "lat"),
+  dep = ncvar_get(ncin, "elevation")
+)
 
 # function create dataframe
 dep_dat_f <- function(x) {
@@ -112,10 +116,14 @@ wcvi_ipes_raster_utm <- mask(dum, ipes_wcvi_grid_raw)
 
 
 # # merge and add aspect/slope
-wcvi_ipes_raster_slope <- terrain(wcvi_ipes_raster_utm, opt = 'slope', unit = 'degrees',
-                              neighbors = 8)
-wcvi_ipes_raster_aspect <- terrain(wcvi_ipes_raster_utm, opt = 'aspect', unit = 'degrees',
-                               neighbors = 8)
+wcvi_ipes_raster_slope <- terrain(
+  wcvi_ipes_raster_utm, opt = 'slope', unit = 'degrees',
+  neighbors = 8
+)
+wcvi_ipes_raster_aspect <- terrain(
+  wcvi_ipes_raster_utm, opt = 'aspect', unit = 'degrees',
+  neighbors = 8
+)
 wcvi_ipes_raster_list <- list(
   depth = wcvi_ipes_raster_utm,
   slope = wcvi_ipes_raster_slope,
@@ -136,22 +144,16 @@ saveRDS(ipes_raster_list,
 
 ## GENERATE GRID ---------------------------------------------------------------
 
-# lower resolution raster list generated above
+# import high res raster generated above, then downscale to 2x2 km resolution 
+# and covert to SF
 ipes_raster_list <- readRDS(
-  here::here("data", "spatial", "ipes_raster_utm_2000m.RDS"))
+  here::here("data", "spatial", "ipes_raster_utm_1000m.RDS"))
 
-
-# boundary box for receiver locations
-min_lat <- min(dat_trim$mean_lat - 0.1)
-max_lat <- max(dat_trim$mean_lat + 0.1)
-min_lon <- min(dat_trim$mean_lon - 0.1)
-max_lon <- max(dat_trim$mean_lon + 0.1)
-
-ipes_sf_list <- purrr::map2(
+ipes_sf_list <- purrr::map(
   ipes_raster_list,
-  names(ipes_raster_list),
-  function (x, y) {
-    as(x, 'SpatialPixelsDataFrame') %>%
+  function (x) {
+    aggregate(x, fact = 2) %>% 
+      as(., 'SpatialPixelsDataFrame') %>%
       as.data.frame() %>%
       st_as_sf(., coords = c("x", "y"),
                crs = sp::CRS("+proj=utm +zone=9 +units=m"))
@@ -213,5 +215,3 @@ saveRDS(ipes_grid_interp %>%
 saveRDS(coast_utm, here::here("data", "spatial", "coast_trim_utm.RDS"))
 
 
-
-### MAKE SIMILAR GRID TO ABOVE THAT INCLUDES INLETS ----------------------------
