@@ -18,9 +18,30 @@ future::plan(future::multisession, workers = ncores - 3)
 
 
 # fitted model from all_species_fit.R
-fit_all_sp <- readRDS(here::here("data", "fits", "st_mod_all_sp.rds"))  
-# pull meshes from fitted model to use
-fit_all_sp$mesh <- purrr::map(fit_all_sp$st_mod, ~ .x$mesh)
+fit_all_sp <- readRDS(here::here("data", "fits", "st_mod_all_sp_ar1.rds")) %>%
+  mutate(
+    anisotropy = ifelse(species == "pink", FALSE, TRUE)
+  )
+  
+
+
+# pull meshes from fitted model to use (doesn't work so rebuild)
+# fit_all_sp$mesh <- purrr::map(fit_all_sp$st_mod, ~ .x$mesh)
+## use INLA mesh based on SA recommendations and model selection (see notes)
+dat_coords <- fit_all_sp$data[[1]] %>% 
+  select(utm_x_1000, utm_y_1000) %>% 
+  as.matrix()
+inla_mesh_raw <- INLA::inla.mesh.2d(
+  loc = dat_coords,
+  max.edge = c(1, 5) * 500,
+  cutoff = 20,
+  offset = c(20, 200)
+) 
+spde <- make_mesh(
+  fit_all_sp$data[[1]],
+  c("utm_x_1000", "utm_y_1000"),
+  mesh = inla_mesh_raw
+) 
 
 
 # simulate 20 MC draws from fitted models 
@@ -49,14 +70,14 @@ sim_tbl <- purrr::pmap(
 ) %>% 
   bind_rows() %>% 
   left_join(., 
-            fit_all_sp %>% select(species, share_range, mesh), 
+            fit_all_sp %>% select(species, anisotropy), 
             by = "species")
 
 
 ## test w/ single model
 dum <- sdmTMB(
-  sim_catch ~ 1 +
-    as.factor(year) +
+  sim_catch ~ 0 +
+    year_f +
     dist_to_coast_km +
     s(week, bs = "cc", k = 5) +
     target_depth +
@@ -64,17 +85,18 @@ dum <- sdmTMB(
     survey_f,
   offset = sim_tbl$sim_dat[[1]]$effort,
   data = sim_tbl$sim_dat[[1]],
-  mesh = sim_tbl$mesh[[1]],
+  mesh = spde,
   family = sdmTMB::nbinom2(),
   spatial = "on",
-  spatiotemporal = "iid",
+  spatiotemporal = "ar1",
   time = "year",
-  anisotropy = TRUE,
-  share_range = sim_tbl$share_range[[1]],
+  share_range = FALSE,
+  anisotropy = sim_tbl$anisotropy[[1]],
   knots = list(
     week = c(0, 52)
   ),
   control = sdmTMBcontrol(
+    # nlminb_loops = 2
     newton_loops = 1
   )
 )
@@ -83,11 +105,11 @@ sp_vec <- unique(sim_tbl$species)
 for (i in seq_along(sp_vec)) {
   sim_tbl_sub <- sim_tbl %>% filter(species == sp_vec[i])
   fit <- furrr::future_pmap(
-    list(sim_tbl_sub$sim_dat, sim_tbl_sub$share_range, sim_tbl_sub$mesh), 
-    function (x, sr, mesh) {
+    list(sim_tbl_sub$sim_dat, sim_tbl_sub$anisotropy), 
+    function (x, aniso) {
       sdmTMB(
-        sim_catch ~ 1 +
-          as.factor(year) +
+        sim_catch ~ 0 +
+          year_f +
           dist_to_coast_km +
           s(week, bs = "cc", k = 5) +
           target_depth +
@@ -95,19 +117,19 @@ for (i in seq_along(sp_vec)) {
           survey_f,
         offset = x$effort,
         data = x,
-        mesh = mesh,
+        mesh = spde,
         family = sdmTMB::nbinom2(),
         spatial = "on",
-        spatiotemporal = "iid",
+        spatiotemporal = "ar1",
         time = "year",
-        anisotropy = TRUE,
-        share_range = sr,
+        share_range = FALSE,
+        anisotropy = aniso,
         knots = list(
           week = c(0, 52)
         ),
         control = sdmTMBcontrol(
-          nlminb_loops = 2
-          # newton_loops = 1
+          # nlminb_loops = 2
+          newton_loops = 1
         )
       )
     },

@@ -208,9 +208,33 @@ ggplot() +
   ggsidekick::theme_sleek()
 
 
+# subset WCVI predictive grid to make IPES only
+ipes_grid_raw_sf <- st_read(
+  here::here("data", "spatial", "ipes_shapefiles", "IPES_Grid_UTM9.shp"))
+
+ipes_wcvi_sf <- st_as_sf(ipes_grid_interp %>% 
+                           select(-ends_with("imp")),
+                         coords = c("X", "Y"),
+                         crs = st_crs(ipes_grid_raw_sf))
+
+dd <- st_intersection(ipes_grid_raw_sf, ipes_wcvi_sf)
+
+ipes_grid_only <- data.frame(
+  st_coordinates(dd[ , 1]),
+  depth = dd$depth,
+  slope = dd$slope,
+  shore_dist = dd$shore_dist
+)
+
+grid_list <- list(
+  ipes_grid = ipes_grid_only,
+  wcvi_grid = ipes_grid_interp %>% 
+    select(-ends_with("imp"))
+)
+
+
 # export grid
-saveRDS(ipes_grid_interp %>% 
-          select(-ends_with("imp")),
+saveRDS(grid_list,
         here::here("data", "spatial", "pred_ipes_grid.RDS"))
 saveRDS(coast_utm, here::here("data", "spatial", "coast_trim_utm.RDS"))
 
