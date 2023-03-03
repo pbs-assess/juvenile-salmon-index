@@ -21,8 +21,7 @@ sox_dat <- dat %>%
 
 
 ## coordinates should be common to all species
-dat_coords <- dat %>% 
-  filter(species == "pink") %>% 
+dat_coords <- sox_dat %>% 
   select(utm_x_1000, utm_y_1000) %>% 
   as.matrix()
 
@@ -34,7 +33,7 @@ inla_mesh_raw <- INLA::inla.mesh.2d(
   offset = c(20, 200)
 ) 
 spde <- make_mesh(
-  dat %>% filter(species == "pink"),
+  sox_dat,
   c("utm_x_1000", "utm_y_1000"),
   mesh = inla_mesh_raw
 ) 
@@ -42,20 +41,18 @@ spde <- make_mesh(
 
 ## fits 
 fit_nb <- sdmTMB(
-  cpue ~ 0 +
+  n_juv ~ 0 +
     as.factor(year) +
     dist_to_coast_km +
     s(week, bs = "cc", k = 5) +
-    target_depth +
-    day_night +
-    survey_f,
+    target_depth,
   offset = sox_dat$effort,
   data = sox_dat,
   mesh = spde,
   family = sdmTMB::nbinom2(),
   spatial = "on",
-  # spatiotemporal = "ar1",
-  # time = "year",
+  spatiotemporal = "iid",
+  time = "year",
   anisotropy = TRUE,
   # share_range = FALSE,
   knots = list(
@@ -72,16 +69,14 @@ fit_tw <- sdmTMB(
     as.factor(year) +
     dist_to_coast_km +
     s(week, bs = "cc", k = 5) +
-    target_depth +
-    day_night +
-    survey_f,
+    target_depth,
   # offset = sox_dat$effort,
   data = sox_dat,
   mesh = spde,
   family = sdmTMB::tweedie(),
   spatial = "on",
-  # spatiotemporal = "ar1",
-  # time = "year",
+  spatiotemporal = "iid",
+  time = "year",
   anisotropy = TRUE,
   # share_range = FALSE,
   knots = list(
@@ -152,14 +147,16 @@ sox_ind_tw2 <- sox_ind_tw %>%
 
 p1 <- ggplot(sox_ind_tw2, 
              aes(year, est_catch)) +
-  geom_pointrange(aes(ymin = lwr_catch, ymax = upr_catch), 
-                  shape = 21) +
+  # geom_pointrange(aes(ymin = lwr_catch, ymax = upr_catch), 
+  #                 shape = 21) +
+  geom_point() +
   labs(x = "Year", y = "Tweedie Abundance") +
   ggsidekick::theme_sleek() +
   theme(legend.position = "none")
 p2<- ggplot(sox_ind_nb, aes(year, est)) +
-  geom_pointrange(aes(ymin = lwr, ymax = upr), 
-                  shape = 21) +
+  geom_point() +
+  # geom_pointrange(aes(ymin = lwr, ymax = upr), 
+  #                 shape = 21) +
   labs(x = "Year", y = "NegBin Abundance") +
   ggsidekick::theme_sleek() +
   theme(legend.position = "none")
