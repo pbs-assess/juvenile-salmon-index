@@ -15,7 +15,7 @@ dat <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>%
 
 sox_dat <- dat %>% 
   filter(species == "sockeye") %>% 
-  mutate(cpue = n_juv / volume_km3) %>% 
+  mutate(cpue = n_juv / volume_m3) %>% 
   droplevels()
 
 
@@ -88,6 +88,9 @@ fit_tw <- sdmTMB(
   silent = FALSE
 )
 
+sanity(fit_nb)
+sanity(fit_tw)
+
 
 ## verbose predictive grid (overkill for here)
 grid_list <- readRDS(here::here("data", "spatial", "pred_ipes_grid.RDS")) %>% 
@@ -140,10 +143,17 @@ sox_preds_tw <- predict(
 sox_ind_tw <- get_index(sox_preds_tw, area = 4)
 sox_ind_tw2 <- sox_ind_tw %>% 
   mutate(
-    est_catch = est * median(sox_dat$volume_km3),
-    lwr_catch = lwr * median(sox_dat$volume_km3),
-    upr_catch = upr * median(sox_dat$volume_km3)
+    est_catch = est * 1,
+    lwr_catch = lwr * 1,
+    upr_catch = upr * 1
   )
+
+# # check scale:
+# mean(sox_dat$n_juv/sox_dat$volume_m3)
+# mean(sox_dat$cpue)
+# plot(exp(sox_preds_nb$data$est[1:100]))
+# plot(exp(sox_preds_tw$data$est[1:100]))
+# plot(exp(sox_preds_tw$data$est[1:100]), exp(sox_preds_nb$data$est[1:100]));abline(0, 1)
 
 p1 <- ggplot(sox_ind_tw2, 
              aes(year, est_catch)) +
