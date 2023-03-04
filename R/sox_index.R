@@ -8,14 +8,15 @@ dat <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>%
   mutate(
     utm_x_1000 = utm_x / 1000,
     utm_y_1000 = utm_y / 1000,
-    effort = log(volume_m3)
+    effort = log(volume_km3)
   ) %>% 
   filter(!species == "steelhead") 
 
 
 sox_dat <- dat %>% 
   filter(species == "sockeye") %>% 
-  mutate(cpue = n_juv / volume_km3) %>% 
+  mutate(cpue = n_juv / volume_km3,
+         unique_event = as.factor(unique_event)) %>% 
   droplevels()
 
 
@@ -63,6 +64,8 @@ fit_nb <- sdmTMB(
   ),
   silent = FALSE
 )
+
+
 
 fit_tw <- sdmTMB(
   cpue ~ 0 +
@@ -128,7 +131,7 @@ sox_preds_nb <- predict(
   newdata = exp_grid,
   return_tmb_object = TRUE
 )
-sox_ind_nb <- get_index(sox_preds_nb, area = 4)
+sox_ind_nb <- get_index(sox_preds_nb, area = (2 * 2 * 0.015))
 
 
 # tweedie model index
@@ -145,11 +148,11 @@ sox_ind_tw2 <- sox_ind_tw %>%
     upr_catch = upr * median(sox_dat$volume_km3)
   )
 
-p1 <- ggplot(sox_ind_tw2, 
+p1 <- ggplot(sox_ind_tw2 %>% filter(!year %in% c("2016", "2020")), 
              aes(year, est_catch)) +
-  # geom_pointrange(aes(ymin = lwr_catch, ymax = upr_catch), 
-  #                 shape = 21) +
-  geom_point() +
+  geom_pointrange(aes(ymin = lwr_catch, ymax = upr_catch),
+                  shape = 21) +
+  # geom_point() +
   labs(x = "Year", y = "Tweedie Abundance") +
   ggsidekick::theme_sleek() +
   theme(legend.position = "none")
@@ -161,3 +164,25 @@ p2<- ggplot(sox_ind_nb, aes(year, est)) +
   ggsidekick::theme_sleek() +
   theme(legend.position = "none")
 cowplot::plot_grid(p1, p2, nrow = 2)
+
+
+
+## check model observations
+model_list <- list(fit_nb, fit_tw)
+
+sims_list <- purrr::map(model_list, simulate, nsim = 20)
+
+obs_catch <- sox_dat$n_juv[sox_dat$n_juv < 100]
+obs_cpue <- sox_dat$cpue[sox_dat$cpue < 200000]
+
+sim_in <- sims_list[[1]][ , 1]
+sim_in_cpue <- sims_list[[2]][ , 1]
+
+hist(obs_catch, col="green", pch=20, cex=4, breaks=30)
+hist(sim_in[sim_in < 100], pch=20, cex=4, breaks = 30, 
+     col=rgb(1,0,0,0.5), add=TRUE)
+
+hist(obs_cpue, col="green", pch=20, cex=4, breaks=30)
+hist(sim_in_cpue[sim_in_cpue < 200000], pch=20, cex=4, breaks = 30, 
+     col=rgb(1,0,0,0.5), add=TRUE)
+

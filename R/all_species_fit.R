@@ -108,33 +108,6 @@ catch_hist
 dev.off()
 
 
-### SANDBOX MODEL --------------------------------------------------------------
-# 
-# sox_dat <- dat %>% filter(species == "sockeye")
-# dd <- sdmTMB(
-#   n_juv ~ 0 +
-#     year_f +
-#     s(week, bs = "cc", k = 5) ,
-#   offset = sox_dat$effort,
-#   data = sox_dat,
-#   mesh = spde,
-#   family = sdmTMB::nbinom2(),
-#   spatial = "on",
-#   spatial_varying = ~ 0 + s(week, bs = "cc", k = 5),
-#   spatiotemporal = "ar1",
-#   time = "year",
-#   anisotropy = TRUE,
-#   share_range = FALSE,
-#   knots = list(
-#     week = c(0, 52)
-#   ),
-#   control = sdmTMBcontrol(
-#     newton_loops = 1
-#   ),
-#   silent = FALSE
-# )
-
-
 ### FIT SATURATED --------------------------------------------------------------
 
 st_mod_ar1 <- furrr::future_map2(
@@ -572,6 +545,11 @@ fall_years <- dat %>%
   unique()
 
 
+# scalar for spatial predictions; since preds are in m3, multiply by
+# (2000 * 2000 * 13) because effort in m but using 2x2 km grid cells
+sp_scalar <- 2000^2 * 13
+
+
 # fixed effects plots
 fall_tbl <- spatial_pred_tbl %>%
   filter(season == "fall")
@@ -581,14 +559,15 @@ for (i in seq_along(fall_tbl$species)) {
       year %in% fall_years
     ) %>% 
     mutate(
-      scale_est = exp(est) / max(exp(est))
+      grid_est = sp_scalar * exp(est),
+      scale_est = grid_est / max(grid_est)
     )
   .y <- fall_tbl$species[[i]]
   
   # total effects
-  max_est <- quantile(.x$scale_est, 0.999)
+  max_est <- quantile(.x$grid_est, 0.999)
   p <-  ggplot() + 
-    geom_raster(data = .x, aes(X, Y, fill = scale_est)) +
+    geom_raster(data = .x, aes(X, Y, fill = grid_est)) +
     coord_fixed() +
     geom_sf(data = coast, color = "black", fill = "white") +
     ggsidekick::theme_sleek() +
@@ -666,9 +645,11 @@ spatial_preds2 <- purrr::map(
   spatial_preds, 
   ~ .x %>% 
     mutate(
+      grid_est = sp_scalar * exp(est),
       scale_est = exp(est) / max(exp(est))
     )
 )
+
 sp_preds_2022 <- tibble(
   species = tolower(unique(dat$species))
 ) %>% 
@@ -681,7 +662,8 @@ sp_preds_2022 <- tibble(
     season_f = fct_relevel(as.factor(season), "summer", "fall")
   ) %>% 
   filter(
-    year_f == "2022"
+    year_f == "2022",
+    survey_f == "hss"
   )
   
 max_scale_est <- quantile(sp_preds_2022$scale_est, 0.999)
@@ -690,9 +672,11 @@ p <-  ggplot() +
   coord_fixed() +
   geom_sf(data = coast, color = "black", fill = "white") +
   ggsidekick::theme_sleek() +
-  scale_fill_viridis_c(
-    trans = "sqrt",
-    limits = c(0, max_scale_est)
+  scale_fill_gradient(
+    low = "white", high = "red",
+    # limits = c(0, max_scale_est),
+    name = "Scaled\nAbundance\nPer Cell",
+    trans = "sqrt"
   ) +
   facet_grid(species~season_f) +
   theme(axis.title = element_blank(),
@@ -700,15 +684,17 @@ p <-  ggplot() +
 
 
 ## V2: unscaled abundance
-scale_est <- quantile(exp(sp_preds_2022$est), 0.999)
+max_grid_est <- quantile(sp_preds_2022$grid_est, 0.999)
 p2 <-  ggplot() + 
-  geom_raster(data = sp_preds_2022, aes(X, Y, fill = exp(est))) +
+  geom_raster(data = sp_preds_2022, aes(X, Y, fill = grid_est)) +
   coord_fixed() +
   geom_sf(data = coast, color = "black", fill = "white") +
   ggsidekick::theme_sleek() +
-  scale_fill_viridis_c(
-    trans = "sqrt",
-    limits = c(0, scale_est)
+  scale_fill_gradient(
+    low = "white", high = "red",
+    limits = c(0, max_grid_est),
+    name = "Abundance\nPer Cell",
+    trans = "sqrt"
   ) +
   facet_grid(species~season_f) +
   theme(axis.title = element_blank(),
@@ -725,7 +711,8 @@ dev.off()
 
 # fix to HSS survey (can't combine because predictions shouldn't be passed
 # duplicates, but require tmb_object stored in preds)
-# NOTE: area = 4 because using 2x2 km grid cells in predictions
+# NOTE: area = (2000 * 2000 * 13) because effort in m but using 2x2 km grid cells
+# and median net height in predictions
 ind_preds_sum <- purrr::map(
   dat_tbl$st_mod,
   ~ {
@@ -734,8 +721,11 @@ ind_preds_sum <- purrr::map(
             return_tmb_object = TRUE)
   }
 )
-index_list_sum <- purrr::map(ind_preds_sum, get_index, area = 4, 
-                             bias_correct = TRUE)
+index_list_sum <- furrr::future_map(
+  ind_preds_sum, get_index, 
+  area = sp_scalar, 
+  bias_correct = TRUE
+)
 
 ind_preds_fall <- purrr::map(
   dat_tbl$st_mod,
@@ -745,13 +735,16 @@ ind_preds_fall <- purrr::map(
             return_tmb_object = TRUE)
   }
 )
-index_list_fall <- purrr::map(ind_preds_fall, get_index, area = 4, 
-                              bias_correct = TRUE)
+index_list_fall <- furrr::future_map(
+  ind_preds_fall, get_index, 
+  area = sp_scalar, 
+  bias_correct = TRUE
+)
 
 index_lists <- c(index_list_sum,
                  index_list_fall)
 saveRDS(index_lists, here::here("data", "fits", "index_list.rds"))
-# index_lists <- readRDS(here::here("data", "fits", "index_list.rds")) 
+# index_lists <- readRDS(here::here("data", "fits", "index_list.rds"))
 
 
 index_sum <- purrr::map2(
@@ -776,7 +769,7 @@ index_dat <- rbind(index_sum %>% filter(year %in% summer_years),
     season = factor(season, levels = c("su", "fa"), 
                     labels = c("summer", "fall"))
   ) %>% 
-  group_by(species, season) %>% 
+  group_by(species) %>% 
   mutate(
     max_est = max(est),
     scale_est = est / max_est,
@@ -789,7 +782,7 @@ index_dat <- rbind(index_sum %>% filter(year %in% summer_years),
 index <- ggplot(index_dat, aes(year, est)) +
   geom_pointrange(aes(ymin = lwr, ymax = upr, fill = species), 
                   shape = 21) +
-  labs(x = "Year", y = "Abundance Index") +
+  labs(x = "Year", y = "Absolute Abundance Index") +
   ggsidekick::theme_sleek() +
   facet_grid(species~season, scales = "free_y") +
   scale_fill_manual(values = col_pal) +
@@ -799,7 +792,7 @@ index_scaled <- ggplot(index_dat,
                      aes(year, scale_est)) +
   geom_pointrange(aes(ymin = scale_lwr, ymax = scale_upr, fill = species), 
                   shape = 21) +
-  labs(x = "Year", y = "Abundance Index") +
+  labs(x = "Year", y = "Scaled Abundance Index") +
   ggsidekick::theme_sleek() +
   facet_grid(species~season, scales = "free_y") +
   scale_fill_manual(values = col_pal) +
@@ -817,6 +810,10 @@ log_index_plot <- ggplot(index_dat,
   facet_grid(species~season, scales = "free_y") +
   theme(legend.position = "none")
 
+
+png(here::here("figs", "ms_figs", "hss_index.png"))
+index
+dev.off()
 
 png(here::here("figs", "ms_figs", "log_hss_index.png"))
 log_index_plot
