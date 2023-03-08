@@ -45,7 +45,7 @@ spde <- make_mesh(
 
 
 # simulate 20 MC draws from fitted models 
-set.seed(1234)
+set.seed(456)
 nsims = 20
 sims_list <- purrr::map(
   fit_all_sp$st_mod, simulate, nsim = nsims, re_form = ~0,
@@ -102,7 +102,7 @@ dum <- sdmTMB(
 )
 
 sp_vec <- unique(sim_tbl$species)
-for (i in seq_along(sp_vec)) {
+for (i in 4:5) {#seq_along(sp_vec)) {
   sim_tbl_sub <- sim_tbl %>% filter(species == sp_vec[i])
   fit <- furrr::future_pmap(
     list(sim_tbl_sub$sim_dat, sim_tbl_sub$anisotropy), 

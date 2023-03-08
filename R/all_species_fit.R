@@ -540,71 +540,77 @@ summer_years <- dat %>%
   pull(year) %>% 
   unique()
 fall_years <- dat %>% 
-  filter(season_f == "wi") %>%
+  filter(season_f == "wi",
+         # remove 2020 since most of survey was outside of grid
+         !year_f == "2020") %>%
   pull(year) %>% 
   unique()
 
 
 # scalar for spatial predictions; since preds are in m3, multiply by
-# (2000 * 2000 * 13) because effort in m but using 2x2 km grid cells
-sp_scalar <- 2000^2 * 13
+# (1000 * 1000 * 13) because effort in m but using 1x1 km grid cells
+sp_scalar <- 1000^2 * 13
 
 
-# fixed effects plots
-fall_tbl <- spatial_pred_tbl %>%
-  filter(season == "fall")
-for (i in seq_along(fall_tbl$species)) {
-  .x <- fall_tbl$spatial_preds[[i]] %>% 
-    filter(
-      year %in% fall_years
-    ) %>% 
-    mutate(
-      grid_est = sp_scalar * exp(est),
-      scale_est = grid_est / max(grid_est)
-    )
-  .y <- fall_tbl$species[[i]]
-  
-  # total effects
-  max_est <- quantile(.x$grid_est, 0.999)
-  p <-  ggplot() + 
-    geom_raster(data = .x, aes(X, Y, fill = grid_est)) +
-    coord_fixed() +
-    geom_sf(data = coast, color = "black", fill = "white") +
-    ggsidekick::theme_sleek() +
-    scale_fill_viridis_c(
-      trans = "sqrt",
-      limits = c(0, max_est)
-    ) +
-    facet_wrap(~year) +
-    theme(axis.title = element_blank(),
-          axis.text = element_blank())
-  png(here::here("figs", "ms_figs", "fall_fe_preds",
-                 paste(.y, "fall_pred.png", sep = "_")), 
-      height = 8, width = 8, units = "in", res = 200)
-  print(p)
-  dev.off() 
-  
-  # epsilon effects
-  epsilon_max <- max(abs(.x$epsilon_st))
-  q <- ggplot() +
-    geom_raster(data = .x, aes(X, Y, fill = epsilon_st)) +
-    coord_fixed() +
-    geom_sf(data = coast, color = "black", fill = "white") +
-    ggsidekick::theme_sleek() +
-    scale_fill_distiller(palette = "Spectral", 
-                         limits = c(-1 * epsilon_max, epsilon_max)) +
-    facet_wrap(~year) +
-    theme(axis.title = element_blank(),
-          axis.text = element_blank())
-  png(here::here("figs", "ms_figs", "fall_fe_preds",
-                 paste(.y, "fall_eps.png", sep = "_")), 
-      height = 8, width = 8, units = "in", res = 200)
-  print(q)
-  dev.off() 
-}
+# spatiotemporal and total predsrandom fields for subset of years
+year_seq <- seq(1999, 2019, by = 5)
+sub_spatial <- spatial_pred_tbl %>% 
+  filter(season == "fall") %>% 
+  select(-week) %>% 
+  unnest(cols = "spatial_preds") %>%
+  group_by(species) %>% 
+  mutate(
+    grid_est = sp_scalar * exp(est),
+    scale_est = grid_est / max(grid_est),
+    # fix large scaled values
+    scale_est2 = ifelse(scale_est > 0.1, 
+                        0.1, 
+                        scale_est)
+  ) %>% 
+  ungroup() %>% 
+  filter(year %in% year_seq)
+eps_max <- quantile(sub_spatial$epsilon_st, 0.999)#max(abs(epsilon_dat$epsilon_st))
+max_est <- quantile(sub_spatial$scale_est, 0.99)
+
+png(here::here("figs", "ms_figs", 
+               "scaled_sp_preds.png"), 
+    height = 8, width = 8, units = "in", res = 200)
+ggplot() + 
+  geom_raster(data = sub_spatial, aes(X, Y, fill = scale_est2)) +
+  coord_fixed() +
+  # geom_sf(data = coast, color = "black", fill = "white") +
+  ggsidekick::theme_sleek() +
+  scale_fill_viridis_c(
+    trans = "sqrt",
+    name = "Scaled\nAbundance",
+    labels = c("0", "0.025", "0.05", "0.075", ">0.1")
+  ) +
+  facet_grid(year~species) +
+  theme(axis.title = element_blank(),
+        axis.text = element_blank())
+dev.off()
 
 
-# spatial random effects by species and season
+png(here::here("figs", "ms_figs", "st_rf.png"), 
+    height = 6, width = 7.5, units = "in", res = 200)
+ggplot() +
+  geom_raster(data = sub_spatial, aes(X, Y, fill = epsilon_st)) +
+  geom_sf(data = coast, color = "black", fill = "white") +
+  ggsidekick::theme_sleek() +
+  scale_fill_distiller(palette = "Spectral", 
+                       limits = c(-1 * eps_max, eps_max),
+                       name = "Spatial\nField") +
+  facet_grid(year~species) +
+  theme(
+    axis.title = element_blank(),
+    legend.position = "top",
+    axis.text = element_blank(),
+    legend.key.size = unit(1, 'cm')
+  )
+dev.off()
+
+
+# spatial random effects by species
 omega_dat <- spatial_pred_tbl %>% 
   select(-week) %>% 
   unnest(cols = "spatial_preds") %>% 
@@ -626,7 +632,6 @@ ggplot() +
                        limits = c(-1 * omega_max, omega_max),
                        name = "Spatial\nField") +
   facet_wrap(~species) +
-  # facet_grid(season~species) +
   theme(
     axis.title = element_blank(),
     legend.position = "top",
@@ -634,6 +639,63 @@ ggplot() +
     legend.key.size = unit(1, 'cm')
   )
 dev.off()
+
+
+
+# supplementary maps
+fall_tbl <- spatial_pred_tbl %>%
+  filter(season == "fall")
+for (i in seq_along(fall_tbl$species)) {
+  .x <- fall_tbl$spatial_preds[[i]] %>% 
+    filter(
+      year %in% fall_years
+    ) %>% 
+    mutate(
+      grid_est = sp_scalar * exp(est),
+      scale_est = grid_est / max(grid_est)
+    )
+  .y <- fall_tbl$species[[i]]
+  
+  # total effects
+  max_est <- quantile(.x$grid_est, 0.999)
+  p <-  ggplot() + 
+    geom_raster(data = .x, aes(X, Y, fill = grid_est)) +
+    coord_fixed() +
+    ggsidekick::theme_sleek() +
+    scale_fill_viridis_c(
+      trans = "sqrt",
+      limits = c(0, max_est)
+    ) +
+    facet_wrap(~year) +
+    theme(axis.title = element_blank(),
+          axis.text = element_blank())
+  png(here::here("figs", "ms_figs", "fall_fe_preds",
+                 paste(.y, "fall_pred.png", sep = "_")), 
+      height = 8, width = 8, units = "in", res = 200)
+  print(p)
+  dev.off() 
+  
+  # spatiotemporal random fields
+  eps_max <- quantile(.x$epsilon_st, 0.999)
+  q <- ggplot() +
+    geom_raster(data = .x, aes(X, Y, fill = epsilon_st)) +
+    ggsidekick::theme_sleek() +
+    scale_fill_distiller(palette = "Spectral", 
+                         limits = c(-1 * eps_max, eps_max),
+                         name = "Spatial\nField") +
+    facet_wrap(~year) +
+    theme(
+      axis.title = element_blank(),
+      legend.position = "top",
+      axis.text = element_blank(),
+      legend.key.size = unit(1, 'cm')
+    )
+  png(here::here("figs", "ms_figs", "fall_fe_preds",
+                 paste(.y, "fall_eps.png", sep = "_")), 
+      height = 8, width = 8, units = "in", res = 200)
+  print(q)
+  dev.off() 
+}
 
 
 ## SOPO MAPS -------------------------------------------------------------------
@@ -711,8 +773,6 @@ dev.off()
 
 # fix to HSS survey (can't combine because predictions shouldn't be passed
 # duplicates, but require tmb_object stored in preds)
-# NOTE: area = (2000 * 2000 * 13) because effort in m but using 2x2 km grid cells
-# and median net height in predictions
 ind_preds_sum <- purrr::map(
   dat_tbl$st_mod,
   ~ {
@@ -722,7 +782,8 @@ ind_preds_sum <- purrr::map(
   }
 )
 index_list_sum <- furrr::future_map(
-  ind_preds_sum, get_index, 
+  ind_preds_sum, 
+  get_index, 
   area = sp_scalar, 
   bias_correct = TRUE
 )
@@ -744,7 +805,7 @@ index_list_fall <- furrr::future_map(
 index_lists <- c(index_list_sum,
                  index_list_fall)
 saveRDS(index_lists, here::here("data", "fits", "index_list.rds"))
-# index_lists <- readRDS(here::here("data", "fits", "index_list.rds"))
+index_lists <- readRDS(here::here("data", "fits", "index_list.rds"))
 
 
 index_sum <- purrr::map2(
@@ -778,50 +839,43 @@ index_dat <- rbind(index_sum %>% filter(year %in% summer_years),
     ) %>% 
   ungroup()
 
-
+## scaled abundance with no intervals
 index <- ggplot(index_dat, aes(year, est)) +
-  geom_pointrange(aes(ymin = lwr, ymax = upr, fill = species), 
-                  shape = 21) +
+  geom_point(aes(fill = species), shape = 21) +
+  # geom_pointrange(aes(ymin = lwr, ymax = upr, fill = species),
+  #                 shape = 21) +
   labs(x = "Year", y = "Absolute Abundance Index") +
   ggsidekick::theme_sleek() +
   facet_grid(species~season, scales = "free_y") +
   scale_fill_manual(values = col_pal) +
   theme(legend.position = "none")
 
-index_scaled <- ggplot(index_dat, 
-                     aes(year, scale_est)) +
-  geom_pointrange(aes(ymin = scale_lwr, ymax = scale_upr, fill = species), 
-                  shape = 21) +
-  labs(x = "Year", y = "Scaled Abundance Index") +
-  ggsidekick::theme_sleek() +
-  facet_grid(species~season, scales = "free_y") +
-  scale_fill_manual(values = col_pal) +
-  coord_cartesian(y = c(0, 2.5)) +
-  theme(legend.position = "none")
+# index_scaled <- ggplot(index_dat, 
+#                      aes(year, scale_est)) +
+#   geom_pointrange(aes(ymin = scale_lwr, ymax = scale_upr, fill = species), 
+#                   shape = 21) +
+#   labs(x = "Year", y = "Scaled Abundance Index") +
+#   ggsidekick::theme_sleek() +
+#   facet_grid(species~season, scales = "free_y") +
+#   scale_fill_manual(values = col_pal) +
+#   coord_cartesian(y = c(0, 2.5)) +
+#   theme(legend.position = "none")
 
-  
-log_index_plot <- ggplot(index_dat, 
-       aes(year, log_est)) +
-  geom_pointrange(aes(ymin = log(lwr), ymax = log(upr), fill = species), 
-                  shape = 21) +
-  labs(x = "Year", y = "Log Abundance Index") +
-  ggsidekick::theme_sleek() +
-  scale_fill_manual(values = col_pal) +
-  facet_grid(species~season, scales = "free_y") +
-  theme(legend.position = "none")
+# log_index_plot <- ggplot(index_dat, 
+#        aes(year, log_est)) +
+#   geom_pointrange(aes(ymin = log(lwr), ymax = log(upr), fill = species), 
+#                   shape = 21) +
+#   labs(x = "Year", y = "Log Abundance Index") +
+#   ggsidekick::theme_sleek() +
+#   scale_fill_manual(values = col_pal) +
+#   facet_grid(species~season, scales = "free_y") +
+#   theme(legend.position = "none")
 
 
 png(here::here("figs", "ms_figs", "hss_index.png"))
 index
 dev.off()
 
-png(here::here("figs", "ms_figs", "log_hss_index.png"))
-log_index_plot
-dev.off()
-
-png(here::here("figs", "ms_figs", "hss_index_scaled.png"))
-index_scaled
-dev.off()
 
 
 
