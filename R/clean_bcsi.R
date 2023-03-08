@@ -459,6 +459,17 @@ saveRDS(catch_out, here::here("data", "catch_survey_sbc.rds"))
 
 ## DATA EXPLORE ----------------------------------------------------------------
 
+catch_dat <- readRDS(here::here("data", "catch_survey_sbc.rds"))
+
+
+# spatial distribution of catches
+ggplot() +
+  geom_sf(data = coast) +
+  geom_point(data = catch_dat %>% filter(n_juv > 0, !species == "steelhead"),
+             aes(x = lon, y = lat, size = n_juv)) +
+  facet_grid(season_f ~ species)
+
+
 catch_dat_plot <- catch_dat %>% 
   mutate(
     log_n_juv = n_juv + 0.0001,

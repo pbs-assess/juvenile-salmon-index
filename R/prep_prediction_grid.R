@@ -94,6 +94,7 @@ bc_raster_utm <- projectRaster(bc_raster,
                                # convert to 1000 m resolution
                                res = 1000)
 
+
 # save RDS for manuscript figs
 saveRDS(bc_raster, 
         here::here("data", "spatial", "full_coast_raster_latlon_1000m.RDS"))
@@ -144,16 +145,16 @@ saveRDS(ipes_raster_list,
 
 ## GENERATE GRID ---------------------------------------------------------------
 
-# import high res raster generated above, then downscale to 2x2 km resolution 
-# and covert to SF
+# import high res raster generated above
 ipes_raster_list <- readRDS(
   here::here("data", "spatial", "ipes_raster_utm_1000m.RDS"))
 
 ipes_sf_list <- purrr::map(
   ipes_raster_list,
   function (x) {
-    aggregate(x, fact = 2) %>% 
-      as(., 'SpatialPixelsDataFrame') %>%
+    # leave at 1km x 1km res for inlets
+    # aggregate(x, fact = 2) %>% 
+      as(x, 'SpatialPixelsDataFrame') %>%
       as.data.frame() %>%
       st_as_sf(., coords = c("x", "y"),
                crs = sp::CRS("+proj=utm +zone=9 +units=m"))
@@ -170,7 +171,8 @@ coast <- rbind(rnaturalearth::ne_states( "United States of America",
                                          returnclass = "sf"), 
                rnaturalearth::ne_states( "Canada", returnclass = "sf")) %>% 
   sf::st_crop(., 
-              xmin = min_lon, ymin = 48, xmax = max_lon, ymax = max_lat) 
+              xmin = min(dat_trim$lon), ymin = 48, 
+              xmax = max(dat_trim$lon), ymax = max(dat_trim$lat)) 
 
 ## convert to lat/lon for coast distance function 
 ipes_sf_deg <- ipes_sf %>%
@@ -200,7 +202,7 @@ ipes_grid_interp <- VIM::kNN(ipes_grid, k = 5)
 
 ggplot() + 
   geom_sf(data = coast_utm) +
-  geom_raster(data = ipes_grid_interp, aes(x = X, y = Y, fill = depth)) +
+  geom_raster(data = ipes_grid, aes(x = X, y = Y, fill = depth)) +
   scale_fill_viridis_c() +
   # geom_point(data = dat_trim, aes(x = utm_x, y = utm_y),
   #            fill = "white",
