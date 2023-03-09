@@ -641,7 +641,6 @@ ggplot() +
 dev.off()
 
 
-
 # supplementary maps
 fall_tbl <- spatial_pred_tbl %>%
   filter(season == "fall")
@@ -698,81 +697,10 @@ for (i in seq_along(fall_tbl$species)) {
 }
 
 
-## SOPO MAPS -------------------------------------------------------------------
-
-# use subset of predictions above to make maps of 2022 preds (FEs) by seasons
-
-# V1: scaled abundance (by species but both seasons)
-spatial_preds2 <- purrr::map(
-  spatial_preds, 
-  ~ .x %>% 
-    mutate(
-      grid_est = sp_scalar * exp(est),
-      scale_est = exp(est) / max(exp(est))
-    )
-)
-
-sp_preds_2022 <- tibble(
-  species = tolower(unique(dat$species))
-) %>% 
-  mutate(
-    sp_preds = spatial_preds2
-  ) %>% 
-  unnest(cols = "sp_preds") %>% 
-  mutate(
-    season = ifelse(week == "25", "summer", "fall"),
-    season_f = fct_relevel(as.factor(season), "summer", "fall")
-  ) %>% 
-  filter(
-    year_f == "2022",
-    survey_f == "hss"
-  )
-  
-max_scale_est <- quantile(sp_preds_2022$scale_est, 0.999)
-p <-  ggplot() + 
-  geom_raster(data = sp_preds_2022, aes(X, Y, fill = scale_est)) +
-  coord_fixed() +
-  geom_sf(data = coast, color = "black", fill = "white") +
-  ggsidekick::theme_sleek() +
-  scale_fill_gradient(
-    low = "white", high = "red",
-    # limits = c(0, max_scale_est),
-    name = "Scaled\nAbundance\nPer Cell",
-    trans = "sqrt"
-  ) +
-  facet_grid(species~season_f) +
-  theme(axis.title = element_blank(),
-        axis.text = element_blank())
-
-
-## V2: unscaled abundance
-max_grid_est <- quantile(sp_preds_2022$grid_est, 0.999)
-p2 <-  ggplot() + 
-  geom_raster(data = sp_preds_2022, aes(X, Y, fill = grid_est)) +
-  coord_fixed() +
-  geom_sf(data = coast, color = "black", fill = "white") +
-  ggsidekick::theme_sleek() +
-  scale_fill_gradient(
-    low = "white", high = "red",
-    limits = c(0, max_grid_est),
-    name = "Abundance\nPer Cell",
-    trans = "sqrt"
-  ) +
-  facet_grid(species~season_f) +
-  theme(axis.title = element_blank(),
-        axis.text = element_blank())
-
-pdf(here::here("figs", "sopo_figs", "sp_preds_2022.pdf"))
-p
-p2
-dev.off()
-
-
 ## INDICES ---------------------------------------------------------------------
 
 
-# fix to HSS survey (can't combine because predictions shouldn't be passed
-# duplicates, but require tmb_object stored in preds)
+# summer high seas
 ind_preds_sum <- purrr::map(
   dat_tbl$st_mod,
   ~ {
@@ -788,6 +716,7 @@ index_list_sum <- furrr::future_map(
   bias_correct = TRUE
 )
 
+# fall high seas
 ind_preds_fall <- purrr::map(
   dat_tbl$st_mod,
   ~ {
@@ -802,10 +731,22 @@ index_list_fall <- furrr::future_map(
   bias_correct = TRUE
 )
 
+# separate survey effects (only summer since IPES not a fall survey)
+ind_preds2 <- purrr::map(dat_tbl$st_mod, function (x) {
+  predict(x, newdata = exp_grid %>% filter(fake_survey == "0", week == "25"),
+          return_tmb_object = TRUE)
+})
+index_list_combined <- purrr::map(ind_preds2, 
+                                  get_index, 
+                                  area = sp_scalar, 
+                                  bias_correct = TRUE)
+
+
 index_lists <- c(index_list_sum,
-                 index_list_fall)
+                 index_list_fall, 
+                 index_list_combined)
 saveRDS(index_lists, here::here("data", "fits", "index_list.rds"))
-index_lists <- readRDS(here::here("data", "fits", "index_list.rds"))
+# index_lists <- readRDS(here::here("data", "fits", "index_list.rds"))
 
 
 index_sum <- purrr::map2(
@@ -877,6 +818,57 @@ index
 dev.off()
 
 
+index_df2 <- purrr::map2(
+  index_lists[11:15], dat_tbl$species, function (x, sp) {
+    x$species <- sp
+    return(x)
+  }
+) %>%
+  bind_rows()
+
+index1 <- index_dat %>% 
+  filter(season == "summer") %>%
+  # remove so DFs can be bound, then recalculate
+  select(-c(season, max_est:scale_upr)) %>% 
+  mutate(survey = "hss") 
+index_combined <- index_df2 %>%
+  mutate(survey = "ipes") %>%
+  filter(year > 2016) %>%
+  rbind(., index1) %>%
+  filter(year %in% summer_years) %>% 
+  group_by(species) %>% 
+  mutate(
+    max_est = max(est),
+    log_lwr = log_est + (qnorm(0.025) * se),
+    log_upr = log_est + (qnorm(0.975) * se),
+    scale_est = est / max_est,
+    scale_lwr = lwr / max_est,
+    scale_upr = upr / max_est
+  ) %>% 
+  ungroup()
+
+comb_index_log <- ggplot(index_combined, aes(year, log_est)) +
+  geom_pointrange(aes(ymin = log_lwr, ymax = log_upr, fill = survey),
+                  shape = 21) +
+  labs(x = "Year", y = "Log Count") +
+  ggsidekick::theme_sleek() +
+  facet_wrap(~species, scales = "free_y")
+
+comb_index <- ggplot(index_combined, aes(year, est)) +
+  geom_pointrange(aes(ymin = lwr, ymax = upr, fill = survey),
+                  shape = 21) +
+  labs(x = "Year", y = "Count") +
+  ggsidekick::theme_sleek() +
+  facet_wrap(~species, scales = "free_y")
+
+
+pdf(here::here("figs", "ms_figs", "st_index_surv_all_sp.pdf"), height = 7,
+    width = 9)
+comb_index_scaled
+comb_index_log
+comb_index
+dev.off()
+
 
 
 ## correlations in indices
@@ -890,8 +882,8 @@ summer_cor <- index_dat %>%
   ggcorrplot::ggcorrplot(., 
                          # hc.order = TRUE, 
                          type = "lower",
-                       lab = TRUE,
-                       title = "summer") + 
+                         lab = TRUE,
+                         title = "summer") + 
   ggsidekick::theme_sleek() +
   theme(axis.title = element_blank())
 
@@ -918,65 +910,72 @@ cowplot::plot_grid(summer_cor,
 dev.off()
 
 
-# separate survey effects (only summer since IPES not a fall survey)
-ind_preds2 <- purrr::map(dat_tbl$st_mod, function (x) {
-  predict(x, newdata = exp_grid %>% filter(fake_survey == "0", week == "25"),
-          return_tmb_object = TRUE)
-})
-index_list2 <- purrr::map(ind_preds2, get_index, bias_correct = TRUE)
-index_df2 <- purrr::map2(index_list2, dat_tbl$species, function (x, sp) {
-  x$species <- sp
-  return(x)
-}) %>%
-  bind_rows()
 
+## SOPO MAPS -------------------------------------------------------------------
 
-index1 <- index_dat %>% 
-  filter(season == "summer") %>%
-  # remove so DFs can be bound, then recalculate
-  select(-c(season, max_est:scale_upr)) %>% 
-  mutate(survey = "hss") 
-index_combined <- index_df2 %>%
-  mutate(survey = "ipes") %>%
-  filter(year > 2016) %>%
-  rbind(., index1) %>%
-  filter(year %in% summer_years) %>% 
-  group_by(species) %>% 
+# use subset of predictions above to make maps of 2022 preds (FEs) by seasons
+
+# V1: scaled abundance (by species but both seasons)
+spatial_preds2 <- purrr::map(
+  spatial_preds, 
+  ~ .x %>% 
+    mutate(
+      grid_est = sp_scalar * exp(est),
+      scale_est = exp(est) / max(exp(est))
+    )
+)
+
+sp_preds_2022 <- tibble(
+  species = tolower(unique(dat$species))
+) %>% 
   mutate(
-    max_est = max(est),
-    log_lwr = log_est + (qnorm(0.025) * se),
-    log_upr = log_est + (qnorm(0.975) * se),
-    scale_est = est / max_est,
-    scale_lwr = lwr / max_est,
-    scale_upr = upr / max_est
+    sp_preds = spatial_preds2
   ) %>% 
-  ungroup()
+  unnest(cols = "sp_preds") %>% 
+  mutate(
+    season = ifelse(week == "25", "summer", "fall"),
+    season_f = fct_relevel(as.factor(season), "summer", "fall")
+  ) %>% 
+  filter(
+    year_f == "2022",
+    survey_f == "hss"
+  )
 
-comb_index_scaled <- ggplot(index_combined, aes(year, scale_est)) +
-  geom_pointrange(aes(ymin = scale_lwr, ymax = scale_upr, fill = survey),
-                  shape = 21) +
-  labs(x = "Year", y = "Scaled Count") +
+max_scale_est <- quantile(sp_preds_2022$scale_est, 0.999)
+p <-  ggplot() + 
+  geom_raster(data = sp_preds_2022, aes(X, Y, fill = scale_est)) +
+  coord_fixed() +
+  geom_sf(data = coast, color = "black", fill = "white") +
   ggsidekick::theme_sleek() +
-  facet_wrap(~species, scales = "free_y")
+  scale_fill_gradient(
+    low = "white", high = "red",
+    # limits = c(0, max_scale_est),
+    name = "Scaled\nAbundance\nPer Cell",
+    trans = "sqrt"
+  ) +
+  facet_grid(species~season_f) +
+  theme(axis.title = element_blank(),
+        axis.text = element_blank())
 
-comb_index_log <- ggplot(index_combined, aes(year, log_est)) +
-  geom_pointrange(aes(ymin = log_lwr, ymax = log_upr, fill = survey),
-                  shape = 21) +
-  labs(x = "Year", y = "Log Count") +
+
+## V2: unscaled abundance
+max_grid_est <- quantile(sp_preds_2022$grid_est, 0.999)
+p2 <-  ggplot() + 
+  geom_raster(data = sp_preds_2022, aes(X, Y, fill = grid_est)) +
+  coord_fixed() +
+  geom_sf(data = coast, color = "black", fill = "white") +
   ggsidekick::theme_sleek() +
-  facet_wrap(~species, scales = "free_y")
+  scale_fill_gradient(
+    low = "white", high = "red",
+    limits = c(0, max_grid_est),
+    name = "Abundance\nPer Cell",
+    trans = "sqrt"
+  ) +
+  facet_grid(species~season_f) +
+  theme(axis.title = element_blank(),
+        axis.text = element_blank())
 
-comb_index <- ggplot(index_combined, aes(year, est)) +
-  geom_pointrange(aes(ymin = lwr, ymax = upr, fill = survey),
-                  shape = 21) +
-  labs(x = "Year", y = "Count") +
-  ggsidekick::theme_sleek() +
-  facet_wrap(~species, scales = "free_y")
-
-
-pdf(here::here("figs", "ms_figs", "st_index_surv_all_sp.pdf"), height = 7,
-    width = 9)
-comb_index_scaled
-comb_index_log
-comb_index
+pdf(here::here("figs", "sopo_figs", "sp_preds_2022.pdf"))
+p
+p2
 dev.off()
