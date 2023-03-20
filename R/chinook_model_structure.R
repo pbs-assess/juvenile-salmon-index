@@ -49,34 +49,33 @@ fall_years <- dat %>%
 dat$fall_train <- ifelse(dat$unique_event %in% fall_test, 0, 1)
 dat$summer_train <- ifelse(dat$unique_event %in% summer_test, 0, 1)
 
-
-# fall_tbl <- dat %>% 
+# 
+# fall_tbl <- dat %>%
 #   filter(season_f == "wi",
-#          year %in% fall_years) %>% 
-#   mutate(dataset = "fall") %>% 
+#          year %in% fall_years) %>%
+#   mutate(dataset = "fall") %>%
 #   droplevels()
-# summer_tbl <- dat %>% 
+# summer_tbl <- dat %>%
 #   filter(season_f == "su",
-#          year %in% summer_years) %>% 
-#   mutate(dataset = "summer") %>% 
+#          year %in% summer_years) %>%
+#   mutate(dataset = "summer") %>%
 #   droplevels()
-
-# make tbl with two models for each season (necessary because testing/training
-# data differs between full summer and fall data)
-# dat_tbl <- dat  %>% 
-#   mutate(dataset = "all_summer") %>% 
-#   rbind(., dat  %>% 
-#           mutate(dataset = "all_fall")) %>% 
-#   rbind(., summer_tbl) %>% 
-#   rbind(., fall_tbl) %>% 
-#   group_by(species, dataset) %>% 
-#   group_nest() %>% 
+# 
+# # make tbl with two models for each season (necessary because testing/training
+# # data differs between full summer and fall data)
+# dat_tbl <- dat  %>%
+#   mutate(dataset = "all_summer") %>%
+#   rbind(., dat  %>%
+#           mutate(dataset = "all_fall")) %>%
+#   rbind(., summer_tbl) %>%
+#   rbind(., fall_tbl) %>%
+#   group_by(species, dataset) %>%
+#   group_nest() %>%
 #   mutate(
 #     anisotropy = ifelse(species == "pink", FALSE, TRUE)
 #   )
 # dat_tbl$fits <- vector(mode = "list", length = nrow(dat_tbl))
 # dat_tbl$preds <- vector(mode = "list", length = nrow(dat_tbl))
-dat_tbl$cv_fits <- vector(mode = "list", length = nrow(dat_tbl))
 
 dat_tbl <- readRDS(here::here("data", "fits", "model_structure_fits.rds"))
 
@@ -292,10 +291,13 @@ dev.off()
   
 ## cross validation ------------------------------------------------------------
 
+
+dat_tbl$cv_fits <- vector(mode = "list", length = nrow(dat_tbl))
+
 library(future)
 plan(multisession)
 
-for (i in 2:4) {
+for (i in 3:4) {
   dd <- dat_tbl$data[[i]] %>% droplevels()
   
   dat_coords <- dd %>% 
@@ -445,6 +447,11 @@ for (i in 2:4) {
     )
   }
 }
+
+purrr::map(dat_tbl$cv_fits[1:4], ~ .x$converged)
+
+
+dd <- readRDS(here::here("data", "fits", "model_structure_fits_cv.rds"))
 
 saveRDS(dat_tbl, here::here("data", "fits", "model_structure_fits_cv.rds"))
 
