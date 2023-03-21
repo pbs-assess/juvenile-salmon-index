@@ -14,7 +14,8 @@ dat <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>%
   mutate(
     utm_x_1000 = utm_x / 1000,
     utm_y_1000 = utm_y / 1000,
-    effort = log(volume_m3)
+    effort = log(volume_m3),
+    month_f = as.factor(month)
   ) %>% 
   filter(!species == "steelhead") %>% 
   droplevels()
@@ -49,37 +50,38 @@ fall_years <- dat %>%
 dat$fall_train <- ifelse(dat$unique_event %in% fall_test, 0, 1)
 dat$summer_train <- ifelse(dat$unique_event %in% summer_test, 0, 1)
 
-# 
-# fall_tbl <- dat %>%
-#   filter(season_f == "wi",
-#          year %in% fall_years) %>%
-#   mutate(dataset = "fall") %>%
-#   droplevels()
-# summer_tbl <- dat %>%
-#   filter(season_f == "su",
-#          year %in% summer_years) %>%
-#   mutate(dataset = "summer") %>%
-#   droplevels()
-# 
-# # make tbl with two models for each season (necessary because testing/training
-# # data differs between full summer and fall data)
-# dat_tbl <- dat  %>%
-#   mutate(dataset = "all_summer") %>%
-#   rbind(., dat  %>%
-#           mutate(dataset = "all_fall")) %>%
-#   rbind(., summer_tbl) %>%
-#   rbind(., fall_tbl) %>%
-#   group_by(species, dataset) %>%
-#   group_nest() %>%
-#   mutate(
-#     anisotropy = ifelse(species == "pink", FALSE, TRUE)
-#   )
-# dat_tbl$fits <- vector(mode = "list", length = nrow(dat_tbl))
+
+fall_tbl <- dat %>%
+  filter(season_f == "wi",
+         year %in% fall_years) %>%
+  mutate(dataset = "fall") %>%
+  droplevels()
+summer_tbl <- dat %>%
+  filter(season_f == "su",
+         year %in% summer_years) %>%
+  mutate(dataset = "summer") %>%
+  droplevels()
+
+# make tbl with two models for each season (necessary because testing/training
+# data differs between full summer and fall data)
+dat_tbl <- dat  %>%
+  mutate(dataset = "all_summer") %>%
+  rbind(., dat  %>%
+          mutate(dataset = "all_fall")) %>%
+  rbind(., summer_tbl) %>%
+  rbind(., fall_tbl) %>%
+  group_by(species, dataset) %>%
+  group_nest() %>%
+  mutate(
+    anisotropy = ifelse(species == "pink", FALSE, TRUE)
+  )
+dat_tbl$fits <- vector(mode = "list", length = nrow(dat_tbl))
+dat_tbl$pred_dat <- vector(mode = "list", length = nrow(dat_tbl))
 # dat_tbl$preds <- vector(mode = "list", length = nrow(dat_tbl))
 
-dat_tbl <- readRDS(here::here("data", "fits", "model_structure_fits.rds"))
+# dat_tbl <- readRDS(here::here("data", "fits", "model_structure_fits.rds"))
 
-for (i in 16:20) {
+for (i in 2:4) {
   dum <- dat_tbl$data[[i]] %>% droplevels()
   
   if (grepl("summer", dat_tbl$dataset[[i]])) {
@@ -109,14 +111,6 @@ for (i in 16:20) {
     mesh = inla_mesh_raw
   ) 
   
-  bs <- ifelse(grepl("all_", dat_tbl$dataset[i]), "cc", "tp")
-  kk <- ifelse(grepl("all_", dat_tbl$dataset[i]), 5, 3)
-  knts <- NULL
-  if (grepl("all_", dat_tbl$dataset[i])) {
-    knts <- list(
-      week = c(0, 52)
-    )
-  }
   extra_time <- NULL
   if (dat_tbl$dataset[i] == "fall") {
     extra_time <-  c(2018, 2020) 
@@ -127,8 +121,7 @@ for (i in 16:20) {
   
   if (dat_tbl$dataset[[i]] == "fall") {
     dat_tbl$fits[[i]] <- sdmTMB(
-      n_juv ~ #dist_to_coast_km +
-        week +
+      n_juv ~ month_f +
         target_depth +
         day_night ,
       offset = dd$effort,
@@ -149,9 +142,7 @@ for (i in 16:20) {
   } 
   if (dat_tbl$dataset[[i]] == "summer" & dat_tbl$species[[i]] == "pink") {
     dat_tbl$fits[[i]] <- sdmTMB(
-      n_juv ~ #dist_to_coast_km +
-        #as.factor(month) +
-        target_depth +
+      n_juv ~ target_depth +
         day_night +
         survey_f,
       offset = dd$effort,
@@ -173,8 +164,7 @@ for (i in 16:20) {
   
   if (dat_tbl$dataset[[i]] == "summer") {
     dat_tbl$fits[[i]] <- sdmTMB(
-      n_juv ~ #dist_to_coast_km +
-        as.factor(month) +
+      n_juv ~ month_f +
         target_depth +
         day_night +
         survey_f,
@@ -196,9 +186,9 @@ for (i in 16:20) {
   }
   if (dat_tbl$dataset[[i]] == "all_fall") {
     dat_tbl$fits[[i]] <- sdmTMB(
-      n_juv ~ 0 + year_f + 
+      n_juv ~ 0 + year_f +
         dist_to_coast_km +
-        s(week, bs = "cc", k = 5) +
+        month +
         target_depth +
         day_night ,
       offset = dd$effort,
@@ -210,9 +200,6 @@ for (i in 16:20) {
       time = "year",
       anisotropy = dat_tbl$anisotropy[i], 
       share_range = TRUE,
-      knots = list(
-        week = c(0, 52)
-      ),
       control = sdmTMBcontrol(
         newton_loops = 1
       ),
@@ -221,9 +208,9 @@ for (i in 16:20) {
   }
   if (dat_tbl$dataset[[i]] == "all_summer") {
     dat_tbl$fits[[i]] <- sdmTMB(
-      n_juv ~ 0 + year_f + 
+      n_juv ~ 0 + year_f +
         dist_to_coast_km +
-        s(week, bs = "cc", k = 5) +
+        month +
         target_depth +
         day_night +
         survey_f,
@@ -236,19 +223,16 @@ for (i in 16:20) {
       time = "year",
       anisotropy = dat_tbl$anisotropy[i], 
       share_range = TRUE,
-      knots = list(
-        week = c(0, 52)
-      ),
       control = sdmTMBcontrol(
         newton_loops = 1
       ),
       silent = FALSE
     )
   }
-
   
-  dd_test <- dum %>% filter(remove == "1")
-  dat_tbl$preds[[i]] <- predict(dat_tbl$fits[[i]], newdata = dd_test)
+  dat_tbl$pred_dat[[i]] <- dum %>% filter(remove == "1")
+  # dat_tbl$preds[[i]] <- predict(dat_tbl$fits[[i]], 
+  # newdata = dum %>% filter(remove == "1"))
 }
 
 saveRDS(dat_tbl, here::here("data", "fits", "model_structure_fits.rds"))
@@ -265,7 +249,7 @@ purrr::map(dat_tbl$preds[1:4],
            ))
 
 
-## simulate data and check RMSE
+## simulate data from fitted model and check RMSE
 set.seed(345)
 sims_list <- purrr::map(dat_tbl$fits, simulate, nsim = 25)
 rmse_list <- purrr::map2(sims_list, dat_tbl$fits, function (z, y) {
@@ -288,7 +272,52 @@ png(here::here("figs", "diagnostics", "in_sample_rmse.png"), units = "in",
 train_rmse_plot
 dev.off()
 
-  
+
+# simulate using hold out data and calc RMSE
+pred_mesh <- make_mesh(dat_tbl$pred_dat[[1]],
+                       xy_cols = c("utm_x_1000", "utm_y_1000"),
+                       n_knots = 200)
+fix_effs <- tidy(dat_tbl$fits[[1]], effects = "fixed") %>% filter(!grepl("year", term))
+sim_fit <- sdmTMB_simulate(
+  formula = ~ 0 + dist_to_coast_km +
+    month +
+    target_depth +
+    day_night,
+  data = dat_tbl$pred_dat[[1]],
+  mesh = pred_mesh,
+  time = "year",
+  family = gaussian(),
+  rho = 0.2,
+  range = 12.4,
+  sigma_E = 1.82,
+  phi = 0.29,
+  sigma_O = 1.33,
+  seed = 42,
+  B = fix_effs$estimate
+)
+
+dat_tbl$fits[[i]] <- sdmTMB(
+  n_juv ~ 0 + year_f +
+    dist_to_coast_km +
+    month +
+    target_depth +
+    day_night ,
+  offset = dd$effort,
+  data = dd,
+  mesh = spde,
+  family = sdmTMB::nbinom2(),
+  spatial = "on",
+  spatiotemporal = "ar1",
+  time = "year",
+  anisotropy = dat_tbl$anisotropy[i], 
+  share_range = TRUE,
+  control = sdmTMBcontrol(
+    newton_loops = 1
+  ),
+  silent = FALSE
+)
+
+
 ## cross validation ------------------------------------------------------------
 
 
