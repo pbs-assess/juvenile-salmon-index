@@ -21,6 +21,28 @@ dat <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>%
   droplevels()
 
 
+## CORRELATIONS IN CPUE --------------------------------------------------------
+
+# To determine whether survey indices should be calculated simultaneously or not
+# examine correlations, by species, between the two prior to 2016
+
+dat %>% 
+  filter(season_f %in% c("su", "wi"),
+         year < 2017) %>% 
+  mutate(log_cpue = log((n_juv + 0.0001) / effort)) %>% 
+  group_by(year_f, season_f, species) %>% 
+  summarize(
+    mean_cpue = mean(log_cpue)
+  ) %>% 
+  ungroup() %>% 
+  pivot_wider(names_from = season_f, values_from = mean_cpue) %>% 
+  ggplot(.) +
+  geom_point(aes(x = su, y = wi)) +
+  facet_wrap(~species)
+
+
+## FIT ALTERNATIVE MODELS ------------------------------------------------------
+
 # identify summer and fall testing data
 set.seed(123)
 summer_test <- dat %>% 
@@ -79,7 +101,7 @@ dat_tbl$fits <- vector(mode = "list", length = nrow(dat_tbl))
 dat_tbl$pred_dat <- vector(mode = "list", length = nrow(dat_tbl))
 # dat_tbl$preds <- vector(mode = "list", length = nrow(dat_tbl))
 
-# dat_tbl <- readRDS(here::here("data", "fits", "model_structure_fits.rds"))
+dat_tbl <- readRDS(here::here("data", "fits", "model_structure_fits.rds"))
 
 for (i in 2:4) {
   dum <- dat_tbl$data[[i]] %>% droplevels()
@@ -242,12 +264,22 @@ purrr::map(dat_tbl$fits[1:4],
 dat_tbl[16, ]
 
 # despite differences in predictions, very similar RMSE values;
-purrr::map(dat_tbl$preds[1:4], 
+dat_tbl$rmse <- purrr::map(dat_tbl$preds, 
            ~ Metrics::rmse(
              .x$n_juv,
              exp(.x$est)
-           ))
-
+           )) %>% 
+  unlist() 
+# hacky version generally consistent with in sample plot (i.e. summer data
+# better predicted with full, fall data better with season-specific)
+dat_tbl$rmse_log <- purrr::map(
+  dat_tbl$preds, 
+  ~ Metrics::rmse(
+    log(.x$n_juv + 0.0001),
+    .x$est
+  )
+) %>% 
+  unlist() 
 
 ## simulate data from fitted model and check RMSE
 set.seed(345)
@@ -257,7 +289,7 @@ rmse_list <- purrr::map2(sims_list, dat_tbl$fits, function (z, y) {
     Metrics::rmse(y$data$n_juv, x)
   }
   )
-})
+}) 
 dat_tbl$train_rmse <- rmse_list
 
 train_rmse_plot <- dat_tbl %>% 
@@ -273,49 +305,26 @@ train_rmse_plot
 dev.off()
 
 
-# simulate using hold out data and calc RMSE
-pred_mesh <- make_mesh(dat_tbl$pred_dat[[1]],
-                       xy_cols = c("utm_x_1000", "utm_y_1000"),
-                       n_knots = 200)
-fix_effs <- tidy(dat_tbl$fits[[1]], effects = "fixed") %>% filter(!grepl("year", term))
-sim_fit <- sdmTMB_simulate(
-  formula = ~ 0 + dist_to_coast_km +
-    month +
-    target_depth +
-    day_night,
-  data = dat_tbl$pred_dat[[1]],
-  mesh = pred_mesh,
-  time = "year",
-  family = gaussian(),
-  rho = 0.2,
-  range = 12.4,
-  sigma_E = 1.82,
-  phi = 0.29,
-  sigma_O = 1.33,
-  seed = 42,
-  B = fix_effs$estimate
-)
-
-dat_tbl$fits[[i]] <- sdmTMB(
-  n_juv ~ 0 + year_f +
-    dist_to_coast_km +
-    month +
-    target_depth +
-    day_night ,
-  offset = dd$effort,
-  data = dd,
-  mesh = spde,
-  family = sdmTMB::nbinom2(),
-  spatial = "on",
-  spatiotemporal = "ar1",
-  time = "year",
-  anisotropy = dat_tbl$anisotropy[i], 
-  share_range = TRUE,
-  control = sdmTMBcontrol(
-    newton_loops = 1
-  ),
-  silent = FALSE
-)
+# simulate using hold out data and calc RMSE (still unable to generate plausible
+# values)
+# summary(dat_tbl$fits[[1]])
+# sims <- simulate(dat_tbl$fits[[1]], nsim = 100)
+# pp <- dat_tbl$preds[[1]]
+# 
+# length(sims[sims < 1]) / length(sims)
+# length(dat_tbl$data[[1]]$n_juv[dat_tbl$data[[1]]$n_juv < 1]) / length(dat_tbl$data[[1]]$n_juv)
+# 
+# sim_preds <- purrr::map(
+#   exp(pp$est),
+#   ~ rnbinom(n = 1000, mu = .x, size = 0.33)
+# ) %>% 
+#   unlist()
+# 
+# sim_preds <- rnbinom(
+#   n = nrow(pp),
+#   mu = exp(pp$est),
+#   size = 0.33
+# )
 
 
 ## cross validation ------------------------------------------------------------
