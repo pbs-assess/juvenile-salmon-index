@@ -548,7 +548,8 @@ fall_years <- dat %>%
 
 
 # scalar for spatial predictions; since preds are in m3, multiply by
-# (1000 * 1000 * 13) because effort in m but using 1x1 km grid cells
+# (1000 * 1000 * 13) because effort in m but using 1x1 km grid cells and 
+# assuming mean net opening (13 m)
 sp_scalar <- 1000^2 * 13
 
 
