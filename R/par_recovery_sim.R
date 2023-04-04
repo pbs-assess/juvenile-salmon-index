@@ -7,6 +7,7 @@
 # consider rerunning with smooth for headrope, not cat. effects
 ## Reran Jan 31: "final" model after comparing spatiotemporal structures with
 # cross validation
+## Reran April 3: 
 
 
 library(tidyverse)
@@ -18,11 +19,45 @@ future::plan(future::multisession, workers = ncores - 3)
 
 
 # fitted model from all_species_fit.R
-fit_all_sp <- readRDS(here::here("data", "fits", "st_mod_all_sp_ar1.rds")) %>%
+fit_all_sp <- readRDS(
+  here::here("data", "fits", "top_st_mod_all_sp_season.rds")) %>% 
   mutate(
-    anisotropy = ifelse(species == "pink", FALSE, TRUE)
+    anisotropy = ifelse(species == "chinook" & dataset == "summer", FALSE, TRUE)
   )
+
   
+
+# simulate 20 MC draws from fitted models 
+set.seed(456)
+nsims = 20
+sims_list <- purrr::map(
+  fit_all_sp$fits, simulate, nsim = nsims, re_form = ~0,
+)
+
+
+## for each simulated dataset, refit model, recover pars and store
+
+# make a tibble for each species simulations
+sim_tbl <- purrr::pmap(
+  list(fit_all_sp$species, fit_all_sp$dataset, fit_all_sp$fits, sims_list),
+  function (sp, season, fits, x) {
+    tibble(
+      species = sp,
+      season = season,
+      iter = seq(1, nsims, by = 1),
+      sim_dat = lapply(seq_len(ncol(x)), function(i) {
+        # use fits instead of data in tibble because mismatched
+        fits$data %>% 
+          mutate(sim_catch = x[ , i])
+      })
+    )
+  }
+) %>% 
+  bind_rows() %>% 
+  left_join(., 
+            fit_all_sp %>% select(species, season = dataset, model, anisotropy,
+                                  fits), 
+            by = c("species", "season"))
 
 
 # pull meshes from fitted model to use (doesn't work so rebuild)
@@ -44,89 +79,43 @@ spde <- make_mesh(
 ) 
 
 
-# simulate 20 MC draws from fitted models 
-set.seed(456)
-nsims = 20
-sims_list <- purrr::map(
-  fit_all_sp$st_mod, simulate, nsim = nsims, re_form = ~0,
-)
-
-
-## for each simulated dataset, refit model, recover pars and store
-
-# make a tibble for each species simulations
-sim_tbl <- purrr::pmap(
-  list(fit_all_sp$species, fit_all_sp$data, sims_list),
-  function (sp, dat, x) {
-    tibble(
-      species = sp,
-      iter = seq(1, nsims, by = 1),
-      sim_dat = lapply(seq_len(ncol(x)), function(i) {
-        dat %>% 
-          mutate(sim_catch = x[ , i])
-      })
-    )
-  }
-) %>% 
-  bind_rows() %>% 
-  left_join(., 
-            fit_all_sp %>% select(species, anisotropy), 
-            by = "species")
-
 
 ## test w/ single model
 dum <- sdmTMB(
-  sim_catch ~ 0 +
-    year_f +
-    dist_to_coast_km +
-    s(week, bs = "cc", k = 5) +
-    target_depth +
-    day_night +
-    survey_f,
+  fit_all_sp$fits[[1]]$formula[[1]],
   offset = sim_tbl$sim_dat[[1]]$effort,
   data = sim_tbl$sim_dat[[1]],
-  mesh = spde,
+  mesh =  fit_all_sp$fits[[1]]$spde,
   family = sdmTMB::nbinom2(),
   spatial = "on",
-  spatiotemporal = "ar1",
+  spatiotemporal = sim_tbl$model[[1]],
   time = "year",
   share_range = FALSE,
   anisotropy = sim_tbl$anisotropy[[1]],
-  knots = list(
-    week = c(0, 52)
-  ),
   control = sdmTMBcontrol(
     # nlminb_loops = 2
     newton_loops = 1
   )
 )
 
-sp_vec <- unique(sim_tbl$species)
-for (i in 4:5) {#seq_along(sp_vec)) {
-  sim_tbl_sub <- sim_tbl %>% filter(species == sp_vec[i])
+sim_tbl$species_season <- paste(sim_tbl$species, sim_tbl$season, sep = "_")
+sp_vec <- unique(sim_tbl$species_season)
+for (i in seq_along(sp_vec)) {
+  sim_tbl_sub <- sim_tbl %>% filter(species_season == sp_vec[i])
   fit <- furrr::future_pmap(
-    list(sim_tbl_sub$sim_dat, sim_tbl_sub$anisotropy), 
-    function (x, aniso) {
+    list(sim_tbl_sub$sim_dat, sim_tbl_sub$fits, sim_tbl_sub$model,
+         sim_tbl_sub$anisotropy), 
+    function (x, fit, st_model, aniso) {
       sdmTMB(
-        sim_catch ~ 0 +
-          year_f +
-          dist_to_coast_km +
-          s(week, bs = "cc", k = 5) +
-          target_depth +
-          day_night +
-          survey_f,
+        fit$formula[[1]],
         offset = x$effort,
         data = x,
-        mesh = spde,
+        mesh = fit$spde,
         family = sdmTMB::nbinom2(),
         spatial = "on",
-        spatiotemporal = "ar1",
+        spatiotemporal = st_model,
         time = "year",
-        share_range = FALSE,
         anisotropy = aniso,
-        knots = list(
-          week = c(0, 52)
-        ),
         control = sdmTMBcontrol(
           # nlminb_loops = 2
           newton_loops = 1
@@ -138,8 +127,8 @@ for (i in 4:5) {#seq_along(sp_vec)) {
   saveRDS(
     fit,
     here::here("data", "fits", "sim_fit", paste(sp_vec[i], ".rds", sep = ""))
-    )
-}
+  )
+  }
 
 
 # import saved sim fits 

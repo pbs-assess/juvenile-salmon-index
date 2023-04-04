@@ -259,12 +259,12 @@ depth_preds2 <- depth_preds %>%
     scale_lo = exp(lo) / max_est
   )
 
-png(here::here("figs", "ms_figs_season", "depth_preds.png"), height = 4, width = 8,
-    units = "in", res = 200)
+png(here::here("figs", "ms_figs_season", "depth_preds.png"), 
+    height = 4, width = 8, units = "in", res = 200)
 ggplot(
   data = depth_preds2,
-  aes(x = target_depth, y = scale_est, ymin = scale_lo, 
-  ymax = scale_up, fill = species)
+  aes(x = target_depth, y = scale_est, ymin = scale_lo, ymax = scale_up, 
+      fill = species)
 ) +
   ggsidekick::theme_sleek() +
   geom_line() +
