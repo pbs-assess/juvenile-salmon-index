@@ -1,13 +1,8 @@
-### Juvenile all species fit - season specific 
-## Use all_species_fit.R and survey_model_structure.R as templates to fit 
-## species- and survey-specific models
-## 1) Fit spatial model for each species to ensure reasonable convergence and
-## to test for effects of survey domain on fixed effect estimates 
-## 2) Fit saturated spatiotemporal model to each species
-## 3) Calculate index for summer and fall (assuming surface and day tow)
-## 4) Calculate fixed effects for spatial covariates
-## 5) Calculate spatiotemporal effects (maps by year)
-## Mar 28, 2023
+### Chinook only fit
+## Experiment w/ spatiotemporal models allowing for spatially varying seasonal 
+## effects
+## Apr 6, 2023
+
 
 
 library(tidyverse)
@@ -21,45 +16,16 @@ dat <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>%
     utm_x_1000 = utm_x / 1000,
     utm_y_1000 = utm_y / 1000,
     effort = log(volume_m3),
-    month_f = as.factor(month)
+    scale_season = scale(as.numeric(season_f))[ , 1]
   ) %>% 
-  filter(!species == "steelhead") %>% 
+  filter(species == "chinook") %>% 
   droplevels()
 
 
-## plotting color palette
-col_pal <- c('#7fc97f','#beaed4','#fdc086','#ffff99','#386cb0')
-names(col_pal) <- c('chinook','pink','chum','coho','sockeye')
-
-
-# prep multisession
-ncores <- parallel::detectCores() 
-future::plan(future::multisession, workers = ncores - 3)
-
-
-# separate seasons and join
-summer_years <- dat %>% 
-  filter(season_f == "su"#, 
-         # remove 2021 since only partial survey
-         # !year_f == "2021"
-         ) %>%
-  pull(year) %>% 
-  unique()
-fall_years <- dat %>% 
-  filter(season_f == "wi"#,
-         # remove 2020 since most of survey was outside of grid
-         # !year_f == "2020"
-         ) %>%
-  pull(year) %>% 
-  unique()
-
-
-dum <- dat %>% filter(season_f == "wi", species == "chinook")
-dat_coords <- dum %>% 
+## mesh
+dat_coords <- dat %>% 
   select(utm_x_1000, utm_y_1000) %>% 
   as.matrix()
-
-## use INLA mesh based on SA recommendations and model selection (see notes)
 inla_mesh_raw <- INLA::inla.mesh.2d(
   loc = dat_coords,
   max.edge = c(1, 5) * 500,
@@ -67,116 +33,61 @@ inla_mesh_raw <- INLA::inla.mesh.2d(
   offset = c(20, 200)
 ) 
 spde <- make_mesh(
-  dum,
+  dat,
   c("utm_x_1000", "utm_y_1000"),
   mesh = inla_mesh_raw
 ) 
 
+# fit season as spatially varying effect
 test1 <-  sdmTMB(
-  n_juv ~ #month_f + 
-    target_depth + day_night ,
-  offset = dum$effort,
-  data = dum,
+  n_juv ~ 0 + year_f + season_f + target_depth + day_night,
+  offset = dat$effort,
+  data = dat,
   mesh = spde,
   family = sdmTMB::nbinom2(),
   spatial = "on",
-  spatiotemporal = "ar1",
+  spatial_varying = ~ 0 + season_f,
   time = "year",
+  spatiotemporal = "ar1",
   anisotropy = FALSE,  
   share_range = TRUE,
-  extra_time = extra_time,
   control = sdmTMBcontrol(
-    # newton_loops = 1#,
-    nlminb_loops = 2
+    newton_loops = 1#,
+    # nlminb_loops = 2
   ),
   silent = FALSE
 )
-test2 <- update(test1, spatiotemporal = "rw")
-# test3 <- update(test2, time_varying = ~1)
-# test7 <-  sdmTMB(
-#   n_juv ~ 0 + month_f + target_depth + day_night + survey_f + year_f,
-#   offset = dum$effort,
-#   data = dum,
-#   mesh = spde,
-#   family = sdmTMB::nbinom2(),
-#   spatial = "on",
-#   spatiotemporal = "AR1",
-#   time = "year",
-#   anisotropy = FALSE,  
-#   share_range = TRUE,
-#   # extra_time = extra_time,
-#   control = sdmTMBcontrol(
-#     newton_loops = 1#,
-#     # nlminb_loops = 2
-#   ),
-#   silent = FALSE
-# )
+test2 <- update(test1, spatiotemporal = "iid")
+test3 <- update(
+  test2, 
+  priors = sdmTMBpriors(
+    phi = halfnormal(0, 10),
+    matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+    matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+  )
+)
+test4 <- update(test1, anisotropy = TRUE)
+
+dat_out <- tibble(
+  name = seq(1, 4, by = 1),
+  fit = list(test1, test2, test3, test4)
+)
+saveRDS(dat_out, here::here("data", "fits", "chinook_season_sp.rds"))
+
+
+# alternative to season-specific random fields, fit using multidimensional 
+# group level-smoother
 test5 <- sdmTMB(
-  n_juv ~ s(week, k = 4) + target_depth + day_night,
-  offset = dum$effort,
-  data = dum,
+  n_juv ~ 0 + year_f + season_f + target_depth + day_night +
+    t2(utm_x_1000, utm_y_1000, season_f, m=2, bs = c("tp", "tp", "re")),
+  offset = dat$effort,
+  data = dat,
   mesh = spde,
   family = sdmTMB::nbinom2(),
-  spatial = "on",
-  spatiotemporal = "ar1",
+  # spatial = "on",
   time = "year",
+  spatiotemporal = "iid",
   anisotropy = FALSE,  
-  share_range = TRUE,
-  extra_time = extra_time,
-  control = sdmTMBcontrol(
-    newton_loops = 1#,
-    # nlminb_loops = 2
-  ),
-  silent = FALSE
-)
-test6 <- update(test5, spatiotemporal = "rw")
-test8 <- update(test3, anisotropy = FALSE)
-test9 <-  sdmTMB(
-  n_juv ~ 0 + target_depth + day_night + survey_f + year_f,
-  offset = dum$effort,
-  data = dum,
-  mesh = spde,
-  family = sdmTMB::nbinom2(),
-  spatial = "off",
-  spatiotemporal = "AR1",
-  time = "year",
-  anisotropy = FALSE,  
-  share_range = TRUE,
-  # extra_time = extra_time,
-  control = sdmTMBcontrol(
-    # newton_loops = 1#,
-    nlminb_loops = 2
-  ),
-  silent = FALSE
-)
-test10 <-  sdmTMB(
-  n_juv ~ target_depth + day_night + survey_f + month_f,
-  offset = dum$effort,
-  data = dum,
-  mesh = spde,
-  family = sdmTMB::nbinom2(),
-  spatial = "on",
-  spatiotemporal = "AR1",
-  time = "year",
-  anisotropy = FALSE,  
-  share_range = TRUE,
-  # extra_time = extra_time,
-  control = sdmTMBcontrol(
-    newton_loops = 1#,
-    # nlminb_loops = 2
-  ),
-  silent = FALSE
-)
-test11 <- update(test10, spatiotemporal = "rw")
-test12 <- update(test9, spatial = "off")
-test13 <- sdmTMB(
-  n_juv ~ 0 + year_f + target_depth + day_night + survey_f + s(week, k = 4),
-  offset = dum$effort,
-  data = dum,
-  mesh = spde,
-  family = sdmTMB::nbinom2(),
-  spatial = "on",
-  anisotropy = TRUE,  
   share_range = TRUE,
   control = sdmTMBcontrol(
     newton_loops = 1#,
@@ -185,9 +96,7 @@ test13 <- sdmTMB(
   silent = FALSE
 )
 
-# top models
-AIC(test5, test6, test13)
-sanity(test12)
+
 
 
 ## cross validation of top models
