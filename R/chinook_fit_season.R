@@ -3,11 +3,14 @@
 ## effects
 ## Apr 6, 2023
 
-
-
 library(tidyverse)
 library(sdmTMB)
 library(ggplot2)
+
+
+# prep multisession
+ncores <- parallel::detectCores() 
+future::plan(future::multisession, workers = ncores - 3)
 
 
 # downscale data and predictive grid
@@ -16,7 +19,9 @@ dat <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>%
     utm_x_1000 = utm_x / 1000,
     utm_y_1000 = utm_y / 1000,
     effort = log(volume_m3),
-    scale_season = scale(as.numeric(season_f))[ , 1]
+    scale_season = scale(as.numeric(season_f))[ , 1],
+    scale_week = scale(as.numeric(week))[ , 1],
+    season_year_f = paste(season_f, year_f, sep = "_") %>% as.factor()
   ) %>% 
   filter(species == "chinook") %>% 
   droplevels()
@@ -50,7 +55,12 @@ test1 <-  sdmTMB(
   time = "year",
   spatiotemporal = "ar1",
   anisotropy = FALSE,  
-  share_range = TRUE,
+  share_range = TRUE, 
+  priors = sdmTMBpriors(
+    phi = halfnormal(0, 10),
+    matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+    matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+  ),
   control = sdmTMBcontrol(
     newton_loops = 1#,
     # nlminb_loops = 2
@@ -58,43 +68,175 @@ test1 <-  sdmTMB(
   silent = FALSE
 )
 test2 <- update(test1, spatiotemporal = "iid")
-test3 <- update(
-  test2, 
-  priors = sdmTMBpriors(
-    phi = halfnormal(0, 10),
-    matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
-    matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
-  )
-)
 test4 <- update(test1, anisotropy = TRUE)
-
-dat_out <- tibble(
-  name = seq(1, 4, by = 1),
-  fit = list(test1, test2, test3, test4)
-)
-saveRDS(dat_out, here::here("data", "fits", "chinook_season_sp.rds"))
-
-
-# alternative to season-specific random fields, fit using multidimensional 
-# group level-smoother
 test5 <- sdmTMB(
-  n_juv ~ 0 + year_f + season_f + target_depth + day_night +
-    t2(utm_x_1000, utm_y_1000, season_f, m=2, bs = c("tp", "tp", "re")),
+  n_juv ~ 0 + year_f + 
+    s(week, k = 4, bs = "cc", m = 2) + 
+    s(week, k = 4, bs = "cc", by = year_f, m = 1) + 
+    target_depth + day_night,
   offset = dat$effort,
   data = dat,
   mesh = spde,
   family = sdmTMB::nbinom2(),
-  # spatial = "on",
+  spatial = "on",
+  spatial_varying = ~ 0 + poly(scale_week, 2),
   time = "year",
-  spatiotemporal = "iid",
+  spatiotemporal = "ar1",
   anisotropy = FALSE,  
   share_range = TRUE,
+  priors = sdmTMBpriors(
+    phi = halfnormal(0, 10),
+    matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+    matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+  ),
   control = sdmTMBcontrol(
     newton_loops = 1#,
     # nlminb_loops = 2
   ),
   silent = FALSE
 )
+test6 <- sdmTMB(
+  n_juv ~ 0 + year_f + season_f + target_depth + day_night + 
+    (1 | season_year_f),
+  offset = dat$effort,
+  data = dat,
+  mesh = spde,
+  family = sdmTMB::nbinom2(),
+  spatial = "on",
+  spatial_varying = ~ 0 + season_f,
+  time = "year",
+  spatiotemporal = "ar1",
+  anisotropy = FALSE,  
+  share_range = TRUE,
+  priors = sdmTMBpriors(
+    phi = halfnormal(0, 10),
+    matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+    matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+  ),
+  control = sdmTMBcontrol(
+    newton_loops = 1#,
+    # nlminb_loops = 2
+  ),
+  silent = FALSE
+)
+# as test1 but include time- and spatial-varying effect for seasons
+test7 <-  sdmTMB(
+  n_juv ~ 0 + year_f + season_f + target_depth + day_night,
+  offset = dat$effort,
+  data = dat,
+  mesh = spde,
+  family = sdmTMB::nbinom2(),
+  spatial = "on",
+  spatial_varying = ~ season_f,
+  time_varying = ~ season_f,
+  time = "year",
+  spatiotemporal = "ar1",
+  anisotropy = FALSE,  
+  share_range = TRUE, 
+  priors = sdmTMBpriors(
+    phi = halfnormal(0, 10),
+    matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+    matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+  ),
+  control = sdmTMBcontrol(
+    newton_loops = 1#,
+    # nlminb_loops = 2
+  ),
+  silent = FALSE
+)
+
+# alternative to season-specific random fields, fit using multidimensional 
+# group level-smoother
+# DOES NOT CONVERGE
+# test5 <- sdmTMB(
+#   n_juv ~ 0 + year_f + season_f + target_depth + day_night +
+#     t2(utm_x_1000, utm_y_1000, season_f, m=2, bs = c("tp", "tp", "re")),
+#   offset = dat$effort,
+#   data = dat,
+#   mesh = spde,
+#   family = sdmTMB::nbinom2(),
+#   # spatial = "on",
+#   time = "year",
+#   spatiotemporal = "iid",
+#   anisotropy = FALSE,  
+#   share_range = TRUE,
+#   control = sdmTMBcontrol(
+#     newton_loops = 1#,
+#     # nlminb_loops = 2
+#   ),
+#   silent = FALSE
+# )
+
+
+## check spatial predictions ---------------------------------------------------
+
+# shape file for coastline
+coast <- rbind(rnaturalearth::ne_states( "United States of America", 
+                                         returnclass = "sf"), 
+               rnaturalearth::ne_states( "Canada", returnclass = "sf")) %>% 
+  sf::st_crop(., xmin = -129, ymin = 48.25, xmax = -124, ymax = 51.2) %>% 
+  sf::st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
+
+# predictive grid
+grid_list <- readRDS(here::here("data", "spatial", "pred_ipes_grid.RDS")) %>% 
+  purrr::map(
+    .,
+    ~ {.x %>% 
+        mutate(utm_x_1000 = X / 1000,
+               utm_y_1000 = Y / 1000,
+               dist_to_coast_km = shore_dist / 1000)}
+  )
+
+summer_grid <- grid_list$ipes_grid
+fall_grid <- grid_list$wcvi_grid
+
+# add unique years and seasons
+exp_grid <- expand.grid(
+  year = unique(dat$year),
+  survey_f = unique(dat$survey_f),
+  season_f = c("su", "wi")
+) %>%
+  filter(
+    # remove fall ipes surveys (doesn't meet definition)
+    !(season_f %in% c("wi") & survey_f == "ipes")
+  ) %>% 
+  mutate(id = row_number()) %>%
+  split(., .$id) %>%
+  purrr::map(., function (x) {
+    dum_grid <- if (x$season_f == "su") summer_grid else fall_grid
+    
+    dum_grid %>% 
+      mutate(
+        year = x$year,
+        year_f = as.factor(x$year),
+        survey_f = x$survey_f,
+        season_f = x$season_f,
+        target_depth = 0,
+        day_night = "DAY"
+      )
+  }) %>%
+  bind_rows() %>% 
+  mutate(
+    fake_survey = case_when(
+      year > 2016 & survey_f == "hss" & season_f == "su" ~ "1",
+      year < 2017 & survey_f == "ipes" & season_f == "su" ~ "1",
+      TRUE ~ "0")
+  )
+
+# scalar for spatial predictions; since preds are in m3, multiply by
+# (1000 * 1000 * 13) because effort in m but using 1x1 km grid cells and 
+# assuming mean net opening (13 m)
+sp_scalar <- 1000^2 * 13
+
+
+# make spatial 
+spatial_preds <- furrr::future_map(
+  exp_grid, function (x, y) {
+    predict(test4, newdata = y, se_fit = FALSE, re_form = NULL)
+  },
+  .options = furrr::furrr_options(seed = TRUE)
+)
+dat_tbl$sp_preds <- spatial_preds
 
 
 
