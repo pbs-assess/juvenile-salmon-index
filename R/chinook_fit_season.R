@@ -5,7 +5,6 @@
 
 library(tidyverse)
 library(sdmTMB)
-library(ggplot2)
 
 
 # prep multisession
@@ -43,6 +42,8 @@ spde <- make_mesh(
   mesh = inla_mesh_raw
 ) 
 
+
+
 # fit season as spatially varying effect
 test0 <-  sdmTMB(
   n_juv ~ 0 + year_f + season_f + target_depth + day_night,
@@ -56,11 +57,6 @@ test0 <-  sdmTMB(
   spatiotemporal = "iid",
   anisotropy = TRUE,  
   share_range = TRUE, 
-  priors = sdmTMBpriors(
-    phi = halfnormal(0, 10),
-    matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
-    matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
-  ),
   control = sdmTMBcontrol(
     newton_loops = 1#,
     # nlminb_loops = 2
@@ -80,11 +76,6 @@ test1 <-  sdmTMB(
   spatiotemporal = "ar1",
   anisotropy = TRUE,  
   share_range = TRUE, 
-  priors = sdmTMBpriors(
-    phi = halfnormal(0, 10),
-    matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
-    matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
-  ),
   control = sdmTMBcontrol(
     newton_loops = 1#,
     # nlminb_loops = 2
@@ -100,7 +91,7 @@ test4 <- sdmTMB(
   mesh = spde,
   family = sdmTMB::nbinom2(),
   spatial = "on",
-  spatial_varying = ~ 0 + poly(scale_week, 2),
+  spatial_varying = ~ 0 + scale_week,
   time_varying = ~ 0 + poly(scale_week, 2),
   time = "year",
   spatiotemporal = "ar1",
@@ -117,32 +108,32 @@ test4 <- sdmTMB(
   ),
   silent = FALSE
 )
-test5 <- sdmTMB(
-  n_juv ~ 0 + year_f + 
-    # s(week, k = 4, bs = "cc", m = 2) + 
-    # s(week, k = 4, bs = "cc", by = year_f, m = 1) + 
-    target_depth + day_night,
-  offset = dat$effort,
-  data = dat,
-  mesh = spde,
-  family = sdmTMB::nbinom2(),
-  spatial = "on",
-  spatial_varying = ~ 0 + poly(scale_week, 2),
-  time = "year",
-  spatiotemporal = "ar1",
-  anisotropy = FALSE,  
-  share_range = TRUE,
-  priors = sdmTMBpriors(
-    phi = halfnormal(0, 10),
-    matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
-    matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
-  ),
-  control = sdmTMBcontrol(
-    newton_loops = 1#,
-    # nlminb_loops = 2
-  ),
-  silent = FALSE
-)
+# test5 <- sdmTMB(
+#   n_juv ~ 0 + year_f + 
+#     # s(scale_week, k = 4, bs = "cc", m = 2) +
+#     s(week, k = 4, bs = "cc", by = year_f, m = 2) +
+#     target_depth + day_night,
+#   offset = dat$effort,
+#   data = dat,
+#   mesh = spde,
+#   family = sdmTMB::nbinom2(),
+#   spatial = "on",
+#   spatial_varying = ~ 0 + poly(week, 2),
+#   time = "year",
+#   spatiotemporal = "iid",
+#   anisotropy = FALSE,  
+#   share_range = TRUE,
+#   priors = sdmTMBpriors(
+#     phi = halfnormal(0, 10),
+#     matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+#     matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+#   ),
+#   control = sdmTMBcontrol(
+#     newton_loops = 1#,
+#     # nlminb_loops = 2
+#   ),
+#   silent = FALSE
+# )
 # test6 <- sdmTMB(
 #   n_juv ~ 0 + year_f + season_f + target_depth + day_night + 
 #     (1 | season_year_f),
@@ -193,32 +184,6 @@ test5 <- sdmTMB(
 #   silent = FALSE
 # )
 
-test5 <- sdmTMB(
-  n_juv ~ 0 + year_f + 
-    # s(scale_week, k = 4, bs = "cc", m = 2) +
-    s(week, k = 4, bs = "cc", by = year_f, m = 2) +
-    target_depth + day_night,
-  offset = dat$effort,
-  data = dat,
-  mesh = spde,
-  family = sdmTMB::nbinom2(),
-  spatial = "on",
-  spatial_varying = ~ 0 + poly(week, 2),
-  time = "year",
-  spatiotemporal = "iid",
-  anisotropy = FALSE,  
-  share_range = TRUE,
-  priors = sdmTMBpriors(
-    phi = halfnormal(0, 10),
-    matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
-    matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
-  ),
-  control = sdmTMBcontrol(
-    newton_loops = 1#,
-    # nlminb_loops = 2
-  ),
-  silent = FALSE
-)
 test8 <- sdmTMB(
   n_juv ~ target_depth + day_night + season_f +
     (1 | season_year_f),
@@ -269,19 +234,13 @@ test8 <- sdmTMB(
 
 
 dat_tbl <- tibble(
-  model = c("null", "spatial season", "spatial poly", "spatial RI"),
-  fits = list(test0, dat_tbl$fits[[1]], dat_tbl$fits[[2]], test8)
+  model = c("spatial season", "spatial poly", "spatial RI"),
+  fits = list(test1, test4, test8)
 )
 saveRDS(dat_tbl, here::here("data", "fits", "chinook_sp_varying.rds"))
+
 dat_tbl <- readRDS(here::here("data", "fits", "chinook_sp_varying.rds"))
 
-
-## check FE predictions --------------------------------------------------------
-
-nd <- expand.grid(
-  year = unique(dat$year),
-  season_f = c("su", "wi")
-)
 
 
 ## check spatial predictions ---------------------------------------------------
@@ -299,10 +258,8 @@ grid_list <- readRDS(here::here("data", "spatial", "pred_ipes_grid.RDS")) %>%
     .,
     ~ {.x %>% 
         mutate(utm_x_1000 = X / 1000,
-               utm_y_1000 = Y / 1000,
-               dist_to_coast_km = shore_dist / 1000)}
+               utm_y_1000 = Y / 1000)}
   )
-
 summer_grid <- grid_list$ipes_grid
 fall_grid <- grid_list$wcvi_grid
 
@@ -340,20 +297,46 @@ exp_grid <- expand.grid(
       year > 2016 & survey_f == "hss" & season_f == "su" ~ "1",
       year < 2017 & survey_f == "ipes" & season_f == "su" ~ "1",
       TRUE ~ "0")
-  )
+  ) %>% 
+  filter(season_year_f %in% unique(dat$season_year_f)) %>% 
+  select(-c(depth, slope, shore_dist)) %>% 
+  droplevels()
+exp_grid_hss <- exp_grid %>% filter(survey_f == "hss")
 
 # scalar for spatial predictions; since preds are in m3, multiply by
 # (1000 * 1000 * 13) because effort in m but using 1x1 km grid cells and 
 # assuming mean net opening (13 m)
 sp_scalar <- 1000^2 * 13
 
-dd <- exp_grid %>% filter(year == "2017", 
-                    survey_f == "hss")
 
-sp_preds1 <- predict(dat_tbl$fits[[4]], 
-                     newdata = dd[1, ],
-                     se_fit = FALSE, 
+dd <- exp_grid_hss %>% filter(year == "2017") %>% droplevels()
+
+dum <-  sdmTMB(
+  n_juv ~ 0 + season_f,# + target_depth + day_night,
+  offset = dat$effort,
+  data = dat,
+  mesh = spde,
+  family = sdmTMB::nbinom2(),
+  spatial = "on",
+  spatial_varying = ~ 0 + season_f,
+  # time = "year",
+  # spatiotemporal = "ar1",
+  anisotropy = FALSE,  
+  share_range = TRUE, 
+  control = sdmTMBcontrol(
+    newton_loops = 1#,
+    # nlminb_loops = 2
+  ),
+  silent = FALSE
+)
+
+sp_preds1 <- predict(dum, 
+                     newdata = dd,
+                     se_fit = FALSE,
                      re_form = NULL)
+
+
+
 
 # make spatial 
 spatial_preds <- purrr::map(
@@ -366,80 +349,30 @@ dat_tbl$sp_preds <- spatial_preds
 
 
 
-## cross validation of top models
 
-library(future)
-plan(multisession)
 
-set.seed(123)
-cv5 <- sdmTMB_cv(
-  n_juv ~ target_depth + day_night + survey_f,
-  offset = "effort",
-  data = dum,
-  mesh = spde,
-  family = sdmTMB::nbinom2(),
-  spatial = "on",
-  spatiotemporal = "ar1",
-  time = "year",
-  anisotropy = FALSE,  
-  share_range = TRUE,
-  extra_time = extra_time,
-  control = sdmTMBcontrol(
-    newton_loops = 1#,
-    # nlminb_loops = 2
-  ),
-  silent = FALSE,
-  k_folds = 5,
-  use_initial_fit = TRUE
-)
+## check FE predictions --------------------------------------------------------
 
-set.seed(123)
-cv6 <- sdmTMB_cv(
-  n_juv ~ target_depth + day_night + survey_f,
-  offset = "effort",
-  data = dum,
-  mesh = spde,
-  family = sdmTMB::nbinom2(),
-  spatial = "on",
-  spatiotemporal = "rw",
-  time = "year",
-  anisotropy = FALSE,  
-  share_range = TRUE,
-  extra_time = extra_time,
-  control = sdmTMBcontrol(
-    newton_loops = 1#,
-    # nlminb_loops = 2
-  ),
-  silent = FALSE,
-  k_folds = 5,
-  use_initial_fit = TRUE
-)
+nd <- expand.grid(
+  year = unique(dat$year),
+  season_f = c("su"),
+  scale_week = seq(
+    min(dat$scale_week),
+    max(dat$scale_week),
+    length = 30
+  )
+) %>% 
+  mutate(
+    year_f = as.factor(year),
+    target_depth = 0,
+    day_night = "DAY"
+  )
 
-set.seed(123)
-cv14 <- sdmTMB_cv(
-  n_juv ~ 0 + year_f + target_depth + day_night + survey_f + s(week, k = 4),
-  offset = "effort",
-  data = dum,
-  mesh = spde,
-  family = sdmTMB::nbinom2(),
-  spatial = "on",
-  anisotropy = TRUE,  
-  share_range = TRUE,
-  control = sdmTMBcontrol(
-    newton_loops = 1#,
-    # nlminb_loops = 2
-  ),
-  silent = FALSE,
-  k_folds = 5,
-  use_initial_fit = TRUE
-)
+p <- predict(dat_tbl$fits[[3]], newdata = nd, se_fit = FALSE, re_form = NA)
 
-purrr::map(
-  list(cv5, cv6, cv14), ~ .x$elpd
-)
-purrr::map(
-  list(cv5, cv6, cv14), ~ mean(.x$fold_elpd)
-)
+ggplot(p) +
+  geom_line(aes(x = scale_week, y = exp(est), colour = year_f))
+
 
 
 ## indices from plausible models -----------------------------------------------
