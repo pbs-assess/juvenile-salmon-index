@@ -44,17 +44,17 @@ spde <- make_mesh(
 ) 
 
 # fit season as spatially varying effect
-test1 <-  sdmTMB(
+test0 <-  sdmTMB(
   n_juv ~ 0 + year_f + season_f + target_depth + day_night,
   offset = dat$effort,
   data = dat,
   mesh = spde,
   family = sdmTMB::nbinom2(),
   spatial = "on",
-  spatial_varying = ~ 0 + season_f,
+  # spatial_varying = ~ 0 + season_f,
   time = "year",
-  spatiotemporal = "ar1",
-  anisotropy = FALSE,  
+  spatiotemporal = "iid",
+  anisotropy = TRUE,  
   share_range = TRUE, 
   priors = sdmTMBpriors(
     phi = halfnormal(0, 10),
@@ -67,12 +67,60 @@ test1 <-  sdmTMB(
   ),
   silent = FALSE
 )
-test2 <- update(test1, spatiotemporal = "iid")
-test4 <- update(test1, anisotropy = TRUE)
+# fit season as spatially varying effect
+test1 <-  sdmTMB(
+  n_juv ~ 0 + year_f + season_f + target_depth + day_night,
+  offset = dat$effort,
+  data = dat,
+  mesh = spde,
+  family = sdmTMB::nbinom2(),
+  spatial = "on",
+  spatial_varying = ~ 0 + season_f,
+  time = "year",
+  spatiotemporal = "ar1",
+  anisotropy = TRUE,  
+  share_range = TRUE, 
+  priors = sdmTMBpriors(
+    phi = halfnormal(0, 10),
+    matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+    matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+  ),
+  control = sdmTMBcontrol(
+    newton_loops = 1#,
+    # nlminb_loops = 2
+  ),
+  silent = FALSE
+)
+# test2 <- update(test1, spatiotemporal = "iid")
+# test3 <- update(test1, anisotropy = FALSE)
+test4 <- sdmTMB(
+  n_juv ~ 0 + year_f + target_depth + day_night,
+  offset = dat$effort,
+  data = dat,
+  mesh = spde,
+  family = sdmTMB::nbinom2(),
+  spatial = "on",
+  spatial_varying = ~ 0 + poly(scale_week, 2),
+  time_varying = ~ 0 + poly(scale_week, 2),
+  time = "year",
+  spatiotemporal = "ar1",
+  anisotropy = FALSE,  
+  share_range = TRUE,
+  priors = sdmTMBpriors(
+    phi = halfnormal(0, 10),
+    matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+    matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+  ),
+  control = sdmTMBcontrol(
+    newton_loops = 1#,
+    # nlminb_loops = 2
+  ),
+  silent = FALSE
+)
 test5 <- sdmTMB(
   n_juv ~ 0 + year_f + 
-    s(week, k = 4, bs = "cc", m = 2) + 
-    s(week, k = 4, bs = "cc", by = year_f, m = 1) + 
+    # s(week, k = 4, bs = "cc", m = 2) + 
+    # s(week, k = 4, bs = "cc", by = year_f, m = 1) + 
     target_depth + day_night,
   offset = dat$effort,
   data = dat,
@@ -95,17 +143,69 @@ test5 <- sdmTMB(
   ),
   silent = FALSE
 )
-test6 <- sdmTMB(
-  n_juv ~ 0 + year_f + season_f + target_depth + day_night + 
-    (1 | season_year_f),
+# test6 <- sdmTMB(
+#   n_juv ~ 0 + year_f + season_f + target_depth + day_night + 
+#     (1 | season_year_f),
+#   offset = dat$effort,
+#   data = dat,
+#   mesh = spde,
+#   family = sdmTMB::nbinom2(),
+#   spatial = "on",
+#   spatial_varying = ~ 0 + season_f,
+#   time = "year",
+#   spatiotemporal = "ar1",
+#   anisotropy = FALSE,  
+#   share_range = TRUE,
+#   priors = sdmTMBpriors(
+#     phi = halfnormal(0, 10),
+#     matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+#     matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+#   ),
+#   control = sdmTMBcontrol(
+#     newton_loops = 1#,
+#     # nlminb_loops = 2
+#   ),
+#   silent = FALSE
+# )
+# # as test1 but include time- and spatial-varying effect for seasons
+# test7 <-  sdmTMB(
+#   n_juv ~ 0 + year_f + season_f + target_depth + day_night,
+#   offset = dat$effort,
+#   data = dat,
+#   mesh = spde,
+#   family = sdmTMB::nbinom2(),
+#   spatial = "on",
+#   spatial_varying = ~ season_f,
+#   time_varying = ~ season_f,
+#   time = "year",
+#   spatiotemporal = "ar1",
+#   anisotropy = FALSE,  
+#   share_range = TRUE, 
+#   priors = sdmTMBpriors(
+#     phi = halfnormal(0, 10),
+#     matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+#     matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+#   ),
+#   control = sdmTMBcontrol(
+#     newton_loops = 1#,
+#     # nlminb_loops = 2
+#   ),
+#   silent = FALSE
+# )
+
+test5 <- sdmTMB(
+  n_juv ~ 0 + year_f + 
+    # s(scale_week, k = 4, bs = "cc", m = 2) +
+    s(week, k = 4, bs = "cc", by = year_f, m = 2) +
+    target_depth + day_night,
   offset = dat$effort,
   data = dat,
   mesh = spde,
   family = sdmTMB::nbinom2(),
   spatial = "on",
-  spatial_varying = ~ 0 + season_f,
+  spatial_varying = ~ 0 + poly(week, 2),
   time = "year",
-  spatiotemporal = "ar1",
+  spatiotemporal = "iid",
   anisotropy = FALSE,  
   share_range = TRUE,
   priors = sdmTMBpriors(
@@ -119,20 +219,20 @@ test6 <- sdmTMB(
   ),
   silent = FALSE
 )
-# as test1 but include time- and spatial-varying effect for seasons
-test7 <-  sdmTMB(
-  n_juv ~ 0 + year_f + season_f + target_depth + day_night,
+test8 <- sdmTMB(
+  n_juv ~ target_depth + day_night + season_f +
+    (1 | season_year_f),
   offset = dat$effort,
   data = dat,
   mesh = spde,
   family = sdmTMB::nbinom2(),
   spatial = "on",
-  spatial_varying = ~ season_f,
-  time_varying = ~ season_f,
+  spatial_varying = ~ 0 + season_f,
+  # time_varying = ~ 1,
   time = "year",
   spatiotemporal = "ar1",
-  anisotropy = FALSE,  
-  share_range = TRUE, 
+  anisotropy = FALSE,
+  share_range = TRUE,
   priors = sdmTMBpriors(
     phi = halfnormal(0, 10),
     matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
@@ -168,6 +268,22 @@ test7 <-  sdmTMB(
 # )
 
 
+dat_tbl <- tibble(
+  model = c("null", "spatial season", "spatial poly", "spatial RI"),
+  fits = list(test0, dat_tbl$fits[[1]], dat_tbl$fits[[2]], test8)
+)
+saveRDS(dat_tbl, here::here("data", "fits", "chinook_sp_varying.rds"))
+dat_tbl <- readRDS(here::here("data", "fits", "chinook_sp_varying.rds"))
+
+
+## check FE predictions --------------------------------------------------------
+
+nd <- expand.grid(
+  year = unique(dat$year),
+  season_f = c("su", "wi")
+)
+
+
 ## check spatial predictions ---------------------------------------------------
 
 # shape file for coastline
@@ -200,7 +316,8 @@ exp_grid <- expand.grid(
     # remove fall ipes surveys (doesn't meet definition)
     !(season_f %in% c("wi") & survey_f == "ipes")
   ) %>% 
-  mutate(id = row_number()) %>%
+  mutate(id = row_number(),
+         scale_week = ifelse(season_f == "wi", 1, -0.25)) %>%
   split(., .$id) %>%
   purrr::map(., function (x) {
     dum_grid <- if (x$season_f == "su") summer_grid else fall_grid
@@ -211,8 +328,10 @@ exp_grid <- expand.grid(
         year_f = as.factor(x$year),
         survey_f = x$survey_f,
         season_f = x$season_f,
+        scale_week = x$scale_week,
         target_depth = 0,
-        day_night = "DAY"
+        day_night = "DAY",
+        season_year_f = paste(season_f, year_f, sep = "_") %>% as.factor()
       )
   }) %>%
   bind_rows() %>% 
@@ -228,13 +347,19 @@ exp_grid <- expand.grid(
 # assuming mean net opening (13 m)
 sp_scalar <- 1000^2 * 13
 
+dd <- exp_grid %>% filter(year == "2017", 
+                    survey_f == "hss")
+
+sp_preds1 <- predict(dat_tbl$fits[[4]], 
+                     newdata = dd[1, ],
+                     se_fit = FALSE, 
+                     re_form = NULL)
 
 # make spatial 
-spatial_preds <- furrr::future_map(
-  exp_grid, function (x, y) {
-    predict(test4, newdata = y, se_fit = FALSE, re_form = NULL)
-  },
-  .options = furrr::furrr_options(seed = TRUE)
+spatial_preds <- purrr::map(
+  list(test1, test4), function (x) {
+    predict(x, newdata = exp_grid, se_fit = FALSE, re_form = NULL)
+  }
 )
 dat_tbl$sp_preds <- spatial_preds
 
