@@ -109,7 +109,7 @@ test4 <- sdmTMB(
   silent = FALSE
 )
 # test5 <- sdmTMB(
-#   n_juv ~ 0 + year_f + 
+#   n_juv ~ 0 + year_f +
 #     # s(scale_week, k = 4, bs = "cc", m = 2) +
 #     s(week, k = 4, bs = "cc", by = year_f, m = 2) +
 #     target_depth + day_night,
@@ -118,10 +118,10 @@ test4 <- sdmTMB(
 #   mesh = spde,
 #   family = sdmTMB::nbinom2(),
 #   spatial = "on",
-#   spatial_varying = ~ 0 + poly(week, 2),
+#   spatial_varying = ~ 0 + season_f,
 #   time = "year",
 #   spatiotemporal = "iid",
-#   anisotropy = FALSE,  
+#   anisotropy = FALSE,
 #   share_range = TRUE,
 #   priors = sdmTMBpriors(
 #     phi = halfnormal(0, 10),
@@ -241,6 +241,9 @@ saveRDS(dat_tbl, here::here("data", "fits", "chinook_sp_varying.rds"))
 
 dat_tbl <- readRDS(here::here("data", "fits", "chinook_sp_varying.rds"))
 
+
+dat_tbl$sims <- purrr::map(dat_tbl$fits, simulate, nsim = 50)
+qq_list <- purrr::map2(dat_tbl$sims, dat_tbl$fits, sdmTMBextra::dharma_residuals)
 
 
 ## check spatial predictions ---------------------------------------------------
