@@ -20,7 +20,9 @@ dat <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>%
     effort = log(volume_m3),
     scale_season = scale(as.numeric(season_f))[ , 1],
     scale_week = scale(as.numeric(week))[ , 1],
-    season_year_f = paste(season_f, year_f, sep = "_") %>% as.factor()
+    season_year_f = paste(season_f, year_f, sep = "_") %>% as.factor(),
+    summer_dummy = ifelse(season_f == "su", 1, 0),
+    fall_dummy = ifelse(season_f == "wi", 1, 0)
   ) %>% 
   filter(species == "chinook") %>% 
   droplevels()
@@ -71,7 +73,7 @@ test1 <-  sdmTMB(
   mesh = spde,
   family = sdmTMB::nbinom2(),
   spatial = "on",
-  spatial_varying = ~ 0 + season_f,
+  spatial_varying = ~ 0 + summer_dummy + fall_dummy,
   time = "year",
   spatiotemporal = "ar1",
   anisotropy = TRUE,  
@@ -84,30 +86,30 @@ test1 <-  sdmTMB(
 )
 # test2 <- update(test1, spatiotemporal = "iid")
 # test3 <- update(test1, anisotropy = FALSE)
-test4 <- sdmTMB(
-  n_juv ~ 0 + year_f + target_depth + day_night,
-  offset = dat$effort,
-  data = dat,
-  mesh = spde,
-  family = sdmTMB::nbinom2(),
-  spatial = "on",
-  spatial_varying = ~ 0 + scale_week,
-  time_varying = ~ 0 + poly(scale_week, 2),
-  time = "year",
-  spatiotemporal = "ar1",
-  anisotropy = FALSE,  
-  share_range = TRUE,
-  priors = sdmTMBpriors(
-    phi = halfnormal(0, 10),
-    matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
-    matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
-  ),
-  control = sdmTMBcontrol(
-    newton_loops = 1#,
-    # nlminb_loops = 2
-  ),
-  silent = FALSE
-)
+# test4 <- sdmTMB(
+#   n_juv ~ 0 + year_f + target_depth + day_night,
+#   offset = dat$effort,
+#   data = dat,
+#   mesh = spde,
+#   family = sdmTMB::nbinom2(),
+#   spatial = "on",
+#   spatial_varying = ~ 0 + scale_week,
+#   time_varying = ~ 0 + poly(scale_week, 2),
+#   time = "year",
+#   spatiotemporal = "ar1",
+#   anisotropy = FALSE,  
+#   share_range = TRUE,
+#   priors = sdmTMBpriors(
+#     phi = halfnormal(0, 10),
+#     matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+#     matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+#   ),
+#   control = sdmTMBcontrol(
+#     newton_loops = 1#,
+#     # nlminb_loops = 2
+#   ),
+#   silent = FALSE
+# )
 # test5 <- sdmTMB(
 #   n_juv ~ 0 + year_f +
 #     # s(scale_week, k = 4, bs = "cc", m = 2) +
@@ -192,7 +194,7 @@ test8 <- sdmTMB(
   mesh = spde,
   family = sdmTMB::nbinom2(),
   spatial = "on",
-  spatial_varying = ~ 0 + season_f,
+  spatial_varying = ~ 0 + summer_dummy + fall_dummy,
   # time_varying = ~ 1,
   time = "year",
   spatiotemporal = "ar1",
@@ -270,7 +272,7 @@ fall_grid <- grid_list$wcvi_grid
 exp_grid <- expand.grid(
   year = unique(dat$year),
   survey_f = unique(dat$survey_f),
-  season_f = c("su", "wi")
+  season_f = c("su", "wi") %>% as.factor()
 ) %>%
   filter(
     # remove fall ipes surveys (doesn't meet definition)
@@ -299,7 +301,9 @@ exp_grid <- expand.grid(
     fake_survey = case_when(
       year > 2016 & survey_f == "hss" & season_f == "su" ~ "1",
       year < 2017 & survey_f == "ipes" & season_f == "su" ~ "1",
-      TRUE ~ "0")
+      TRUE ~ "0"),
+    summer_dummy = ifelse(season_f == "su", 1, 0),
+    fall_dummy = ifelse(season_f == "wi", 1, 0)
   ) %>% 
   filter(season_year_f %in% unique(dat$season_year_f)) %>% 
   select(-c(depth, slope, shore_dist)) %>% 
@@ -321,19 +325,35 @@ dum <-  sdmTMB(
   mesh = spde,
   family = sdmTMB::nbinom2(),
   spatial = "on",
-  spatial_varying = ~ 0 + season_f,
-  # time = "year",
-  # spatiotemporal = "ar1",
+  spatial_varying = ~ 0 + summer_dummy + fall_dummy,
   anisotropy = FALSE,  
   share_range = TRUE, 
   control = sdmTMBcontrol(
     newton_loops = 1#,
-    # nlminb_loops = 2
   ),
   silent = FALSE
 )
-
 sp_preds1 <- predict(dum, 
+                     newdata = dd,
+                     se_fit = FALSE,
+                     re_form = NULL)
+
+dum2 <-  sdmTMB(
+  n_juv ~ 0 + season_f,# + target_depth + day_night,
+  offset = dat$effort,
+  data = dat,
+  mesh = spde,
+  family = sdmTMB::nbinom2(),
+  spatial = "on",
+  spatial_varying = ~ 1 + season_f,
+  anisotropy = FALSE,  
+  share_range = TRUE, 
+  control = sdmTMBcontrol(
+    newton_loops = 1#,
+  ),
+  silent = FALSE
+)
+sp_preds2 <- predict(dum2, 
                      newdata = dd,
                      se_fit = FALSE,
                      re_form = NULL)
