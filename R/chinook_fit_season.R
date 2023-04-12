@@ -472,9 +472,7 @@ cor(index_list[[2]]$log_est, index_list[[4]]$log_est)
 ## indices from plausible models -----------------------------------------------
 
 nd <- expand.grid(
-  scale_week = seq(min(dat$scale_week) + 0.1,
-                     max(dat$scale_week) - 0.1,
-                     length.out = 50
+  scale_week = seq(-1, 1, length.out = 50
   ),
   year = unique(dat$year),
   survey_f = unique(dat$survey_f),
