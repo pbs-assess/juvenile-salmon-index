@@ -88,61 +88,35 @@ test1 <-  sdmTMB(
   ),
   silent = FALSE
 )
-# test2 <- update(test1, spatiotemporal = "iid")
-# test3 <- update(test1, anisotropy = FALSE)
-# test4 <- sdmTMB(
-#   n_juv ~ 0 + year_f + target_depth + day_night,
+# test5 <- sdmTMB(
+#   n_juv ~ 0 + year_f +
+#     s(week, k = 4, bs = "cc", by = year_f, m = 2) +
+#     target_depth + day_night,
 #   offset = dat$effort,
 #   data = dat,
 #   mesh = spde,
 #   family = sdmTMB::nbinom2(),
 #   spatial = "on",
-#   spatial_varying = ~ 0 + scale_week,
-#   time_varying = ~ 0 + poly(scale_week, 2),
+#   spatial_varying = ~ 1 + season_f,
 #   time = "year",
-#   spatiotemporal = "ar1",
-#   anisotropy = FALSE,  
+#   spatiotemporal = "iid",
+#   anisotropy = FALSE,
 #   share_range = TRUE,
 #   priors = sdmTMBpriors(
 #     phi = halfnormal(0, 10),
 #     matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
 #     matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
 #   ),
+#   knots = list(week=c(0, 52)),
 #   control = sdmTMBcontrol(
 #     newton_loops = 1#,
 #     # nlminb_loops = 2
 #   ),
 #   silent = FALSE
 # )
-test5 <- sdmTMB(
-  n_juv ~ 0 + year_f +
-    s(week, k = 4, bs = "cc", by = year_f, m = 2) +
-    target_depth + day_night,
-  offset = dat$effort,
-  data = dat,
-  mesh = spde,
-  family = sdmTMB::nbinom2(),
-  spatial = "on",
-  spatial_varying = ~ 1 + season_f,
-  time = "year",
-  spatiotemporal = "iid",
-  anisotropy = FALSE,
-  share_range = TRUE,
-  priors = sdmTMBpriors(
-    phi = halfnormal(0, 10),
-    matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
-    matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
-  ),
-  knots = list(week=c(0, 52)),
-  control = sdmTMBcontrol(
-    newton_loops = 1#,
-    # nlminb_loops = 2
-  ),
-  silent = FALSE
-)
 test6 <- sdmTMB(
   n_juv ~ 0 + year_f +
-    scale_week +  scale_week2
+    scale_week +  scale_week2 +
     target_depth + day_night,
   offset = dat$effort,
   data = dat,
@@ -194,33 +168,87 @@ test7 <- sdmTMB(
   ),
   silent = FALSE
 )
-# test8 <- sdmTMB(
-#   n_juv ~ 0 + year_f +
-#     season_f +
-#     target_depth + day_night,
-#   offset = dat$effort,
-#   data = dat,
-#   mesh = spde,
-#   family = sdmTMB::nbinom2(),
-#   spatial = "on",
-#   spatial_varying = ~ 1 + season_f,
-#   time_varying = ~ 1 + season_f,
-#   time_varying_type = "rw0",
-#   time = "year",
-#   spatiotemporal = "ar1",
-#   anisotropy = FALSE,
-#   share_range = TRUE,
-#   priors = sdmTMBpriors(
-#     phi = halfnormal(0, 10),
-#     matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
-#     matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
-#   ),
-#   control = sdmTMBcontrol(
-#     newton_loops = 1#,
-#     # nlminb_loops = 2
-#   ),
-#   silent = FALSE
-# )
+test8 <- sdmTMB(
+  n_juv ~ 0 + year_f +
+    # season_f +
+    target_depth + day_night,
+  offset = dat$effort,
+  data = dat,
+  mesh = spde,
+  family = sdmTMB::nbinom2(),
+  spatial = "on",
+  spatial_varying = ~ 1 + season_f,
+  time_varying = ~ 1 + season_f,
+  time_varying_type = "rw0",
+  time = "year",
+  spatiotemporal = "ar1",
+  anisotropy = FALSE,
+  share_range = TRUE,
+  priors = sdmTMBpriors(
+    phi = halfnormal(0, 10),
+    matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+    matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+  ),
+  control = sdmTMBcontrol(
+    newton_loops = 1#,
+    # nlminb_loops = 2
+  ),
+  silent = FALSE
+)
+test9 <- sdmTMB(
+  n_juv ~ 0 + year_f +
+    # season_f +
+    target_depth + day_night,
+  offset = dat$effort,
+  data = dat,
+  mesh = spde,
+  family = sdmTMB::nbinom2(),
+  spatial = "on",
+  spatial_varying = ~ 0 + scale_week + scale_week2,
+  time_varying = ~ 0 + scale_week + scale_week2,
+  time_varying_type = "rw0",
+  time = "year",
+  spatiotemporal = "ar1",
+  anisotropy = FALSE,
+  share_range = TRUE,
+  priors = sdmTMBpriors(
+    phi = halfnormal(0, 10),
+    matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+    matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+  ),
+  control = sdmTMBcontrol(
+    newton_loops = 1#,
+    # nlminb_loops = 2
+  ),
+  silent = FALSE
+)
+test10 <- sdmTMB(
+  n_juv ~ 0 + year_f +
+    scale_week + scale_week2 +
+    target_depth + day_night,
+  offset = dat$effort,
+  data = dat,
+  mesh = spde,
+  family = sdmTMB::nbinom2(),
+  spatial = "on",
+  spatial_varying = ~ 0 + scale_week + scale_week2,
+  time_varying = ~ 0 + scale_week + scale_week2,
+  time_varying_type = "rw0",
+  time = "year",
+  spatiotemporal = "ar1",
+  anisotropy = FALSE,
+  share_range = TRUE,
+  priors = sdmTMBpriors(
+    phi = halfnormal(0, 10),
+    matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+    matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+  ),
+  control = sdmTMBcontrol(
+    newton_loops = 1#,
+    # nlminb_loops = 2
+  ),
+  silent = FALSE
+)
 # test6 <- sdmTMB(
 #   n_juv ~ 0 + year_f + season_f + target_depth + day_night + 
 #     (1 | season_year_f),
@@ -245,109 +273,12 @@ test7 <- sdmTMB(
 #   ),
 #   silent = FALSE
 # )
-# # as test1 but include time- and spatial-varying effect for seasons
-# test7 <-  sdmTMB(
-#   n_juv ~ 0 + year_f + season_f + target_depth + day_night,
-#   offset = dat$effort,
-#   data = dat,
-#   mesh = spde,
-#   family = sdmTMB::nbinom2(),
-#   spatial = "on",
-#   spatial_varying = ~ season_f,
-#   time_varying = ~ season_f,
-#   time = "year",
-#   spatiotemporal = "ar1",
-#   anisotropy = FALSE,  
-#   share_range = TRUE, 
-#   priors = sdmTMBpriors(
-#     phi = halfnormal(0, 10),
-#     matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
-#     matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
-#   ),
-#   control = sdmTMBcontrol(
-#     newton_loops = 1#,
-#     # nlminb_loops = 2
-#   ),
-#   silent = FALSE
-# )
 
-# test8 <- sdmTMB(
-#   n_juv ~ target_depth + day_night + season_f +
-#     (1 | season_year_f),
-#   offset = dat$effort,
-#   data = dat,
-#   mesh = spde,
-#   family = sdmTMB::nbinom2(),
-#   spatial = "on",
-#   spatial_varying = ~ 1 + season_f,
-#   # time_varying = ~ 1,
-#   time = "year",
-#   spatiotemporal = "ar1",
-#   anisotropy = FALSE,
-#   share_range = TRUE,
-#   priors = sdmTMBpriors(
-#     phi = halfnormal(0, 10),
-#     matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
-#     matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
-#   ),
-#   control = sdmTMBcontrol(
-#     newton_loops = 1#,
-#     # nlminb_loops = 2
-#   ),
-#   silent = FALSE
-# )
-# test9 <- sdmTMB(
-#   n_juv ~ 0 + target_depth + day_night + season_f +
-#     year_f,
-#   offset = dat$effort,
-#   data = dat,
-#   mesh = spde,
-#   family = sdmTMB::nbinom2(),
-#   spatial = "on",
-#   spatial_varying = ~ 1 + season_f,
-#   time_varying = ~ 1 + season_f,
-#   time = "year",
-#   spatiotemporal = "ar1",
-#   anisotropy = FALSE,
-#   share_range = TRUE,
-#   priors = sdmTMBpriors(
-#     phi = halfnormal(0, 10),
-#     matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
-#     matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
-#   ),
-#   control = sdmTMBcontrol(
-#     newton_loops = 1#,
-#     # nlminb_loops = 2
-#   ),
-#   silent = FALSE
-# )
-
-# alternative to season-specific random fields, fit using multidimensional 
-# group level-smoother
-# DOES NOT CONVERGE
-# test5 <- sdmTMB(
-#   n_juv ~ 0 + year_f + season_f + target_depth + day_night +
-#     t2(utm_x_1000, utm_y_1000, season_f, m=2, bs = c("tp", "tp", "re")),
-#   offset = dat$effort,
-#   data = dat,
-#   mesh = spde,
-#   family = sdmTMB::nbinom2(),
-#   # spatial = "on",
-#   time = "year",
-#   spatiotemporal = "iid",
-#   anisotropy = FALSE,  
-#   share_range = TRUE,
-#   control = sdmTMBcontrol(
-#     newton_loops = 1#,
-#     # nlminb_loops = 2
-#   ),
-#   silent = FALSE
-# )
 
 
 dat_tbl <- tibble(
-  model = c("spatial season", "spatial poly", "spatial poly 2"),
-  fits = list(test1, test6, test7)
+  model = c("spatial poly", "spatial poly 2"),
+  fits = list(test9, test10)
 )
 saveRDS(dat_tbl, here::here("data", "fits", "chinook_sp_varying.rds"))
 
@@ -529,23 +460,59 @@ cor(index_list[[2]]$log_est, index_list[[4]]$log_est)
 
 ## fixed effects ---------------------------------------------------------------
 
+dd <- sdmTMB(
+  n_juv ~ 0 + year_f +
+    poly(scale_week, 2) +
+    target_depth + day_night,
+  offset = dat$effort,
+  data = dat,
+  mesh = spde,
+  family = sdmTMB::nbinom2(),
+  spatial = "on",
+  spatial_varying = ~ 0 + poly(scale_week, 2),
+  # time_varying = ~ 0 + scale_week,
+  # time_varying_type = "rw0",
+  # time = "year",
+  # spatiotemporal = "ar1",
+  anisotropy = FALSE,
+  share_range = TRUE,
+  priors = sdmTMBpriors(
+    phi = halfnormal(0, 10),
+    matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+    matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+  ),
+  control = sdmTMBcontrol(
+    newton_loops = 1#,
+    # nlminb_loops = 2
+  ),
+  silent = FALSE
+)
+
+
+
 nd <- expand.grid(
-  scale_week = seq(-0.5, 1.25, length.out = 50
+  scale_week = seq(-1.5, 1.3, length.out = 50
   ),
   year = unique(dat$year),
   survey_f = unique(dat$survey_f),
-  season_f = unique(dat$season_f),
-  day_night = unique(dat$day_night)
+  day_night = unique(dat$day_night)#,
+  # season_f = unique(dat$season_f)
 ) %>% 
   mutate(
+    # season = case_when(
+    #   scale_week < 0.73 & scale_week >= -1.3 ~ "sp",
+    #   scale_week >= 0.73 & scale_week <= 0.78 ~ "su",
+    #   TRUE ~ "wi"),
+    # season_f = as.factor(season),
     year_f = as.factor(year),
     scale_week2 = scale_week^2,
     target_depth = 0
     )
-nd2 <- nd %>% filter(survey_f == "hss", season_f == "su", day_night == "DAY")
+nd2 <- nd %>% filter(survey_f == "hss", #season_f %in% c("su", "wi"),
+                     day_night == "DAY")
 
-p <- predict(dat_tbl$fits[[2]], newdata = nd2, nsim = 100, re_form = NA)
-p2 <- predict(dat_tbl$fits[[3]], newdata = nd2, nsim = 100, re_form = NA)
+p <- predict(test9, newdata = nd2, nsim = 100, re_form = NA)
+p2 <- predict(test10, newdata = nd2, nsim = 100, re_form = NA)
 
 cbind(
   nd2,
@@ -557,6 +524,19 @@ cbind(
   ggplot(., aes(x = scale_week, colour = year_f)) +
   geom_line(aes(y = exp(mean))) +
   ggsidekick::theme_sleek() +
+  # lims(x = c(-0.75, 1.25)) +
   labs(y = "Log Biomass", x = "Scaled Week")
 
+cbind(
+  nd2,
+  data.frame(
+    mean = apply(p, 1, mean),
+    lwr = apply(p, 1, quantile, 0.05),
+    upr = apply(p, 1, quantile, 0.95))
+) %>% 
+  ggplot(., aes(x = scale_week, colour = year_f)) +
+  geom_line(aes(y = mean)) +
+  ggsidekick::theme_sleek() +
+  # lims(x = c(-0.75, 1.25)) +
+  labs(y = "Log Biomass", x = "Scaled Week")
 
