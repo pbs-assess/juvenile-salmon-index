@@ -3,6 +3,10 @@
 ## effects
 ## Apr 6, 2023
 
+# alternative branch
+devtools::install_github("https://github.com/pbs-assess/sdmTMB",
+                         ref = "zeta-intercept")
+
 library(tidyverse)
 library(sdmTMB)
 
@@ -50,25 +54,82 @@ ggplot(dat) +
   facet_wrap(~year)
 
 
-# fit season as spatially varying effect
-test0 <-  sdmTMB(
-  n_juv ~ 0 + year_f + season_f + target_depth + day_night,
+
+dd <- sdmTMB(
+  n_juv ~ season_f,
   offset = dat$effort,
   data = dat,
   mesh = spde,
   family = sdmTMB::nbinom2(),
-  spatial = "on",
-  # spatial_varying = ~ 0 + season_f,
-  time = "year",
-  spatiotemporal = "iid",
-  anisotropy = TRUE,  
-  share_range = TRUE, 
+  spatial = "off",
+  spatial_varying = ~ 0 + season_f,
+  # time_varying = ~ 1 + season_f,
+  # time_varying_type = "rw0",
+  # time = "year",
+  # spatiotemporal = "ar1",
+  anisotropy = FALSE,
+  share_range = TRUE,
+  priors = sdmTMBpriors(
+    phi = halfnormal(0, 10),
+    matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+    matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+  ),
   control = sdmTMBcontrol(
     newton_loops = 1#,
     # nlminb_loops = 2
   ),
   silent = FALSE
 )
+dd2 <- sdmTMB(
+  n_juv ~ season_f,
+  offset = dat$effort,
+  data = dat,
+  mesh = spde,
+  family = sdmTMB::nbinom2(),
+  spatial = "off",
+  time_varying = ~ 1 + season_f,
+  time_varying_type = "rw0",
+  time = "year",
+  spatiotemporal = "ar1",
+  anisotropy = FALSE,
+  priors = sdmTMBpriors(
+    phi = halfnormal(0, 10),
+    matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+    matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+  ),
+  control = sdmTMBcontrol(
+    newton_loops = 1#,
+    # nlminb_loops = 2
+  ),
+  silent = FALSE
+)
+dd3 <- sdmTMB(
+  n_juv ~ season_f,
+  offset = dat$effort,
+  data = dat,
+  mesh = spde,
+  family = sdmTMB::nbinom2(),
+  spatial = "off",
+  time_varying = ~ 0 + season_f,
+  time_varying_type = "rw0",
+  time = "year",
+  spatiotemporal = "ar1",
+  anisotropy = FALSE,
+  priors = sdmTMBpriors(
+    phi = halfnormal(0, 10),
+    matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+    matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+  ),
+  control = sdmTMBcontrol(
+    newton_loops = 1#,
+    # nlminb_loops = 2
+  ),
+  silent = FALSE
+)
+
+tidy(dd2, "ran_pars")
+tidy(dd3, "ran_pars")
+
 # fit season as spatially varying effect
 test1 <-  sdmTMB(
   n_juv ~ 0 + year_f + season_f + target_depth + day_night,
@@ -170,16 +231,15 @@ test7 <- sdmTMB(
 )
 test8 <- sdmTMB(
   n_juv ~ 0 + year_f +
-    # season_f +
     target_depth + day_night,
   offset = dat$effort,
   data = dat,
   mesh = spde,
   family = sdmTMB::nbinom2(),
-  spatial = "on",
-  spatial_varying = ~ 1 + season_f,
-  time_varying = ~ 1 + season_f,
-  time_varying_type = "rw0",
+  spatial = "off",
+  spatial_varying = ~ 0 + season_f,
+  time_varying = ~ 0 + season_f,
+  time_varying_type = "ar1",
   time = "year",
   spatiotemporal = "ar1",
   anisotropy = FALSE,
@@ -197,7 +257,6 @@ test8 <- sdmTMB(
 )
 test9 <- sdmTMB(
   n_juv ~ 0 + year_f +
-    # season_f +
     target_depth + day_night,
   offset = dat$effort,
   data = dat,
