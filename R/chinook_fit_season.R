@@ -184,11 +184,10 @@ test9 <- sdmTMB(
 )
 
 
-# dat_tbl <- tibble(
-#   model = c("season_fe"),
-#   fits = list(test8)
-# )
-# dat_tbl3 <- rbind(dat_tbl, dat_tbl2)
+dat_tbl <- tibble(
+  model = c("season_ri", "season_fe"),
+  fits = list(test6, test8)
+)
 # saveRDS(dat_tbl, here::here("data", "fits", "chinook_sp_varying.rds"))
 
 dat_tbl <- readRDS(here::here("data", "fits", "chinook_sp_varying.rds"))
@@ -270,12 +269,16 @@ levels(exp_grid$season_year_f)[!levels(exp_grid$season_year_f) %in%
 exp_grid_hss <- exp_grid %>% filter(survey_f == "hss")
 
 
-spatial_preds <- predict(test8, newdata = exp_grid, se_fit = FALSE, re_form = NULL)
-# dat_tbl$sp_preds <- spatial_preds
-# sp_preds_all <- rbind(
-#   spatial_preds[[1]] %>% mutate(model = "fixed"),
-#   spatial_preds[[2]] %>% mutate(model = "poly")
-# )
+# spatial_preds <- predict(test8, newdata = exp_grid, se_fit = FALSE, re_form = NULL)
+spatial_preds <- purrr::map(
+  dat_tbl$fits, 
+  ~ predict(.x, newdata = exp_grid, se_fit = FALSE, re_form = NULL)
+)
+dat_tbl$sp_preds <- spatial_preds
+sp_preds_all <- rbind(
+  spatial_preds[[1]] %>% mutate(model = "fixed"),
+  spatial_preds[[2]] %>% mutate(model = "poly")
+)
  
 plot_map_raster <- function(dat, column = est) {
   ggplot(dat, aes(X, Y, fill = {{ column }})) +
