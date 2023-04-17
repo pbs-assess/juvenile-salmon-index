@@ -19,15 +19,13 @@ future::plan(future::multisession, workers = ncores - 3)
 # downscale data and predictive grid
 dat <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>% 
   mutate(
-    min_date = as.numeric(as.Date(min(date))) - 1,
-    cont_date = as.numeric(as.Date(date)) - min_date,
+    # min_date = as.numeric(as.Date(min(date))) - 1,
+    # cont_date = as.numeric(as.Date(date)) - min_date,
     yday = lubridate::yday(date),
     utm_x_1000 = utm_x / 1000,
     utm_y_1000 = utm_y / 1000,
     effort = log(volume_m3),
     scale_season = scale(as.numeric(season_f))[ , 1],
-    scale_week = scale(as.numeric(week))[ , 1],
-    scale_week2 = scale_week^2,
     season_year_f = paste(season_f, year_f, sep = "_") %>% as.factor(),
     day_night = as.factor(day_night)
   ) %>% 
@@ -55,11 +53,6 @@ spde <- make_mesh(
   c("utm_x_1000", "utm_y_1000"),
   mesh = inla_mesh_raw
 ) 
-
-ggplot(dat) +
-  geom_point(aes(x = yday, y = log(n_juv + 0.1)), alpha = 0.6) +
-  facet_wrap(~year)
-
 
 
 # fit season as spatially varying effect
@@ -397,6 +390,11 @@ cor(index_list[[2]]$log_est, index_list[[4]]$log_est)
 
 ## model comp ------------------------------------------------------------------
 
+
+ncores <- parallel::detectCores() 
+future::plan(future::multisession, workers = ncores - 3)
+
+
 cv_ri <- sdmTMB_cv(
   n_juv ~ 0 + year_f + season_f + target_depth + day_night + survey_f +
     (1 | season_year_f),
@@ -455,3 +453,8 @@ cv_tv <- sdmTMB_cv(
   k_folds = 5,
   use_initial_fit = TRUE
 )
+
+#> cv_ri$elpd
+# [1] -0.4294949
+# > cv_tv$elpd
+# [1] -0.4294955
