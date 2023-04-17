@@ -85,7 +85,7 @@ test6a <- sdmTMB(
   spatial_varying = ~ 0 + season_f,
   # time = "year",
   # spatiotemporal = "ar1",
-  anisotropy = FALSE,
+  anisotropy = TRUE,
   share_range = TRUE,
   priors = sdmTMBpriors(
     phi = halfnormal(0, 10),
@@ -98,7 +98,7 @@ test6a <- sdmTMB(
   silent = FALSE
 )
 test6 <- update(test6a, time = "year", spatiotemporal = "ar1")
-test8 <- sdmTMB(
+test8a <- sdmTMB(
   n_juv ~ 0 + year_f + season_f + target_depth + day_night + survey_f,
   offset = dat$effort,
   data = dat,
@@ -109,7 +109,7 @@ test8 <- sdmTMB(
   time_varying = ~ 1 + season_f,
   time_varying_type = "rw0",
   time = "year",
-  spatiotemporal = "ar1",
+  # spatiotemporal = "ar1",
   anisotropy = FALSE,
   share_range = TRUE,
   priors = sdmTMBpriors(
@@ -128,6 +128,7 @@ test8 <- sdmTMB(
   ),
   silent = FALSE
 )
+test8 <- update(test8a, spatiotemporal = "ar1")
 
 # test9 <- sdmTMB(
 #   n_juv ~ 0 + year_f + season_f + s(cont_date) +

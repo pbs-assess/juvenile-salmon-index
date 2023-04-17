@@ -22,7 +22,14 @@ dat <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>%
     utm_x_1000 = utm_x / 1000,
     utm_y_1000 = utm_y / 1000,
     effort = log(volume_m3),
-    month_f = as.factor(month)
+    month_f = as.factor(month),
+    yday = lubridate::yday(date),
+    utm_x_1000 = utm_x / 1000,
+    utm_y_1000 = utm_y / 1000,
+    effort = log(volume_m3),
+    scale_season = scale(as.numeric(season_f))[ , 1],
+    season_year_f = paste(season_f, year_f, sep = "_") %>% as.factor(),
+    day_night = as.factor(day_night)
   ) %>% 
   filter(!species == "steelhead") %>% 
   droplevels()
@@ -44,93 +51,99 @@ fall_years <- dat %>%
   unique() %>% 
   sort()
 
+
 # prep multisession
 ncores <- parallel::detectCores() 
 future::plan(future::multisession, workers = ncores - 3)
 
 
-dat_tbl <- readRDS(here::here("data", "fits", "top_st_mod_all_sp_season.rds"))
+## mesh shared among species
+dat_coords <- dat %>% 
+  filter(species == "chinook") %>% 
+  select(utm_x_1000, utm_y_1000) %>% 
+  as.matrix()
+inla_mesh_raw <- INLA::inla.mesh.2d(
+  loc = dat_coords,
+  max.edge = c(1, 5) * 500,
+  cutoff = 20,
+  offset = c(20, 200)
+) 
+spde <- make_mesh(
+  dat,
+  c("utm_x_1000", "utm_y_1000"),
+  mesh = inla_mesh_raw
+) 
+
+dat_tbl <- dat %>%
+  group_by(species) %>%
+  group_nest() #%>%
+  # mutate(
+    # anisotropy = ifelse(species == "chinook" & dataset == "summer", FALSE, TRUE),
+    # time_model = ifelse(species == "sockeye" & dataset == "fall", "rw", "ar1")
+  # )
 
 
-# separate seasons and join
-# fall_tbl <- dat %>%
-#   filter(season_f == "wi",
-#          year %in% fall_years) %>%
-#   mutate(dataset = "fall") %>%
-#   droplevels()
-# summer_tbl <- dat %>%
-#   filter(season_f == "su",
-#          year %in% summer_years) %>%
-#   mutate(dataset = "summer") %>%
-#   droplevels()
-# 
-# dat_tbl <- rbind(summer_tbl, fall_tbl) %>%
-#   group_by(species, dataset) %>%
-#   group_nest() %>% 
-#   mutate(
-#     anisotropy = ifelse(species == "chinook" & dataset == "summer", FALSE, TRUE),
-#     time_model = ifelse(species == "sockeye" & dataset == "fall", "rw", "ar1")
-#   )
+fits_list <- furrr::future_map(
+  dat_tbl$data,
+  function(dat_in) {
+    fit_ri <- sdmTMB(
+      n_juv ~ 0 + year_f + season_f + target_depth + day_night + survey_f +
+        (1 | season_year_f),
+      offset = dat$effort,
+      data = dat,
+      mesh = spde,
+      family = sdmTMB::nbinom2(),
+      spatial = "off",
+      spatial_varying = ~ 0 + season_f,
+      time = "year",
+      spatiotemporal = "ar1",
+      anisotropy = FALSE,
+      share_range = TRUE,
+      priors = sdmTMBpriors(
+        phi = halfnormal(0, 10),
+        matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+        matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+      ),
+      control = sdmTMBcontrol(
+        newton_loops = 1
+      ),
+      silent = FALSE
+    )
+    fit_tv <- sdmTMB(
+      n_juv ~ 0 + year_f + season_f + target_depth + day_night + survey_f,
+      offset = dat$effort,
+      data = dat,
+      mesh = spde,
+      family = sdmTMB::nbinom2(),
+      spatial = "off",
+      spatial_varying = ~ 0 + season_f,
+      time_varying = ~ 1 + season_f,
+      time_varying_type = "rw0",
+      time = "year",
+      spatiotemporal = "ar1",
+      anisotropy = FALSE,
+      share_range = TRUE,
+      priors = sdmTMBpriors(
+        phi = halfnormal(0, 10),
+        matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+        matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+      ),
+      control = sdmTMBcontrol(
+        newton_loops = 1,
+        start = list(
+          ln_tau_V = matrix(log(c(0.1, 0.1, 0.1)), nrow = 3, ncol = 1)
+        ),
+        map = list(
+          ln_tau_V = factor(c(NA, NA, NA))
+        )
+      ),
+      silent = FALSE
+    )
+    list(fit_ri, fit_tv)
+  }
+)
 
-
-# dat_tbl$fits <- purrr::pmap(
-#   list(dat_tbl$dataset, dat_tbl$time_model, dat_tbl$anisotropy, dat_tbl$data),
-#   function(x, y, z, dat_in) {
-#     dum <- dat_in %>% droplevels()
-#     dat_coords <- dum %>% 
-#       select(utm_x_1000, utm_y_1000) %>% 
-#       as.matrix()
-#     
-#     ## use INLA mesh based on SA recommendations and model selection (see notes)
-#     inla_mesh_raw <- INLA::inla.mesh.2d(
-#       loc = dat_coords,
-#       max.edge = c(1, 5) * 500,
-#       cutoff = 20,
-#       offset = c(20, 200)
-#     ) 
-#     spde <- make_mesh(
-#       dum,
-#       c("utm_x_1000", "utm_y_1000"),
-#       mesh = inla_mesh_raw
-#     ) 
-#     
-#     extra_time <- NULL
-#     if (x == "fall") {
-#       extra_time <-  c(2018#, 2020
-#       )
-#       formula_in <- as.formula(
-#         paste("n_juv ~ target_depth + day_night")
-#       )
-#     }
-#     if (x == "summer") {
-#       extra_time <-  c(2016, 2020
-#                        #, 2021
-#       )
-#       formula_in <- as.formula(
-#         paste("n_juv ~ survey_f + target_depth + day_night")
-#       )
-#     }
-#     sdmTMB(
-#       formula_in,
-#       offset = dum$effort,
-#       data = dum,
-#       mesh = spde,
-#       family = sdmTMB::nbinom2(),
-#       spatial = "on",
-#       spatiotemporal = y,
-#       time = "year",
-#       anisotropy = z,  
-#       share_range = TRUE,
-#       extra_time = extra_time,
-#       control = sdmTMBcontrol(
-#         newton_loops = 1
-#       ),
-#       silent = FALSE
-#     )
-#   } 
-# )
-# 
-# dat_tbl$fits <- fits_list
+dat_tbl$fits <- fits_list
 
 # sub_tbl <- dat_tbl %>%
 #   filter(
