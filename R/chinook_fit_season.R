@@ -21,6 +21,9 @@ dat <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>%
   mutate(
     # min_date = as.numeric(as.Date(min(date))) - 1,
     # cont_date = as.numeric(as.Date(date)) - min_date,
+    # adjust year for spring surveys since they are catching previous cohort
+    adj_year = ifelse(season_f == "sp", year - 1, year),
+    year_f = as.factor(adj_year),
     yday = lubridate::yday(date),
     utm_x_1000 = utm_x / 1000,
     utm_y_1000 = utm_y / 1000,
@@ -76,7 +79,7 @@ test1 <-  sdmTMB(
 )
 test6a <- sdmTMB(
   n_juv ~ 0 + year_f + season_f + target_depth + day_night + survey_f +
-    (1 | season_year_f),
+    dist_to_coast_km + (1 | season_year_f),
   offset = dat$effort,
   data = dat,
   mesh = spde,
@@ -85,7 +88,7 @@ test6a <- sdmTMB(
   spatial_varying = ~ 0 + season_f,
   # time = "year",
   # spatiotemporal = "ar1",
-  anisotropy = TRUE,
+  anisotropy = FALSE,
   share_range = TRUE,
   priors = sdmTMBpriors(
     phi = halfnormal(0, 10),
@@ -99,7 +102,8 @@ test6a <- sdmTMB(
 )
 test6 <- update(test6a, time = "year", spatiotemporal = "ar1")
 test8a <- sdmTMB(
-  n_juv ~ 0 + year_f + season_f + target_depth + day_night + survey_f,
+  n_juv ~ 0 + year_f + season_f + target_depth + day_night + survey_f + 
+    dist_to_coast_km,
   offset = dat$effort,
   data = dat,
   mesh = spde,
