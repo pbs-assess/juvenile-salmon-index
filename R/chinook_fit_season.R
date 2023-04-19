@@ -35,10 +35,10 @@ dat <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>%
   filter(species == "chinook") %>% 
   droplevels()
 
-ggplot(dat %>% filter(season_f == "wi")) +
-  geom_point(aes(x = utm_x, y = utm_y, size = n_juv), alpha = 0.4) +
-  scale_size(trans = "sqrt") +
-  facet_wrap(~year)
+# ggplot(dat %>% filter(season_f == "wi")) +
+#   geom_point(aes(x = utm_x, y = utm_y, size = n_juv), alpha = 0.4) +
+#   scale_size(trans = "sqrt") +
+#   facet_wrap(~year)
   
 
 ## mesh
@@ -78,8 +78,9 @@ test1 <-  sdmTMB(
   silent = FALSE
 )
 test6a <- sdmTMB(
-  n_juv ~ 0 + year_f + season_f + target_depth + day_night + survey_f +
-    dist_to_coast_km + (1 | season_year_f),
+  n_juv ~ 0 + year_f + season_f +# target_depth + day_night + survey_f +
+    #dist_to_coast_km + 
+    (1 | season_year_f),
   offset = dat$effort,
   data = dat,
   mesh = spde,
@@ -132,6 +133,39 @@ test8a <- sdmTMB(
   ),
   silent = FALSE
 )
+test8b <- sdmTMB(
+  n_juv ~ 0 + year_f + season_f + target_depth + day_night + survey_f + 
+    dist_to_coast_km,
+  offset = dat$effort,
+  data = dat,
+  mesh = spde,
+  family = sdmTMB::nbinom2(),
+  spatial = "off",
+  spatial_varying = ~ 0 + season_f,
+  time_varying = ~ 1 + season_f,
+  time_varying_type = "rw0",
+  time = "year",
+  # spatiotemporal = "ar1",
+  anisotropy = FALSE,
+  share_range = TRUE,
+  priors = sdmTMBpriors(
+    phi = halfnormal(0, 10),
+    matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+    matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+  ),
+  control = sdmTMBcontrol(
+    newton_loops = 1,
+    start = list(
+      ln_tau_V = matrix(log(c(0.3, 0.3, 0.3)), nrow = 3, ncol = 1)
+    ),
+    map = list(
+      ln_tau_V = factor(c(NA, NA, NA))
+    )
+  ),
+  silent = FALSE
+)
+purrr::map(list(test8a, test8b), tidy, "ran_pars")
+
 test8 <- update(test8a, spatiotemporal = "ar1")
 
 # test9 <- sdmTMB(
@@ -214,7 +248,8 @@ fall_grid <- grid_list$wcvi_grid
 exp_grid <- expand.grid(
   year = unique(dat$year),
   survey_f = unique(dat$survey_f),
-  season_f = unique(dat$season_f)
+  season_f = unique(dat$season_f),
+  day_night = unique(dat$day_night)
 ) %>%
   mutate(
     year_f = as.factor(year),
@@ -223,6 +258,7 @@ exp_grid <- expand.grid(
     season_year_f = paste(season_f, year_f, sep = "_") %>% as.factor()
   ) %>% 
   filter(
+    day_night == "DAY",
     # remove fall ipes surveys (doesn't meet definition)
     !(season_f %in% c("wi") & survey_f == "ipes"),
     !season_f == "sp"#,
@@ -239,10 +275,9 @@ exp_grid <- expand.grid(
         survey_f = x$survey_f,
         season_f = x$season_f,
         season_year_f = x$season_year_f,
-        # scale_week = x$scale_week,
-        # scale_week2 = scale_week^2,
+        dist_to_coast_km = shore_dist / 1000,
         target_depth = 0,
-        day_night = "DAY"
+        day_night = x$day_night
       )
   }) %>%
   bind_rows() %>% 
@@ -316,9 +351,10 @@ pred3 <- predict(dat_tbl$fits[[1]],
 # assuming mean net opening (13 m)
 sp_scalar <- 1000^2 * 13
 
-preds_ri <- predict(dat_tbl$fits[[1]], 
+preds_ri <- predict(test6a, 
                  newdata = exp_grid_hss %>% 
-                   filter(season_f == "su"), 
+                   filter(season_f == "su", 
+                          !is.na(season_year_f )), 
                  se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
 preds_tv <- predict(dat_tbl$fits[[2]], 
                  newdata = exp_grid_hss %>% 
@@ -391,6 +427,76 @@ ggplot(indices, aes(year, log_est)) +
 # check among season correlations, should be weaker for poly
 cor(index_list[[1]]$log_est, index_list[[3]]$log_est)
 cor(index_list[[2]]$log_est, index_list[[4]]$log_est)
+
+
+## compare non-st indices ------------------------------------------------------
+
+
+
+preds_tvA <- predict(test8a, 
+                    newdata = exp_grid_hss %>% 
+                      filter(season_f == "su"), 
+                    se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
+preds_tvA_fa <- predict(test8a, 
+                       newdata = exp_grid_hss %>% 
+                         filter(season_f == "wi"), 
+                       se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
+preds_tvB <- predict(test8b, 
+                     newdata = exp_grid_hss %>% 
+                       filter(season_f == "su"), 
+                     se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
+preds_tvB_fa <- predict(test8b, 
+                        newdata = exp_grid_hss %>% 
+                          filter(season_f == "wi"), 
+                        se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
+
+index_list <- furrr::future_map(
+  list(preds_tvA,
+       preds_tvA_fa,
+       preds_tvB,
+       preds_tvB_fa),
+  get_index,
+  area = sp_scalar,
+  bias_correct = TRUE
+)
+indices <- list(
+  index_list[[1]] %>% 
+    mutate(model = "A",
+           season = "summer"),
+  index_list[[3]] %>% 
+    mutate(model = "B",
+           season = "summer"),
+  index_list[[2]] %>% 
+    mutate(model = "A",
+           season = "fall"),
+  index_list[[4]] %>% 
+    mutate(model = "B",
+           season = "fall")
+) %>% 
+  bind_rows() %>% 
+  mutate(
+    survey = case_when(
+      season == "fall" & year %in% fall_years ~ "sampled",
+      season == "summer" & year %in% summer_years ~ "sampled",
+      TRUE ~ "no survey"
+    ),
+    lwr_log = log_est - (1.96 * se),
+    upr_log = log_est + (1.96 * se)
+  )
+
+ggplot(indices, aes(year, log_est)) +
+  # geom_point(aes(colour = model, shape = survey),
+  #            # shape = 21,
+  #            position = position_dodge(width=0.3)) +
+  geom_pointrange(aes(ymin = lwr_log, ymax = upr_log, fill = model,
+                      shape = survey),
+                  position = position_dodge(width=0.3)) +
+  labs(x = "Year", y = "Log Abundance") +
+  ggsidekick::theme_sleek() +
+  facet_wrap(model~season)
+
+cor(index_list[[1]]$log_est, index_list[[2]]$log_est)
+cor(index_list[[3]]$log_est, index_list[[4]]$log_est)
 
 
 ## model comp ------------------------------------------------------------------
