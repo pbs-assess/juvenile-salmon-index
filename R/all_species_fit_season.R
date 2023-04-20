@@ -41,19 +41,6 @@ dat <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>%
 col_pal <- c('#7fc97f','#beaed4','#fdc086','#ffff99','#386cb0')
 names(col_pal) <- c('chinook','pink','chum','coho','sockeye')
 
-# identify viable years by season
-summer_years <- dat %>%
-  filter(season_f == "su") %>%
-  pull(year) %>%
-  unique() %>% 
-  sort()
-fall_years <- dat %>%
-  filter(season_f == "wi",
-         # remove 2020 since majority of tows in north
-         !year == "2020") %>%
-  pull(year) %>%
-  unique() %>% 
-  sort()
 
 
 # prep multisession
@@ -91,73 +78,71 @@ dat_tbl <- dat %>%
 fits_list <- furrr::future_map(
   dat_tbl$data,
   function(dat_in) {
-    fit_ri <- sdmTMB(
-      n_juv ~ 0 + year_f + season_f + target_depth + day_night + survey_f +
-         dist_to_coast_km + (1 | season_year_f),
-      offset = dat_in$effort,
-      data = dat_in,
-      mesh = spde,
-      family = sdmTMB::nbinom2(),
-      spatial = "off",
-      spatial_varying = ~ 0 + season_f,
-      # time = "year",
-      # spatiotemporal = "ar1",
-      anisotropy = FALSE,
-      share_range = TRUE,
-      priors = sdmTMBpriors(
-        phi = halfnormal(0, 10),
-        matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
-        matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
-      ),
-      control = sdmTMBcontrol(
-        newton_loops = 1
-      ),
-      silent = FALSE
-    )
-    fit_tv <- sdmTMB(
-      n_juv ~ 0 + year_f + season_f + target_depth + day_night + survey_f + 
-        dist_to_coast_km,
-      offset = dat_in$effort,
-      data = dat_in,
-      mesh = spde,
-      family = sdmTMB::nbinom2(),
-      spatial = "off",
-      spatial_varying = ~ 0 + season_f,
-      time_varying = ~ 1 + season_f,
-      time_varying_type = "rw0",
-      time = "year",
-      # spatiotemporal = "ar1",
-      anisotropy = FALSE,
-      share_range = TRUE,
-      priors = sdmTMBpriors(
-        phi = halfnormal(0, 10),
-        matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
-        matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
-      ),
-      control = sdmTMBcontrol(
-        newton_loops = 1,
-        start = list(
-          ln_tau_V = matrix(log(c(0.1, 0.1, 0.1)), nrow = 3, ncol = 1)
+    # fit_ri <- sdmTMB(
+    #   n_juv ~ 0 + year_f + season_f + target_depth + day_night + survey_f +
+    #      dist_to_coast_km + (1 | season_year_f),
+    #   offset = dat_in$effort,
+    #   data = dat_in,
+    #   mesh = spde,
+    #   family = sdmTMB::nbinom2(),
+    #   spatial = "off",
+    #   spatial_varying = ~ 0 + season_f,
+    #   # time = "year",
+    #   # spatiotemporal = "ar1",
+    #   anisotropy = FALSE,
+    #   share_range = TRUE,
+    #   priors = sdmTMBpriors(
+    #     phi = halfnormal(0, 10),
+    #     matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+    #     matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+    #   ),
+    #   control = sdmTMBcontrol(
+    #     newton_loops = 1
+    #   ),
+    #   silent = FALSE
+    # )
+    # fit_tv <- 
+      sdmTMB(
+        n_juv ~ 0 + year_f + season_f + target_depth + day_night + survey_f + 
+          dist_to_coast_km,
+        offset = dat_in$effort,
+        data = dat_in,
+        mesh = spde,
+        family = sdmTMB::nbinom2(),
+        spatial = "off",
+        spatial_varying = ~ 0 + season_f,
+        time_varying = ~ 1 + season_f,
+        time_varying_type = "rw0",
+        time = "year",
+        spatiotemporal = "ar1",
+        anisotropy = FALSE,
+        share_range = TRUE,
+        priors = sdmTMBpriors(
+          phi = halfnormal(0, 10),
+          matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+          matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
         ),
-        map = list(
-          ln_tau_V = factor(c(NA, NA, NA))
-        )
-      ),
-      silent = FALSE
-    )
-    list(fit_ri, fit_tv)
+        control = sdmTMBcontrol(
+          newton_loops = 1,
+          start = list(
+            ln_tau_V = matrix(log(c(0.25, 0.25, 0.25)), nrow = 3, ncol = 1)
+          ),
+          map = list(
+            ln_tau_V = factor(c(NA, NA, NA))
+          )
+        ),
+        silent = FALSE
+      )
+    # list(fit_ri, fit_tv)
   }
 )
 
 
 
-# dat_tbl <- rbind(dat_tbl, dat_tbl) %>% 
-#   mutate(model = rep(c("ri", "tv"), each = 5),
-#          fit = NA)
-# dat_tbl$fit[1:5] <- purrr::map(fits_list, ~ .x[[1]])
-# dat_tbl$fit[6:10] <- purrr::map(fits_list, ~ .x[[2]])
-# 
-# saveRDS(dat_tbl, here::here("data", "fits", "all_spatial_varying_no_eps.rds"))
+dat_tbl$model <- "tv"
+dat_tbl$fit <- fits_list
+
+saveRDS(dat_tbl, here::here("data", "fits", "all_spatial_varying_eps.rds"))
 dat_tbl <- readRDS(here::here("data", "fits", "all_spatial_varying_no_eps.rds"))
 
 
@@ -389,8 +374,7 @@ grid_list <- readRDS(here::here("data", "spatial", "pred_ipes_grid.RDS")) %>%
 summer_grid <- grid_list$ipes_grid
 fall_grid <- grid_list$wcvi_grid
 
-# add unique years and seasons
-index_grid <- expand.grid(
+pred_grid_list <- expand.grid(
   year = unique(dat$year),
   survey_f = unique(dat$survey_f),
   season_f = unique(dat$season_f)
@@ -406,7 +390,13 @@ index_grid <- expand.grid(
     !season_f == "sp"#,
     # season_year_f %in% unique(dat$season_year_f)
   ) %>% 
-  split(., .$id) %>%
+  split(., .$id)
+
+
+## INDEX -----------------------------------------------------------------------
+
+# add unique years and seasons
+index_grid <- pred_grid_list %>%
   purrr::map(., function (x) {
     dum_grid <- if (x$season_f == "su") summer_grid else fall_grid
     
@@ -434,14 +424,6 @@ levels(index_grid$season_year_f)[!levels(index_grid$season_year_f) %in%
                                  levels(dat$season_year_f)] <- NA
 
 
-pp <- predict(dat_tbl$fit[[1]],
-        newdata = index_grid %>% 
-          filter(survey_f == "hss", season_f == "su", year < 2015),
-        se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
-indo <- get_index(pp, bias_correct = TRUE)
-
-## INDEX -----------------------------------------------------------------------
-
 ## crashes with RI model so use TV only
 sub_tbl <- dat_tbl# %>% 
   # filter(model == "tv")
@@ -459,7 +441,7 @@ ind_preds_sum <- purrr::map(
   ~ {
     predict(.x,
             newdata = index_grid %>% 
-              filter(survey_f == "hss", season_f == "su", year < 2015),
+              filter(survey_f == "hss", season_f == "su"),
             se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
   }
 )
@@ -476,7 +458,7 @@ ind_preds_fall <- purrr::map(
   ~ {
     predict(.x,
             newdata = index_grid %>% 
-              filter(survey_f == "hss", season_f == "wi", year < 2015),
+              filter(survey_f == "hss", season_f == "wi"),
             se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
   }
 )
@@ -507,13 +489,28 @@ index_fall <- purrr::map2(
   bind_rows()
 
 
-# index_dat <- rbind(index_sum, #%>% filter(year %in% summer_years),
-#                    index_fall #%>% filter(year %in% fall_years)
-#                    ) %>%
-  index_dat <- index_dat %>% 
+# identify viable years by season
+summer_years <- dat %>%
+  filter(season_f == "su",
+         # remove 2021 since few tows
+         !year == "2021") %>%
+  pull(year) %>%
+  unique() %>% 
+  sort()
+fall_years <- dat %>%
+  filter(season_f == "wi",
+         # remove 2020 since majority of tows in north
+         !year == "2020") %>%
+  pull(year) %>%
+  unique() %>% 
+  sort()
+
+index_dat <- rbind(index_sum, #%>% filter(year %in% summer_years),
+                   index_fall #%>% filter(year %in% fall_years)
+                   ) %>%
   mutate(
-    # season = factor(season, levels = c("su", "fa"),
-    #                 labels = c("summer", "fall")),
+    season = factor(season, levels = c("su", "fa"),
+                    labels = c("summer", "fall")),
     log_lwr = log_est - (1.96 * se),
     log_upr = log_est + (1.96 * se),
     survey = case_when(
@@ -564,29 +561,40 @@ scaled_index <- ggplot(index_dat, aes(year, scale_est)) +
   theme(legend.position = "none")
 
 
-# check among season correlations, should be weaker for poly
-dum_s <- index_dat %>% filter(season == "summer", survey = "")
-cor(index_list[[1]]$log_est, index_list[[3]]$log_est)
-cor(index_list[[2]]$log_est, index_list[[4]]$log_est)
-
 
 # SPATIAL PREDS ----------------------------------------------------------------
 
-dat_tbl$exp_grid <- purrr::map(
-  dat_tbl$dataset, 
-  ~ {
-    if (.x == "summer") {
-      exp_grid %>% filter(week == "25")
-      } else {
-        exp_grid %>% filter(week == "42")  
-      }
-  }
-)
+# similar to index grid except only HSS and fall survey domain to highlight 
+# spatial contrasts
+spatial_grid <- pred_grid_list %>%
+  purrr::map(., function (x) {
+    fall_grid %>% 
+      mutate(
+        year = x$year,
+        year_f = x$year_f,
+        survey_f = x$survey_f,
+        season_f = x$season_f,
+        season_year_f = x$season_year_f,
+        target_depth = 0,
+        day_night = "DAY"
+      )
+  }) %>%
+  bind_rows() %>% 
+  filter(
+    !survey_f == "ipes"
+  ) %>% 
+  select(-c(depth, slope, shore_dist)) 
+# remove season-year factor levels not present in original dataframe
+levels(index_grid$season_year_f)[!levels(index_grid$season_year_f) %in%
+                                   levels(dat$season_year_f)] <- NA
+
 
 # make spatial 
 spatial_preds <- furrr::future_map2(
-  dat_tbl$fits, dat_tbl$exp_grid, function (x, y) {
-    predict(x, newdata = y, se_fit = FALSE, re_form = NULL)
+  dat_tbl$fit, dat_tbl$species, function (x, y) {
+    predict(x, newdata = spatial_grid, 
+            se_fit = FALSE, re_form = NULL) %>% 
+      mutate(species = y)
   },
   .options = furrr::furrr_options(seed = TRUE)
 )
