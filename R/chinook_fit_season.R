@@ -186,8 +186,9 @@ test9a <- sdmTMB(
   silent = FALSE
 )
 
-missing_surveys <-
-test9 <- updated(test9a, extra_time = )
+missing_surveys <- year_season_key$ys_index[!(year_season_key$ys_index %in% 
+                                                dat$ys_index)]
+test9 <- update(test9a, extra_time = missing_surveys)
 
 # purrr::map(list(test8a, test8b), tidy, "ran_pars")
 # 
@@ -243,32 +244,47 @@ grid_list <- readRDS(here::here("data", "spatial", "pred_ipes_grid.RDS")) %>%
 summer_grid <- grid_list$ipes_grid
 fall_grid <- grid_list$wcvi_grid
 
-pred_grid_list <- expand.grid(
-  year = unique(dat$year),
-  survey_f = unique(dat$survey_f),
-  season_f = unique(dat$season_f)
-) %>%
+pred_grid_list <- rbind(
+  year_season_key %>% mutate(survey_f = "hss"),
+  year_season_key %>% mutate(survey_f = "ipes")
+) %>% 
+#   expand.grid(
+#   year = unique(dat$year),
+#   survey_f = unique(dat$survey_f),
+#   season_f = unique(dat$season_f)
+# ) %>%
   mutate(
     year_f = as.factor(year),
     id = row_number(),
-    year_season_f = paste(season_f, year_f, sep = "_") %>% as.factor()
-  ) %>% 
-  filter(
-    !(season_f %in% c("wi") & survey_f == "ipes"),
-    !season_f == "sp"
+    survey_f = survey_f %>% as.factor()
   ) %>% 
   split(., .$id)
 
 
+## SPATIAL PREDICTIONS ---------------------------------------------------------
 
-spatial_preds <- purrr::map(
-  dat_tbl$fits, 
-  ~ predict(.x, newdata = exp_grid, se_fit = FALSE, re_form = NULL)
-)
-sp_preds_all <- rbind(
-  spatial_preds[[1]] %>% mutate(model = "ri"),
-  spatial_preds[[2]] %>% mutate(model = "fe")
-)
+spatial_grid <- pred_grid_list %>%
+  purrr::map(., function (x) {
+    fall_grid %>% 
+      mutate(
+        year = x$year,
+        year_f = x$year_f,
+        survey_f = x$survey_f,
+        season_f = x$season_f,
+        ys_index = x$ys_index,
+        target_depth = 0,
+        day_night = "DAY"
+      )
+  }) %>%
+  bind_rows() %>% 
+  filter(
+    !survey_f == "ipes"
+  ) %>% 
+  select(-c(depth, slope, shore_dist)) 
+
+spatial_preds <- predict(test9, newdata = spatial_grid, 
+                         se_fit = FALSE, re_form = NULL)
+
  
 plot_map_raster <- function(dat, column = est) {
   ggplot(dat, aes(X, Y, fill = {{ column }})) +
@@ -276,41 +292,59 @@ plot_map_raster <- function(dat, column = est) {
     coord_fixed() +
     scale_fill_viridis_c()
 }
-plot_map_raster(sp_preds_all %>% filter(year == "2012"), est) +
-  facet_grid(model~season_f)
 
-sp_preds_all %>% 
-  filter(year == "2014",
-         model == "fe") %>% 
-  pivot_longer(cols = starts_with("zeta_s")) %>% 
+plot_map_raster(spatial_preds %>% filter(year == "2012"), est) +
+  facet_wrap(~season_f)
+
+spatial_preds %>% 
+  filter(year == "2014") %>% 
+  pivot_longer(cols = starts_with("zeta_s_season")) %>% 
   plot_map_raster(., value) +
-  facet_wrap(~name)
+  facet_wrap(~name) +
+  scale_fill_gradient2()
 
-plot_map_raster(sp_preds_all %>% 
-                  filter(year %in% c("1999", "2004", "2009"), season_f == "wi"), 
+spatial_preds %>% 
+  filter(year == "2014") %>% 
+  pivot_longer(cols = starts_with("zeta_s_year")) %>% 
+  plot_map_raster(., value) +
+  facet_wrap(~name) +
+  scale_fill_gradient2()
+
+year_seq <- c("1999", "2004", "2009", "2014", "2019")
+plot_map_raster(spatial_preds %>% 
+                  filter(year %in% year_seq), 
                 est) +
-  facet_grid(year~model)
+  facet_grid(year~season_f)
 
 
-## indices from plausible models -----------------------------------------------
+## INDICES ---------------------------------------------------------------------
 
+# add unique years and seasons
+index_grid <- pred_grid_list %>%
+  purrr::map(., function (x) {
+    dum_grid <- if (x$season_f == "su") summer_grid else fall_grid
+    
+    dum_grid %>% 
+      mutate(
+        year = x$year,
+        year_f = x$year_f,
+        survey_f = x$survey_f,
+        season_f = x$season_f,
+        ys_index = x$ys_index,
+        target_depth = 0,
+        day_night = "DAY"
+      )
+  }) %>%
+  bind_rows() %>% 
+  mutate(
+    fake_survey = case_when(
+      year > 2016 & survey_f == "hss" & season_f == "su" ~ "1",
+      year < 2017 & survey_f == "ipes" & season_f == "su" ~ "1",
+      TRUE ~ "0")
+  ) %>% 
+  select(-c(depth, slope, shore_dist))
 
-
-# check how predictions incorporate RIs
-exp_grid_no_ri <- exp_grid_hss %>% 
-  filter(season_f == "su", 
-         is.na(season_year_f))
-pred1 <- predict(dat_tbl$fits[[1]], newdata = exp_grid_no_ri[1:100, ],
-                 se_fit = FALSE,
-                 re_form_iid = NULL)
-pred2 <- predict(dat_tbl$fits[[1]], newdata = exp_grid_no_ri[1:100, ],
-                 se_fit = FALSE,
-                 re_form_iid = NA)
-pred3 <- predict(dat_tbl$fits[[1]], 
-                 newdata = exp_grid_no_ri[1:100, ] %>% 
-                   mutate(season_year_f = "su_2019"),
-                 se_fit = FALSE,
-                 re_form_iid = NULL)
+index_grid_hss <- index_grid %>% filter(survey_f == "hss")
 
 
 # scalar for spatial predictions; since preds are in m3, multiply by
@@ -318,30 +352,11 @@ pred3 <- predict(dat_tbl$fits[[1]],
 # assuming mean net opening (13 m)
 sp_scalar <- 1000^2 * 13
 
-preds_ri <- predict(test6a, 
-                 newdata = exp_grid_hss %>% 
-                   filter(season_f == "su", 
-                          !is.na(season_year_f )), 
+preds <- predict(test9, 
+                 newdata = index_grid_hss, 
                  se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
-preds_tv <- predict(dat_tbl$fits[[2]], 
-                 newdata = exp_grid_hss %>% 
-                   filter(season_f == "su"), 
-                 se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
-preds_ri_fa <- predict(dat_tbl$fits[[1]], 
-                    newdata = exp_grid_hss %>% 
-                      filter(season_f == "wi"), 
-                    se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
-preds_tv_fa <- predict(dat_tbl$fits[[2]], 
-                    newdata = exp_grid_hss %>% 
-                      filter(season_f == "wi"), 
-                    se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
+index_full <- get_index(preds, area = sp_scalar, bias_correct = TRUE)
 
-index_list <- furrr::future_map(
-  list(preds_ri, preds_tv, preds_ri_fa, preds_tv_fa),
-  get_index,
-  area = sp_scalar,
-  bias_correct = TRUE
-)
 
 # define real years
 summer_years <- dat %>% 
@@ -357,22 +372,11 @@ fall_years <- dat %>%
   pull(year) %>% 
   unique()
 
-indices <- list(
-  index_list[[1]] %>% 
-    mutate(model = "ri",
-           season = "summer"),
-  index_list[[2]] %>% 
-    mutate(model = "tv",
-           season = "summer"),
-  index_list[[3]] %>% 
-    mutate(model = "ri",
-           season = "fall"),
-  index_list[[4]] %>% 
-    mutate(model = "tv",
-           season = "fall")
-) %>% 
-  bind_rows() %>% 
+indices <- index_full %>%
+  left_join(., year_season_key, by = "ys_index") %>% 
+  filter(!season_f == "sp") %>% 
   mutate(
+    season = fct_recode(season_f, "summer" = "su", "fall" = "wi"),
     survey = case_when(
       season == "fall" & year %in% fall_years ~ "sampled",
       season == "summer" & year %in% summer_years ~ "sampled",
@@ -382,8 +386,8 @@ indices <- list(
 saveRDS(indices, here::here("data", "fits", "ck_season_indices.rds"))
 
 ggplot(indices, aes(year, log_est)) +
-  geom_point(aes(colour = model, shape = survey),
-             # shape = 21,
+  geom_point(aes(fill = survey),
+             shape = 21,
              position = position_dodge(width=0.3)) +
   # geom_pointrange(aes(ymin = lwr, ymax = upr, fill = model),
   #                 shape = 21, position = position_dodge(width=0.3)) +
@@ -392,8 +396,9 @@ ggplot(indices, aes(year, log_est)) +
   facet_wrap(~season)
 
 # check among season correlations, should be weaker for poly
-cor(index_list[[1]]$log_est, index_list[[3]]$log_est)
-cor(index_list[[2]]$log_est, index_list[[4]]$log_est)
+fall_dat <- indices %>% filter(season == "fall") %>% pull(log_est)
+summ_dat <- indices %>% filter(season == "summer") %>% pull(log_est)
+cor(fall_dat, summ_dat)
 
 
 ## compare non-st indices ------------------------------------------------------
