@@ -167,13 +167,13 @@ test9a <- sdmTMB(
   time_varying_type = "rw0",
   time = "ys_index",
   spatiotemporal = "off",
-  anisotropy = FALSE,
+  anisotropy = TRUE,
   share_range = TRUE,
-  priors = sdmTMBpriors(
-    phi = halfnormal(0, 10),
-    matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
-    matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
-  ),
+  # priors = sdmTMBpriors(
+  #   phi = halfnormal(0, 10),
+  #   matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+  #   matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+  # ),
   control = sdmTMBcontrol(
     newton_loops = 1,
     map = list(

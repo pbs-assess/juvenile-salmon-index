@@ -10,6 +10,11 @@
 ## Mar 28, 2023
 
 
+# alternative branch
+devtools::install_github("https://github.com/pbs-assess/sdmTMB",
+                         ref = "zeta-intercept")
+
+
 library(tidyverse)
 library(sdmTMB)
 library(ggplot2)
@@ -17,30 +22,46 @@ library(sdmTMBextra)
 
 
 # downscale data and predictive grid
-dat <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>% 
+dat_in <- readRDS(here::here("data", "catch_survey_sbc.rds")) 
+
+
+# make key so that missing year-season combinations can be indexed
+year_season_key <- expand.grid(
+  year = unique(dat_in$year) %>% sort(),
+  season_f = unique(dat_in$season_f) %>% sort()
+) %>% 
+  arrange(year, season_f) %>% 
   mutate(
-    adj_year = ifelse(season_f == "sp", year - 1, year),
-    year_f = as.factor(adj_year),
-    utm_x_1000 = utm_x / 1000,
-    utm_y_1000 = utm_y / 1000,
-    effort = log(volume_m3),
-    month_f = as.factor(month),
+    # make consecutive index for model fitting
+    ys_index = seq(1, nrow(.), by = 1),
+    year_season_f = paste(year, season_f, sep = "_") %>% as.factor()
+  )
+
+
+# downscale data and predictive grid
+dat <- dat_in %>% 
+  mutate(
+    year_f = as.factor(year),
     yday = lubridate::yday(date),
     utm_x_1000 = utm_x / 1000,
     utm_y_1000 = utm_y / 1000,
     effort = log(volume_m3),
     scale_season = scale(as.numeric(season_f))[ , 1],
-    season_year_f = paste(season_f, year_f, sep = "_") %>% as.factor(),
+    year_season_f = paste(year_f, season_f, sep = "_") %>% as.factor(),
     day_night = as.factor(day_night)
   ) %>% 
+  left_join(., year_season_key %>% select(ys_index, year_season_f)) %>% 
   filter(!species == "steelhead") %>% 
   droplevels()
 
 
+ggplot(dat %>% filter(!n_juv == "0")) +
+  geom_boxplot(aes(x = season_f, y = log(n_juv))) +
+  facet_wrap(~species)
+
 ## plotting color palette
 col_pal <- c('#7fc97f','#beaed4','#fdc086','#ffff99','#386cb0')
 names(col_pal) <- c('chinook','pink','chum','coho','sockeye')
-
 
 
 # prep multisession
@@ -66,89 +87,62 @@ spde <- make_mesh(
   mesh = inla_mesh_raw
 ) 
 
-dat_tbl <- dat %>%
-  group_by(species) %>%
-  group_nest() #%>%
-  # mutate(
-    # anisotropy = ifelse(species == "chinook" & dataset == "summer", FALSE, TRUE),
-    # time_model = ifelse(species == "sockeye" & dataset == "fall", "rw", "ar1")
-  # )
+# specify missing season-year levels
+missing_surveys <- year_season_key$ys_index[!(year_season_key$ys_index %in% 
+                                                dat$ys_index)]
 
 
-fits_list <- furrr::future_map(
-  dat_tbl$data,
-  function(dat_in) {
-    # fit_ri <- sdmTMB(
-    #   n_juv ~ 0 + year_f + season_f + target_depth + day_night + survey_f +
-    #      dist_to_coast_km + (1 | season_year_f),
-    #   offset = dat_in$effort,
-    #   data = dat_in,
-    #   mesh = spde,
-    #   family = sdmTMB::nbinom2(),
-    #   spatial = "off",
-    #   spatial_varying = ~ 0 + season_f,
-    #   # time = "year",
-    #   # spatiotemporal = "ar1",
-    #   anisotropy = FALSE,
-    #   share_range = TRUE,
-    #   priors = sdmTMBpriors(
-    #     phi = halfnormal(0, 10),
-    #     matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
-    #     matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
-    #   ),
-    #   control = sdmTMBcontrol(
-    #     newton_loops = 1
-    #   ),
-    #   silent = FALSE
-    # )
-    # fit_tv <- 
-      sdmTMB(
-        n_juv ~ 0 + year_f + season_f + target_depth + day_night + survey_f + 
-          dist_to_coast_km,
-        offset = dat_in$effort,
-        data = dat_in,
-        mesh = spde,
-        family = sdmTMB::nbinom2(),
-        spatial = "off",
-        spatial_varying = ~ 0 + season_f,
-        time_varying = ~ 1 + season_f,
-        time_varying_type = "rw0",
-        time = "year",
-        spatiotemporal = "ar1",
-        anisotropy = FALSE,
-        share_range = TRUE,
-        priors = sdmTMBpriors(
-          phi = halfnormal(0, 10),
-          matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
-          matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
-        ),
-        control = sdmTMBcontrol(
-          newton_loops = 1,
-          start = list(
-            ln_tau_V = matrix(log(c(0.25, 0.25, 0.25)), nrow = 3, ncol = 1)
-          ),
-          map = list(
-            ln_tau_V = factor(c(NA, NA, NA))
-          )
-        ),
-        silent = FALSE
-      )
-    # list(fit_ri, fit_tv)
-  }
-)
+dat_tbl <- readRDS(here::here("data", "fits", "all_spatial_varying_new.rds"))
 
-
-
-dat_tbl$model <- "tv"
-dat_tbl$fit <- fits_list
-
-saveRDS(dat_tbl, here::here("data", "fits", "all_spatial_varying_eps.rds"))
-dat_tbl <- readRDS(here::here("data", "fits", "all_spatial_varying_no_eps.rds"))
-
+# dat_tbl <- dat %>%
+#   group_by(species) %>%
+#   group_nest()
+# 
+# # fit
+# fits_list <- furrr::future_map(
+#   dat_tbl$data,
+#   function(dat_in) {
+#    sdmTMB(
+#      n_juv ~ 0 + season_f + target_depth + day_night + survey_f + 
+#        dist_to_coast_km,
+#      offset = dat_in$effort,
+#      data = dat_in,
+#      mesh = spde,
+#      family = sdmTMB::nbinom2(),
+#      spatial = "off",
+#      spatial_varying = ~ 0 + season_f + year_f,
+#      time_varying = ~ 1,
+#      time_varying_type = "rw0",
+#      time = "ys_index",
+#      spatiotemporal = "off",
+#      anisotropy = TRUE,
+#      share_range = TRUE,
+#      extra_time = missing_surveys,
+#      # priors = sdmTMBpriors(
+#      #   phi = halfnormal(0, 10),
+#      #   matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+#      #   matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+#      # ),
+#      control = sdmTMBcontrol(
+#        newton_loops = 1,
+#        map = list(
+#          # 1 per season, fix all years to same value
+#          ln_tau_Z = factor(
+#            c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
+#          )
+#        )
+#      ),
+#      silent = FALSE
+#    )
+#   }
+# )
+# 
+# dat_tbl$model <- "tv"
+# dat_tbl$fit <- fits_list
+# 
+# saveRDS(dat_tbl, here::here("data", "fits", "all_spatial_varying_new.rds"))
 
 purrr::map(dat_tbl$fit, sanity)
-dat_tbl$AIC <- purrr::map(dat_tbl$fit, AIC) %>% unlist()
-
 
 # check residuals
 dat_tbl$sims <- purrr::map(dat_tbl$fit, simulate, nsim = 50)
@@ -159,41 +153,64 @@ qq_list <- purrr::map2(dat_tbl$sims, dat_tbl$fit, dharma_residuals)
 
 # fixed parameter estimates
 fix_pars <- purrr::pmap(
-  list(dat_tbl$fit, dat_tbl$species, dat_tbl$model),
-  function(x, y, z) {
+  list(dat_tbl$fit, dat_tbl$species),
+  function(x, y) {
     tidy(x, effects = "fixed", conf.int = T) %>% 
       mutate(
-        species = y,
-        model = z
+        species = y
       ) 
   }
 ) %>% 
   bind_rows() %>% 
-  filter(term %in% c("season_fsu", "season_fwi", "survey_fipes", 
+  filter(term %in% c("season_fsp", "season_fsu", "season_fwi", "survey_fipes", 
                      "day_nightNIGHT")) %>% 
   mutate(
-    term = fct_recode(as.factor(term), 
+    term2 = ifelse(grepl("season", term), "Season", term),
+    term = fct_recode(as.factor(term), "Spring" = "season_fsp", 
                       "Summer" = "season_fsu", "Fall" = "season_fwi",
                       "IPES Survey" = "survey_fipes", 
                       "Nocturnal Sampling" = "day_nightNIGHT")
   )
 
-png(here::here("figs", "ms_figs_season", "fix_ints.png"), height = 3, width = 4,
-    units = "in", res = 200)
-ggplot(
-  fix_pars,
+
+shape_pal <- c(23, 24, 25)
+names(shape_pal) <- c("Spring", "Summer", "Fall")
+
+alpha_1 <- ggplot(
+  fix_pars %>% filter(!term %in% c("IPES Survey", "Nocturnal Sampling")),
   aes(species, estimate, ymin = conf.low, ymax = conf.high, fill = species,
-      shape = model)
+      shape = term)
 ) +
   ggsidekick::theme_sleek() +
   scale_fill_manual(values = col_pal) +
-  scale_shape_manual(values = c(23, 24)) +
-  geom_pointrange(position = position_dodge(width = 0.2)) +
-  geom_hline(yintercept = 0, lty = 2, colour = "red") +
-  facet_wrap(~term, nrow = 2) +
-  labs(y = "Parameter Estimate") +
+  scale_shape_manual(values = shape_pal, name = "") +
+  geom_pointrange(position = position_dodge(width = 0.35)) +
   guides(fill = "none") +
-  theme(axis.title.x = element_blank())
+  theme(axis.title = element_blank(),
+        axis.text.x = element_blank()) +
+  facet_wrap(~term2)
+
+alpha_2 <- ggplot(
+  fix_pars %>% filter(term %in% c("IPES Survey", "Nocturnal Sampling")),
+  aes(species, estimate, ymin = conf.low, ymax = conf.high, fill = species)
+) +
+  ggsidekick::theme_sleek() +
+  scale_fill_manual(values = col_pal) +
+  geom_pointrange(position = position_dodge(width = 0.2),
+                  shape = 21) +
+  geom_hline(yintercept = 0, lty = 2, colour = "red") +
+  facet_wrap(~term) +
+  guides(fill = "none") +
+  theme(axis.title = element_blank())
+
+plot_g <- cowplot::plot_grid(alpha_1, alpha_2, ncol = 1)
+y_grob <- grid::textGrob("Parameter Estimate", rot = 90)
+
+png(here::here("figs", "ms_figs_season", "fix_ints.png"), height = 3, width = 4,
+    units = "in", res = 200)
+gridExtra::grid.arrange(
+  gridExtra::arrangeGrob(plot_g, left = y_grob)
+)
 dev.off()
 
 
@@ -351,15 +368,7 @@ ggplot(
   ylab("Abundance Index")
 
 
-
 ## SPATIAL GRID  ---------------------------------------------------------------
-
-# shape file for coastline
-coast <- rbind(rnaturalearth::ne_states( "United States of America", 
-                                         returnclass = "sf"), 
-               rnaturalearth::ne_states( "Canada", returnclass = "sf")) %>% 
-  sf::st_crop(., xmin = -129, ymin = 48.25, xmax = -124, ymax = 51.2) %>% 
-  sf::st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
 
 # predictive grid
 grid_list <- readRDS(here::here("data", "spatial", "pred_ipes_grid.RDS")) %>% 
@@ -374,26 +383,19 @@ grid_list <- readRDS(here::here("data", "spatial", "pred_ipes_grid.RDS")) %>%
 summer_grid <- grid_list$ipes_grid
 fall_grid <- grid_list$wcvi_grid
 
-pred_grid_list <- expand.grid(
-  year = unique(dat$year),
-  survey_f = unique(dat$survey_f),
-  season_f = unique(dat$season_f)
-) %>%
+pred_grid_list <- rbind(
+  year_season_key %>% mutate(survey_f = "hss"),
+  year_season_key %>% mutate(survey_f = "ipes")
+) %>% 
   mutate(
     year_f = as.factor(year),
     id = row_number(),
-    season_year_f = paste(season_f, year_f, sep = "_") %>% as.factor()
-  ) %>% 
-  filter(
-    # remove fall ipes surveys (doesn't meet definition)
-    !(season_f %in% c("wi") & survey_f == "ipes"),
-    !season_f == "sp"#,
-    # season_year_f %in% unique(dat$season_year_f)
+    survey_f = survey_f %>% as.factor()
   ) %>% 
   split(., .$id)
 
 
-## INDEX -----------------------------------------------------------------------
+## INDICES ---------------------------------------------------------------------
 
 # add unique years and seasons
 index_grid <- pred_grid_list %>%
@@ -406,7 +408,7 @@ index_grid <- pred_grid_list %>%
         year_f = x$year_f,
         survey_f = x$survey_f,
         season_f = x$season_f,
-        season_year_f = x$season_year_f,
+        ys_index = x$ys_index,
         target_depth = 0,
         day_night = "DAY"
       )
@@ -418,15 +420,21 @@ index_grid <- pred_grid_list %>%
       year < 2017 & survey_f == "ipes" & season_f == "su" ~ "1",
       TRUE ~ "0")
   ) %>% 
-  select(-c(depth, slope, shore_dist)) 
-# remove season-year factor levels not present in original dataframe
-levels(index_grid$season_year_f)[!levels(index_grid$season_year_f) %in%
-                                 levels(dat$season_year_f)] <- NA
+  select(-c(depth, slope, shore_dist))
 
 
-## crashes with RI model so use TV only
-sub_tbl <- dat_tbl# %>% 
-  # filter(model == "tv")
+# predictions for index (set to HSS reference values)
+index_grid_hss <- index_grid %>% filter(survey_f == "hss")
+ind_preds <- purrr::map(
+  dat_tbl %>% pull(fit),
+  ~ {
+    predict(.x,
+            newdata = index_grid_hss,
+            se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
+  }
+)
+saveRDS(ind_preds,
+        here::here("data", "fits", "all_spatial_varying_new_ind_preds.rds"))
 
 
 # scalar for spatial predictions; since preds are in m3, multiply by
@@ -434,98 +442,54 @@ sub_tbl <- dat_tbl# %>%
 # assuming mean net opening (13 m)
 sp_scalar <- 1000^2 * 13
 
-
-# summer high seas
-ind_preds_sum <- purrr::map(
-  sub_tbl %>% pull(fit),
-  ~ {
-    predict(.x,
-            newdata = index_grid %>% 
-              filter(survey_f == "hss", season_f == "su"),
-            se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
-  }
-)
-index_list_sum <- furrr::future_map(
-  ind_preds_sum,
+index_list <- purrr::map(
+  ind_preds,
   get_index,
   area = sp_scalar,
   bias_correct = TRUE
 )
 
-# fall high seas
-ind_preds_fall <- purrr::map(
-  sub_tbl %>% pull(fit),
-  ~ {
-    predict(.x,
-            newdata = index_grid %>% 
-              filter(survey_f == "hss", season_f == "wi"),
-            se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
-  }
-)
-index_list_fall <- furrr::future_map(
-  ind_preds_fall, 
-  get_index,
-  area = sp_scalar,
-  bias_correct = TRUE
-)
 
-index_sum <- purrr::map2(
-  index_list_sum,
-  sub_tbl$species,
-  function (x, sp) {
-    x$species <- sp
-    x$season <- "su"
-    return(x)
-  }) %>%
-  bind_rows()
-index_fall <- purrr::map2(
-  index_list_fall,
-  sub_tbl$species,
-  function (x, sp) {
-    x$species <- sp
-    x$season <- "fa"
-    return(x)
-  }) %>%
-  bind_rows()
-
-
-# identify viable years by season
-summer_years <- dat %>%
-  filter(season_f == "su",
-         # remove 2021 since few tows
-         !year == "2021") %>%
-  pull(year) %>%
-  unique() %>% 
-  sort()
-fall_years <- dat %>%
+# define years where survey occurred
+summer_years <- dat %>% 
+  filter(season_f == "su", 
+         # remove 2021 since only partial survey
+         !year_f == "2021") %>%
+  pull(year) %>% 
+  unique()
+fall_years <- dat %>% 
   filter(season_f == "wi",
-         # remove 2020 since majority of tows in north
-         !year == "2020") %>%
-  pull(year) %>%
-  unique() %>% 
-  sort()
+         # remove 2020 since most of survey was outside of grid
+         !year_f == "2020") %>%
+  pull(year) %>% 
+  unique()
 
-index_dat <- rbind(index_sum, #%>% filter(year %in% summer_years),
-                   index_fall #%>% filter(year %in% fall_years)
-                   ) %>%
+
+index_dat <- purrr::map2(
+  dat_tbl$species, index_list,
+  ~ .y %>% 
+    mutate(species = .x) 
+) %>%
+  bind_rows() %>% 
+  left_join(., year_season_key, by = "ys_index") %>% 
+  filter(!season_f == "sp") %>% 
   mutate(
-    season = factor(season, levels = c("su", "fa"),
-                    labels = c("summer", "fall")),
-    log_lwr = log_est - (1.96 * se),
-    log_upr = log_est + (1.96 * se),
+    season = fct_recode(season_f, "summer" = "su", "fall" = "wi"),
     survey = case_when(
       season == "fall" & year %in% fall_years ~ "sampled",
       season == "summer" & year %in% summer_years ~ "sampled",
       TRUE ~ "no survey"
-    )
+    ),
+    log_lwr = log_est - (1.96 * se),
+    log_upr = log_est + (1.96 * se)
   ) %>%
   group_by(species, season) %>%
   mutate(
-    mean_log_est = mean(log_est)
-    # max_est = max(est),
-    # scale_est = est / max_est,
-    # scale_lwr = lwr / max_est,
-    # scale_upr = upr / max_est
+    mean_log_est = mean(log_est),
+    max_est = max(est),
+    scale_est = est / max_est,
+    scale_lwr = lwr / max_est,
+    scale_upr = upr / max_est
   ) %>%
   ungroup()
 
@@ -549,20 +513,37 @@ log_index <- ggplot(index_dat, aes(year, log_est)) +
   theme(legend.position = "none")
 
 
-
 scaled_index <- ggplot(index_dat, aes(year, scale_est)) +
-  geom_pointrange(aes(ymin = scale_lwr, ymax = scale_upr, fill = species),
-                  shape = 21) +
+  geom_pointrange(aes(ymin = scale_lwr, ymax = scale_upr, fill = species,
+                      shape = survey)) +
   coord_cartesian(ylim = c(0, 2.5)) +
   labs(x = "Year", y = "Log Abundance Index") +
+  scale_shape_manual(values = shape_pal) +
   ggsidekick::theme_sleek() +
   facet_grid(species~season, scales = "free_y") +
   scale_fill_manual(values = col_pal) +
   theme(legend.position = "none")
 
 
+# check among season correlations
+index_dat %>% 
+  split(., .$species) %>% 
+  purrr::map(., function (x) {
+    fall_dat <- x %>% filter(season == "fall") %>% pull(log_est)
+    summ_dat <- x %>% filter(season == "summer") %>% pull(log_est)
+    cor(fall_dat, summ_dat)
+  })
+
 
 # SPATIAL PREDS ----------------------------------------------------------------
+
+# shape file for coastline
+coast <- rbind(rnaturalearth::ne_states( "United States of America", 
+                                         returnclass = "sf"), 
+               rnaturalearth::ne_states( "Canada", returnclass = "sf")) %>% 
+  sf::st_crop(., xmin = -129, ymin = 48.25, xmax = -124, ymax = 51.2) %>% 
+  sf::st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
+
 
 # similar to index grid except only HSS and fall survey domain to highlight 
 # spatial contrasts
@@ -574,7 +555,7 @@ spatial_grid <- pred_grid_list %>%
         year_f = x$year_f,
         survey_f = x$survey_f,
         season_f = x$season_f,
-        season_year_f = x$season_year_f,
+        ys_index = x$ys_index,
         target_depth = 0,
         day_night = "DAY"
       )
@@ -584,54 +565,62 @@ spatial_grid <- pred_grid_list %>%
     !survey_f == "ipes"
   ) %>% 
   select(-c(depth, slope, shore_dist)) 
-# remove season-year factor levels not present in original dataframe
-levels(index_grid$season_year_f)[!levels(index_grid$season_year_f) %in%
-                                   levels(dat$season_year_f)] <- NA
 
-
-# make spatial 
-spatial_preds <- furrr::future_map2(
-  dat_tbl$fit, dat_tbl$species, function (x, y) {
-    predict(x, newdata = spatial_grid, 
+spatial_preds_list <- purrr::map2(
+  dat_tbl$fit,
+  dat_tbl$species,
+  ~ {
+    predict(.x,
+            newdata = spatial_grid,
             se_fit = FALSE, re_form = NULL) %>% 
-      mutate(species = y)
-  },
-  .options = furrr::furrr_options(seed = TRUE)
+      mutate(species = .y)
+  }
 )
-dat_tbl$sp_preds <- spatial_preds
+spatial_preds_list <- spatial_preds
+spatial_preds <- spatial_preds_list %>%
+  bind_rows() %>% 
+  filter(!season_f == "sp")
+saveRDS(spatial_preds,
+        here::here("data", "fits", "all_spatial_varying_new_sp_preds.rds"))
+
+
+plot_map_raster <- function(dat, column = est) {
+  ggplot(dat, aes(X, Y, fill = {{ column }})) +
+    geom_raster() +
+    coord_fixed() +
+    scale_fill_viridis_c()
+}
 
 
 # spatiotemporal and total preds random fields for subset of years
 year_seq <- seq(1999, 2019, by = 5)
-sub_spatial <- dat_tbl %>% 
-  unnest(cols = "sp_preds") %>%
-  group_by(species, dataset) %>% 
+sub_spatial <- spatial_preds %>% 
+  filter(year %in% year_seq) %>% 
+  group_by(species) %>% 
   mutate(
     grid_est = sp_scalar * exp(est),
-    scale_est = grid_est / max(grid_est),
-    # fix large scaled values
-    scale_est2 = ifelse(scale_est > 0.25, 
-                        0.25, 
-                        scale_est)
+    scale_est = grid_est / max(grid_est)
   ) %>% 
-  ungroup() %>% 
-  filter(year %in% year_seq)
-eps_max <- quantile(sub_spatial$epsilon_st, 0.9999)
+  ungroup() 
+scale_max <- quantile(sub_spatial$scale_est, 0.99)
+sub_spatial$scale_est2 <- ifelse(
+  sub_spatial$scale_est > scale_max, 
+  scale_max, 
+  sub_spatial$scale_est
+)
 
 png(here::here("figs", "ms_figs_season", 
-               "scaled_sp_preds.png"), 
+               "scaled_sp_preds_su.png"), 
     height = 8, width = 8, units = "in", res = 200)
 ggplot() + 
-  geom_raster(data = sub_spatial %>% filter(dataset == "summer"),
+  geom_raster(data = sub_spatial %>% filter(season_f == "su"),
               aes(X, Y, fill = scale_est2)) +
   coord_fixed() +
   geom_sf(data = coast, color = "black", fill = "white") +
   ggsidekick::theme_sleek() +
   scale_fill_viridis_c(
     trans = "sqrt",
-    name = "Scaled\nAbundance",
-    breaks = c(0, 0.05, 0.15, 0.25),
-    labels = c("0", "0.05", "0.15", ">0.25")
+    name = "Scaled\nAbundance"
   ) +
   facet_grid(year~species) +
   theme(axis.title = element_blank(),
@@ -639,43 +628,68 @@ ggplot() +
 dev.off()
 
 
-png(here::here("figs", "ms_figs_season", "st_rf.png"), 
+png(here::here("figs", "ms_figs_season", 
+               "scaled_sp_preds_fall.png"), 
+    height = 8, width = 8, units = "in", res = 200)
+ggplot() + 
+  geom_raster(data = sub_spatial %>% filter(season_f == "wi"),
+              aes(X, Y, fill = scale_est2)) +
+  coord_fixed() +
+  geom_sf(data = coast, color = "black", fill = "white") +
+  ggsidekick::theme_sleek() +
+  scale_fill_viridis_c(
+    trans = "sqrt",
+    name = "Scaled\nAbundance"
+  ) +
+  facet_grid(year~species) +
+  theme(axis.title = element_blank(),
+        axis.text = element_blank())
+dev.off()
+
+year_field_seq <- paste("zeta_s_year_f", year_seq, sep = "")
+omega_yr <- sub_spatial %>% 
+  # values will be duplicated across years, seasons and surveys; select one
+  filter(year_f == year_seq[1], season_f == "su") %>% 
+  select(X, Y, species, year_field_seq) %>% 
+  pivot_longer(cols = starts_with("zeta"), values_to = "omega_est", 
+             names_to = "year", names_prefix = "zeta_s_year_f")
+
+png(here::here("figs", "ms_figs_season", "year_rf.png"), 
     height = 6, width = 7.5, units = "in", res = 200)
 ggplot() +
-  geom_raster(data = sub_spatial %>% filter(dataset == "summer"),
-              aes(X, Y, fill = epsilon_st)) +
+  geom_raster(data = omega_yr,
+              aes(X, Y, fill = omega_est)) +
   geom_sf(data = coast, color = "black", fill = "white") +
   ggsidekick::theme_sleek() +
   scale_fill_distiller(palette = "Spectral", 
-                       limits = c(-1 * eps_max, eps_max),
+                       # limits = c(-1 * eps_max, eps_max),
                        name = "Spatial\nField") +
   facet_grid(year~species) +
   theme(
     axis.title = element_blank(),
-    legend.position = "top",
     axis.text = element_blank(),
     legend.key.size = unit(1, 'cm')
   )
 dev.off()
 
 
-# spatial random effects by species
-omega_dat <- dat_tbl %>% 
-  unnest(cols = "sp_preds") %>% 
-  filter(survey_f == "hss",
-         year == unique(dat$year)[1]) 
-omega_max <- max(abs(omega_dat$omega_s))
+# spatial random effects by season
+omega_season <- sub_spatial %>% 
+  # values will be duplicated across years, seasons and surveys; select one
+  filter(year_f == year_seq[1], season_f == "wi") %>% 
+  select(X, Y, species, starts_with("zeta_s_season_")) %>%
+  pivot_longer(cols = starts_with("zeta"), values_to = "omega_est", 
+               names_to = "season", names_prefix = "zeta_s_season_f") %>% 
+  filter(!season == "sp")
 
-png(here::here("figs", "ms_figs_season", "spatial_rf.png"), 
+png(here::here("figs", "ms_figs_season", "seasonal_rf.png"), 
     height = 6, width = 7.5, units = "in", res = 200)
 ggplot() +
-  geom_raster(data = omega_dat, aes(X, Y, fill = omega_s)) +
+  geom_raster(data = omega_season, aes(X, Y, fill = omega_est)) +
   geom_sf(data = coast, color = "black", fill = "white") +
   ggsidekick::theme_sleek() +
-  scale_fill_distiller(palette = "Spectral", 
-                       limits = c(-1 * omega_max, omega_max),
-                       name = "Spatial\nField") +
-  facet_grid(dataset~species) +
+  scale_fill_gradient2(name = "Spatial\nField") +
+  facet_grid(season~species) +
   theme(
     axis.title = element_blank(),
     legend.position = "top",
@@ -683,7 +697,3 @@ ggplot() +
     legend.key.size = unit(1, 'cm')
   )
 dev.off()
-
-
-# FIXED EFFECTS ----------------------------------------------------------------
-
