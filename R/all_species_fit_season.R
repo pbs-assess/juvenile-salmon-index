@@ -95,13 +95,13 @@ missing_surveys <- year_season_key$ys_index[!(year_season_key$ys_index %in%
 
 dat_tbl <- readRDS(here::here("data", "fits", "all_spatial_varying_new.rds"))
 
-dat_tbl <- dat %>%
+dat_tbl2 <- dat %>%
   group_by(species) %>%
   group_nest()
 
 # fit
-fits_list <- furrr::future_map(
-  dat_tbl$data,
+fits_list_iso <- furrr::future_map(
+  dat_tbl2$data,
   function(dat_in) {
    sdmTMB(
      n_juv ~ 0 + season_f + day_night + survey_f +
@@ -117,14 +117,14 @@ fits_list <- furrr::future_map(
      time_varying_type = "rw0",
      time = "ys_index",
      spatiotemporal = "off",
-     anisotropy = TRUE,
+     anisotropy = FALSE,
      share_range = TRUE,
      extra_time = missing_surveys,
-     # priors = sdmTMBpriors(
-     #   phi = halfnormal(0, 10),
-     #   matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
-     #   matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
-     # ),
+     priors = sdmTMBpriors(
+       phi = halfnormal(0, 10),
+       matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+       matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+     ),
      control = sdmTMBcontrol(
        newton_loops = 1,
        map = list(
@@ -139,10 +139,10 @@ fits_list <- furrr::future_map(
   }
 )
 
-dat_tbl$model <- "tv"
-dat_tbl$fit <- fits_list
+dat_tbl2$model <- "tv_iso"
+dat_tbl2$fit <- fits_list_iso
 
-saveRDS(dat_tbl, here::here("data", "fits", "all_spatial_varying_new_scale.rds"))
+saveRDS(dat_tbl2, here::here("data", "fits", "all_spatial_varying_new_scale_iso.rds"))
 
 purrr::map(dat_tbl$fit, sanity)
 

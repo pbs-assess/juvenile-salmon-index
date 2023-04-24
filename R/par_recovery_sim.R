@@ -22,6 +22,11 @@ future::plan(future::multisession, workers = ncores - 3)
 fit_all_sp <- readRDS(
   here::here("data", "fits", "all_spatial_varying_new_scale.rds")) 
   
+fit_all_sp$fit_iso <- purrr::map(
+  fit_all_sp$fit, 
+  ~ update(.x, anisotropy = FALSE)
+)
+
 
 # simulate 20 MC draws from fitted models 
 set.seed(456)
@@ -151,7 +156,14 @@ sim_tbl$pars <- purrr::map(
   sim_tbl$sim_fit, function (x) {
     fix <- tidy(x, effects = "fixed")
     ran <- tidy(x, effects = "ran_pars")
-    rbind(fix, ran) 
+    rbind(fix, ran) %>% 
+      # add unique identifier for second range term
+      group_by(term) %>% 
+      mutate(
+        par_id = row_number(),
+        term = ifelse(par_id > 1, paste(term, par_id, sep = "_"), term)
+      ) %>% 
+      ungroup() 
   }
 )
 
@@ -169,7 +181,14 @@ fit_effs <- purrr::map2(
     fix <- tidy(x, effects = "fixed")
     ran <- tidy(x, effects = "ran_pars")
     rbind(fix, ran) %>% 
-      mutate(species = abbreviate(sp, minlength = 3)) 
+      mutate(species = abbreviate(sp, minlength = 3)) %>% 
+      # add unique identifier for second range term
+      group_by(term) %>% 
+      mutate(
+        par_id = row_number(),
+        term = ifelse(par_id > 1, paste(term, par_id, sep = "_"), term)
+      ) %>% 
+      ungroup()
   }
 ) %>% 
   bind_rows() 
