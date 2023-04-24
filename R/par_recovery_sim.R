@@ -7,7 +7,7 @@
 # consider rerunning with smooth for headrope, not cat. effects
 ## Reran Jan 31: "final" model after comparing spatiotemporal structures with
 # cross validation
-## Reran April 3: 
+## Reran April 21: 
 
 
 library(tidyverse)
@@ -20,30 +20,27 @@ future::plan(future::multisession, workers = ncores - 3)
 
 # fitted model from all_species_fit.R
 fit_all_sp <- readRDS(
-  here::here("data", "fits", "top_st_mod_all_sp_season.rds")) %>% 
-  mutate(
-    anisotropy = ifelse(species == "chinook" & dataset == "summer", FALSE, TRUE)
-  )
-
+  here::here("data", "fits", "all_spatial_varying_new_scale.rds")) 
   
 
 # simulate 20 MC draws from fitted models 
 set.seed(456)
 nsims = 20
 sims_list <- purrr::map(
-  fit_all_sp$fits, simulate, nsim = nsims, re_form = ~0,
+  fit_all_sp$fit, simulate, nsim = nsims#, re_form = ~0
 )
+
+# purrr::map2(sims_list, fit_all_sp$fit, sdmTMBextra::dharma_residuals)
 
 
 ## for each simulated dataset, refit model, recover pars and store
 
 # make a tibble for each species simulations
 sim_tbl <- purrr::pmap(
-  list(fit_all_sp$species, fit_all_sp$dataset, fit_all_sp$fits, sims_list),
-  function (sp, season, fits, x) {
+  list(fit_all_sp$species, fit_all_sp$fit, sims_list),
+  function (sp, fits, x) {
     tibble(
       species = sp,
-      season = season,
       iter = seq(1, nsims, by = 1),
       sim_dat = lapply(seq_len(ncol(x)), function(i) {
         # use fits instead of data in tibble because mismatched
@@ -55,74 +52,78 @@ sim_tbl <- purrr::pmap(
 ) %>% 
   bind_rows() %>% 
   left_join(., 
-            fit_all_sp %>% select(species, season = dataset, model, anisotropy,
-                                  fits), 
-            by = c("species", "season"))
-
-
-# pull meshes from fitted model to use (doesn't work so rebuild)
-# fit_all_sp$mesh <- purrr::map(fit_all_sp$st_mod, ~ .x$mesh)
-## use INLA mesh based on SA recommendations and model selection (see notes)
-dat_coords <- fit_all_sp$data[[1]] %>% 
-  select(utm_x_1000, utm_y_1000) %>% 
-  as.matrix()
-inla_mesh_raw <- INLA::inla.mesh.2d(
-  loc = dat_coords,
-  max.edge = c(1, 5) * 500,
-  cutoff = 20,
-  offset = c(20, 200)
-) 
-spde <- make_mesh(
-  fit_all_sp$data[[1]],
-  c("utm_x_1000", "utm_y_1000"),
-  mesh = inla_mesh_raw
-) 
-
+            fit_all_sp %>% select(species, fit), 
+            by = c("species"))
 
 
 ## test w/ single model
 dum <- sdmTMB(
-  fit_all_sp$fits[[1]]$formula[[1]],
+  sim_catch ~ 0 + season_f  + day_night + survey_f + 
+    scale_depth + scale_dist,
+  # target_depth + dist_to_coast_km,
   offset = sim_tbl$sim_dat[[1]]$effort,
   data = sim_tbl$sim_dat[[1]],
-  mesh =  fit_all_sp$fits[[1]]$spde,
+  mesh =  fit_all_sp$fit[[1]]$spde,
   family = sdmTMB::nbinom2(),
-  spatial = "on",
-  spatiotemporal = sim_tbl$model[[1]],
-  time = "year",
-  share_range = FALSE,
-  anisotropy = sim_tbl$anisotropy[[1]],
+  spatial = "off",
+  spatiotemporal = "off",
+  spatial_varying = ~ 0 + season_f + year_f,
+  time_varying = ~ 1,
+  time_varying_type = "rw0",
+  time = "ys_index",
+  extra_time = fit_all_sp$fit[[1]]$extra_time,
+  share_range = TRUE,
+  anisotropy = TRUE,
   control = sdmTMBcontrol(
-    # nlminb_loops = 2
-    newton_loops = 1
-  )
+    newton_loops = 1,
+    map = list(
+      # 1 per season, fix all years to same value
+      ln_tau_Z = factor(
+        c(1, 2, 3, 
+          rep(4, times = length(unique(sim_tbl$sim_dat[[1]]$year)) - 1))
+      )
+    )
+  ),
+  silent = FALSE
 )
 
-sim_tbl$species_season <- paste(sim_tbl$species, sim_tbl$season, sep = "_")
-sp_vec <- unique(sim_tbl$species_season)
-for (i in seq_along(sp_vec)) {
-  sim_tbl_sub <- sim_tbl %>% filter(species_season == sp_vec[i])
-  fit <- furrr::future_pmap(
-    list(sim_tbl_sub$sim_dat, sim_tbl_sub$fits, sim_tbl_sub$model,
-         sim_tbl_sub$anisotropy), 
-    function (x, fit, st_model, aniso) {
+# fit model to species (originally in parallel, but wouldn't run with furrr::)
+sp_vec <- unique(sim_tbl$species)
+for (i in 2:5) { #seq_along(sp_vec)) {
+  sim_tbl_sub <- sim_tbl %>% filter(species == sp_vec[i])
+  fit <- furrr::future_map2(
+    sim_tbl_sub$sim_dat, sim_tbl_sub$fit, 
+    function (x, fit) {
       sdmTMB(
-        fit$formula[[1]],
+        sim_catch ~ 0 + season_f  + day_night + survey_f + 
+          scale_depth + scale_dist,
+        # target_depth + dist_to_coast_km,
         offset = x$effort,
         data = x,
-        mesh = fit$spde,
+        mesh =  fit$spde,
         family = sdmTMB::nbinom2(),
-        spatial = "on",
-        spatiotemporal = st_model,
-        time = "year",
-        anisotropy = aniso,
+        spatial = "off",
+        spatiotemporal = "off",
+        spatial_varying = ~ 0 + season_f + year_f,
+        time_varying = ~ 1,
+        time_varying_type = "rw0",
+        time = "ys_index",
+        extra_time = fit$extra_time,
+        share_range = TRUE,
+        anisotropy = TRUE,
         control = sdmTMBcontrol(
-          # nlminb_loops = 2
-          newton_loops = 1
-        )
+          newton_loops = 1,
+          map = list(
+            # 1 per season, fix all years to same value
+            ln_tau_Z = factor(
+              c(1, 2, 3, 
+                rep(4, times = length(unique(x$year)) - 1))
+            )
+          )
+        ),
+        silent = FALSE
       )
-    },
-    .options = furrr::furrr_options(seed = TRUE)
+    }
   )
   saveRDS(
     fit,
@@ -138,11 +139,11 @@ sim_fit_list <- purrr::map(
     here::here("data", "fits", "sim_fit", paste(.x, ".rds", sep = ""))
   )
 )
+
+# some issues with b_j gradient (may need to drop dist to coast or std)
+purrr::map(sim_fit_list[[5]], ~ sanity(.x))
+
 sim_tbl$sim_fit <- do.call(c, sim_fit_list)
-
-
-# how many had convergence issues by species?
-purrr::map(sim_fit_list, ~ .x$converged) 
 
 
 # extract fixed and ran effects pars from simulations
@@ -158,29 +159,17 @@ sim_pars <- sim_tbl %>%
   select(species, iter, pars) %>% 
   unnest(cols = c(pars)) %>% 
   mutate(iter = as.factor(iter),
-         species = abbreviate(species, minlength = 3)) %>% 
-  # add unique identifier for second range term
-  group_by(iter, species, term) %>% 
-  mutate(par_id = row_number(),
-         term = ifelse(par_id > 1, paste(term, par_id, sep = "_"), term)) %>% 
-  ungroup()
+         species = abbreviate(species, minlength = 3)) 
 saveRDS(sim_pars, here::here("data", "preds", "sim_pars.rds"))
 
 
 # as above but for fitted models
 fit_effs <- purrr::map2(
-  fit_all_sp$st_mod, fit_all_sp$species, function (x, sp) {
+  sim_tbl$fit, sim_tbl$species, function (x, sp) {
     fix <- tidy(x, effects = "fixed")
     ran <- tidy(x, effects = "ran_pars")
     rbind(fix, ran) %>% 
-      mutate(species = abbreviate(sp, minlength = 3)) %>% 
-      # add unique identifier for second range term
-      group_by(species, term) %>% 
-      mutate(
-        par_id = row_number(),
-        term = ifelse(par_id > 1, paste(term, par_id, sep = "_"), term)
-      ) %>% 
-      ungroup()
+      mutate(species = abbreviate(sp, minlength = 3)) 
   }
 ) %>% 
   bind_rows() 
