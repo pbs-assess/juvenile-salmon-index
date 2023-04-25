@@ -20,13 +20,8 @@ future::plan(future::multisession, workers = ncores - 3)
 
 # fitted model from all_species_fit.R
 fit_all_sp <- readRDS(
-  here::here("data", "fits", "all_spatial_varying_new_scale.rds")) 
+  here::here("data", "fits", "all_spatial_varying_new_scale_iso.rds")) 
   
-fit_all_sp$fit_iso <- purrr::map(
-  fit_all_sp$fit, 
-  ~ update(.x, anisotropy = FALSE)
-)
-
 
 # simulate 20 MC draws from fitted models 
 set.seed(456)
@@ -60,41 +55,13 @@ sim_tbl <- purrr::pmap(
             fit_all_sp %>% select(species, fit), 
             by = c("species"))
 
+sp_vec <- unique(sim_tbl$species)
 
-## test w/ single model
-dum <- sdmTMB(
-  sim_catch ~ 0 + season_f  + day_night + survey_f + 
-    scale_depth + scale_dist,
-  # target_depth + dist_to_coast_km,
-  offset = sim_tbl$sim_dat[[1]]$effort,
-  data = sim_tbl$sim_dat[[1]],
-  mesh =  fit_all_sp$fit[[1]]$spde,
-  family = sdmTMB::nbinom2(),
-  spatial = "off",
-  spatiotemporal = "off",
-  spatial_varying = ~ 0 + season_f + year_f,
-  time_varying = ~ 1,
-  time_varying_type = "rw0",
-  time = "ys_index",
-  extra_time = fit_all_sp$fit[[1]]$extra_time,
-  share_range = TRUE,
-  anisotropy = TRUE,
-  control = sdmTMBcontrol(
-    newton_loops = 1,
-    map = list(
-      # 1 per season, fix all years to same value
-      ln_tau_Z = factor(
-        c(1, 2, 3, 
-          rep(4, times = length(unique(sim_tbl$sim_dat[[1]]$year)) - 1))
-      )
-    )
-  ),
-  silent = FALSE
-)
+
+## FIT SIMS  -------------------------------------------------------------------
 
 # fit model to species (originally in parallel, but wouldn't run with furrr::)
-sp_vec <- unique(sim_tbl$species)
-for (i in 2:5) { #seq_along(sp_vec)) {
+for (i in seq_along(sp_vec)) {
   sim_tbl_sub <- sim_tbl %>% filter(species == sp_vec[i])
   fit <- furrr::future_map2(
     sim_tbl_sub$sim_dat, sim_tbl_sub$fit, 
@@ -115,14 +82,18 @@ for (i in 2:5) { #seq_along(sp_vec)) {
         time = "ys_index",
         extra_time = fit$extra_time,
         share_range = TRUE,
-        anisotropy = TRUE,
+        anisotropy = FALSE,
+        priors = sdmTMBpriors(
+          phi = halfnormal(0, 10),
+          matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+          matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+        ),
         control = sdmTMBcontrol(
           newton_loops = 1,
           map = list(
             # 1 per season, fix all years to same value
             ln_tau_Z = factor(
-              c(1, 2, 3, 
-                rep(4, times = length(unique(x$year)) - 1))
+              c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
             )
           )
         ),
@@ -141,7 +112,7 @@ for (i in 2:5) { #seq_along(sp_vec)) {
 sim_fit_list <- purrr::map(
   sp_vec,
   ~ readRDS(
-    here::here("data", "fits", "sim_fit", paste(.x, ".rds", sep = ""))
+    here::here("data", "fits", "sim_fit", paste(.x, "_iso.rds", sep = ""))
   )
 )
 
@@ -150,6 +121,9 @@ purrr::map(sim_fit_list[[5]], ~ sanity(.x))
 
 sim_tbl$sim_fit <- do.call(c, sim_fit_list)
 
+
+
+## RECOVER PARAMETERS ----------------------------------------------------------
 
 # extract fixed and ran effects pars from simulations
 sim_tbl$pars <- purrr::map(
@@ -203,3 +177,68 @@ png(here::here("figs", "ms_figs", "par_recovery_sim_box.png"),
     height = 7, width = 11, units = "in", res = 250)
 sim_box
 dev.off()
+
+
+
+# RECOVER INDEX ----------------------------------------------------------------
+
+cov_in <- sim_tbl$fit[[1]]$data 
+year_season_key <- readRDS(here::here("data", "year_season_key.rds"))
+
+
+index_grid_hss <- readRDS(here::here("data", "index_hss_grid.rds")) %>% 
+  mutate(
+    scale_dist = (dist_to_coast_km - mean(cov_in$dist_to_coast_km)) / 
+      sd(cov_in$dist_to_coast_km),
+    scale_depth = (target_depth - mean(cov_in$target_depth)) / 
+      sd(cov_in$target_depth))
+
+sp_scalar <- 1000^2 * 13
+
+
+# estimate true index
+true_pred_list <- furrr::future_map(
+  fit_all_sp$fit,
+  predict,
+  newdata = index_grid_hss,
+  se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE
+)
+true_index_list <- furrr::future_map(
+  true_pred_list,
+  get_index,
+  area = sp_scalar,
+  bias_correct = TRUE
+)
+
+
+for (i in seq_along(sp_vec)) {
+  sim_tbl_sub <- sim_tbl %>% filter(species == sp_vec[i])
+  sim_ind_list <- furrr::future_map(
+    sim_tbl_sub$sim_fit,
+    function (x) {
+      pp <- predict(x, newdata = index_grid_hss,
+                    se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
+      get_index(pp, area = sp_scalar, bias_correct = TRUE) %>% 
+        left_join(., year_season_key, by = "ys_index")
+    }
+  )  
+  saveRDS(
+    sim_ind_list,
+    here::here("data", "fits", "sim_fit",
+               paste(sp_vec[i], "_sim_index.rds", sep = ""))
+  )
+}
+
+sim_pred_list <- furrr::future_map(
+  sim_tbl$sim_fit,
+  predict,
+  newdata = index_grid_hss,
+  se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE
+)  
+  
+sim_index_list <- furrr::future_map(
+  sim_pred_list,
+  get_index,
+  area = sp_scalar,
+  bias_correct = TRUE
+)
