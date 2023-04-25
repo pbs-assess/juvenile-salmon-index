@@ -36,6 +36,7 @@ year_season_key <- expand.grid(
     ys_index = seq(1, nrow(.), by = 1),
     year_season_f = paste(year, season_f, sep = "_") %>% as.factor()
   )
+saveRDS(year_season_key, here::here("data", "year_season_key.rds"))
 
 
 # downscale data and predictive grid
@@ -93,56 +94,57 @@ missing_surveys <- year_season_key$ys_index[!(year_season_key$ys_index %in%
                                                 dat$ys_index)]
 
 
-dat_tbl <- readRDS(here::here("data", "fits", "all_spatial_varying_new.rds"))
+dat_tbl <- readRDS(here::here("data", "fits", 
+                              "all_spatial_varying_new_scale_iso.rds"))
 
-dat_tbl2 <- dat %>%
-  group_by(species) %>%
-  group_nest()
+# dat_tbl2 <- dat %>%
+#   group_by(species) %>%
+#   group_nest()
 
 # fit
-fits_list_iso <- furrr::future_map(
-  dat_tbl2$data,
-  function(dat_in) {
-   sdmTMB(
-     n_juv ~ 0 + season_f + day_night + survey_f +
-       scale_depth + scale_dist,
-       # target_depth + dist_to_coast_km,
-     offset = dat_in$effort,
-     data = dat_in,
-     mesh = spde,
-     family = sdmTMB::nbinom2(),
-     spatial = "off",
-     spatial_varying = ~ 0 + season_f + year_f,
-     time_varying = ~ 1,
-     time_varying_type = "rw0",
-     time = "ys_index",
-     spatiotemporal = "off",
-     anisotropy = FALSE,
-     share_range = TRUE,
-     extra_time = missing_surveys,
-     priors = sdmTMBpriors(
-       phi = halfnormal(0, 10),
-       matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
-       matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
-     ),
-     control = sdmTMBcontrol(
-       newton_loops = 1,
-       map = list(
-         # 1 per season, fix all years to same value
-         ln_tau_Z = factor(
-           c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
-         )
-       )
-     ),
-     silent = FALSE
-   )
-  }
-)
-
-dat_tbl2$model <- "tv_iso"
-dat_tbl2$fit <- fits_list_iso
-
-saveRDS(dat_tbl2, here::here("data", "fits", "all_spatial_varying_new_scale_iso.rds"))
+# fits_list_iso <- furrr::future_map(
+#   dat_tbl2$data,
+#   function(dat_in) {
+#    sdmTMB(
+#      n_juv ~ 0 + season_f + day_night + survey_f +
+#        scale_depth + scale_dist,
+#        # target_depth + dist_to_coast_km,
+#      offset = dat_in$effort,
+#      data = dat_in,
+#      mesh = spde,
+#      family = sdmTMB::nbinom2(),
+#      spatial = "off",
+#      spatial_varying = ~ 0 + season_f + year_f,
+#      time_varying = ~ 1,
+#      time_varying_type = "rw0",
+#      time = "ys_index",
+#      spatiotemporal = "off",
+#      anisotropy = FALSE,
+#      share_range = TRUE,
+#      extra_time = missing_surveys,
+#      priors = sdmTMBpriors(
+#        phi = halfnormal(0, 10),
+#        matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+#        matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+#      ),
+#      control = sdmTMBcontrol(
+#        newton_loops = 1,
+#        map = list(
+#          # 1 per season, fix all years to same value
+#          ln_tau_Z = factor(
+#            c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
+#          )
+#        )
+#      ),
+#      silent = FALSE
+#    )
+#   }
+# )
+# 
+# dat_tbl2$model <- "tv_iso"
+# dat_tbl2$fit <- fits_list_iso
+# 
+# saveRDS(dat_tbl2, here::here("data", "fits", "all_spatial_varying_new_scale_iso.rds"))
 
 purrr::map(dat_tbl$fit, sanity)
 
@@ -250,18 +252,22 @@ dev.off()
 target_dat <- expand.grid(
   day_night = unique(dat$day_night),
   season_f = unique(dat$season_f),
-  target_depth = seq(min(dat$target_depth), 
-                     max(dat$target_depth), length.out = 100),
-  dist_to_coast_km = median(dat$dist_to_coast_km),
+  headrope_depth = seq(0, 60, length.out = 100),
+  scale_dist = 0,
   survey_f = unique(dat$survey_f),
   year = unique(dat$year)
 ) %>% 
   mutate(
+    scale_depth = (headrope_depth - mean(dat$target_depth)) / 
+      sd(dat$target_depth),
     year_f = as.factor(year),
     season_year_f = paste(season_f, year_f, sep = "_") %>% as.factor()
   ) %>% 
   filter(
     day_night == "DAY", season_f == "su", survey_f == "hss", year_f == "2012"
+  ) %>% 
+  left_join(
+    ., year_season_key, by = c("season_f", "year")
   )
 
 depth_preds <- purrr::pmap(
@@ -293,7 +299,7 @@ png(here::here("figs", "ms_figs_season", "depth_preds.png"),
     height = 4, width = 8, units = "in", res = 200)
 ggplot(
   data = depth_preds2,
-  aes(x = target_depth, y = scale_est, ymin = scale_lo, ymax = scale_up, 
+  aes(x = headrope_depth, y = scale_est, ymin = scale_lo, ymax = scale_up, 
       fill = species)
 ) +
   ggsidekick::theme_sleek() +
@@ -312,8 +318,8 @@ dev.off()
 
 # distance to coast
 dist_dat <- expand.grid(
-  dist_to_coast_km = seq(min(dat$dist_to_coast_km), 
-                         max(dat$dist_to_coast_km), length.out = 100),
+  dist_to_coast_km = seq(0.1, max(dat$dist_to_coast_km), length.out = 100),
+  scale_depth = 0,
   day_night = unique(dat$day_night),
   season_f = unique(dat$season_f),
   target_depth = 0,
@@ -321,11 +327,16 @@ dist_dat <- expand.grid(
   year = unique(dat$year)
   ) %>% 
   mutate(
+    scale_dist = (dist_to_coast_km - mean(dat$dist_to_coast_km)) / 
+      sd(dat$dist_to_coast_km),
     year_f = as.factor(year),
     season_year_f = paste(season_f, year_f, sep = "_") %>% as.factor()
   ) %>% 
   filter(
     day_night == "DAY", season_f == "su", survey_f == "hss", year_f == "2012"
+  ) %>% 
+  left_join(
+    ., year_season_key, by = c("season_f", "year")
   )
 
 dist_preds <- purrr::pmap(
@@ -353,6 +364,9 @@ dist_preds2 <- dist_preds %>%
     scale_lo = exp(lo) / max_est
   )
 
+
+png(here::here("figs", "ms_figs_season", "dist_preds.png"), 
+    height = 4, width = 8, units = "in", res = 200)
 ggplot(
   data = dist_preds2,
   aes(x = dist_to_coast_km, y = scale_est, ymin = scale_lo, ymax = scale_up, 
@@ -365,9 +379,11 @@ ggplot(
   scale_x_continuous(expand = c(0, 0)) +
   facet_grid(model~species) +
   coord_cartesian(y = c(0, 2.5)) +
-  xlab("Target Headrope Depth (m)") +
+  xlab("Distance to Coastline (km)") +
   guides(fill = "none") +
   ylab("Abundance Index")
+dev.off()
+
 
 
 ## SPATIAL GRID  ---------------------------------------------------------------
@@ -427,6 +443,8 @@ index_grid <- pred_grid_list %>%
 
 # predictions for index (set to HSS reference values)
 index_grid_hss <- index_grid %>% filter(survey_f == "hss")
+# saveRDS(index_grid_hss, here::here("data", "index_hss_grid.rds"))
+
 ind_preds <- purrr::map(
   dat_tbl %>% pull(fit),
   ~ {
@@ -495,9 +513,9 @@ index_dat <- purrr::map2(
   ) %>%
   ungroup()
 
-saveRDS(index_dat, here::here("data", "fits", "season_index.rds"))
+saveRDS(index_dat, here::here("data", "season_index.rds"))
 
-index_dat <- readRDS(here::here("data", "fits", "season_index.rds"))
+index_dat <- readRDS(here::here("data", "season_index.rds"))
 
 
 ## scaled abundance with no intervals
