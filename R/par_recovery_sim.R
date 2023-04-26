@@ -209,11 +209,15 @@ true_index_list <- furrr::future_map(
   area = sp_scalar,
   bias_correct = TRUE
 )
+saveRDS(
+  true_index_list,
+  here::here("data", "fits", "season_index_list.rds")
+)
 
 
 for (i in seq_along(sp_vec)) {
   sim_tbl_sub <- sim_tbl %>% filter(species == sp_vec[i])
-  sim_ind_list <- furrr::future_map(
+  sim_ind_list <- purrr::map(
     sim_tbl_sub$sim_fit,
     function (x) {
       pp <- predict(x, newdata = index_grid_hss,
