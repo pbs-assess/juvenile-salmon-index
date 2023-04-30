@@ -60,7 +60,7 @@ sp_vec <- unique(sim_tbl$species)
 
 ## FIT SIMS  -------------------------------------------------------------------
 
-# fit model to species (originally in parallel, but wouldn't run with furrr::)
+# fit model to species 
 for (i in seq_along(sp_vec)) {
   sim_tbl_sub <- sim_tbl %>% filter(species == sp_vec[i])
   fit <- furrr::future_map2(
@@ -170,11 +170,12 @@ fit_effs <- purrr::map2(
 sim_box <- ggplot() +
   geom_boxplot(data = sim_pars, aes(x = species, y = estimate)) +
   geom_point(data = fit_effs, aes(x = species, y = estimate), colour = "red") +
-  facet_wrap(~term, scales = "free") +
+  facet_wrap(~term, scales = "free", ncol = 3) +
+  labs(y = "Parameter Estimate", x =  "Species") +
   ggsidekick::theme_sleek()
 
-png(here::here("figs", "ms_figs", "par_recovery_sim_box.png"), 
-    height = 7, width = 11, units = "in", res = 250)
+png(here::here("figs", "ms_figs_season", "par_recovery_sim_box.png"), 
+    height = 8, width = 8, units = "in", res = 200)
 sim_box
 dev.off()
 
@@ -183,6 +184,19 @@ dev.off()
 # RECOVER INDEX ----------------------------------------------------------------
 
 cov_in <- sim_tbl$fit[[1]]$data 
+# define years where survey occurred
+summer_years <- sim_tbl$fit[[1]]$data %>% 
+  filter(season_f == "su", 
+         # remove 2021 since only partial survey
+         !year_f == "2021") %>%
+  pull(year) %>% 
+  unique()
+fall_years <- sim_tbl$fit[[1]]$data %>% 
+  filter(season_f == "wi",
+         # remove 2020 since most of survey was outside of grid
+         !year_f == "2020") %>%
+  pull(year) %>% 
+  unique()
 year_season_key <- readRDS(here::here("data", "year_season_key.rds"))
 
 
@@ -233,16 +247,59 @@ for (i in seq_along(sp_vec)) {
   )
 }
 
-sim_pred_list <- furrr::future_map(
-  sim_tbl$sim_fit,
-  predict,
-  newdata = index_grid_hss,
-  se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE
-)  
-  
-sim_index_list <- furrr::future_map(
-  sim_pred_list,
-  get_index,
-  area = sp_scalar,
-  bias_correct = TRUE
+
+# import saved indices
+true_index_list <- readRDS(
+  here::here("data", "fits", "season_index_list.rds")
 )
+true_ind_dat <- tibble(
+  species = sp_vec,
+  true_index = true_index_list
+) %>% 
+  unnest(cols = "true_index") %>% 
+  left_join(., year_season_key, by = "ys_index") %>% 
+  filter(!season_f == "sp") %>% 
+  mutate(
+    season = fct_recode(season_f, "summer" = "su", "fall" = "wi"),
+    survey = case_when(
+      season == "fall" & year %in% fall_years ~ "sampled",
+      season == "summer" & year %in% summer_years ~ "sampled",
+      TRUE ~ "no survey"
+    ),
+    log_lwr = log_est - (1.96 * se),
+    log_upr = log_est + (1.96 * se),
+    year = as.factor(year)
+  )
+
+
+sim_index_list <- purrr::map(
+  sp_vec,
+  ~ readRDS(
+    here::here("data", "fits", "sim_fit",
+               paste(.x, "_sim_index.rds", sep = ""))
+  )
+)
+
+sim_tbl$sim_index <- do.call(c, sim_index_list)
+
+sim_ind_dat <- sim_tbl %>%
+  select(species, iter, sim_index) %>% 
+  unnest(cols = "sim_index") %>% 
+  filter(!season_f == "sp") %>% 
+  mutate(
+    season = fct_recode(season_f, "summer" = "su", "fall" = "wi"),
+    year = as.factor(year)
+  )
+
+
+png(here::here("figs", "ms_figs_season", "sim_index.png"), 
+    height = 8, width = 8, units = "in", res = 200)
+ggplot() +
+  geom_boxplot(data = sim_ind_dat,
+               aes(x = year, y = log_est)) +
+  geom_point(data = true_ind_dat,
+             aes(x = year, y = log_est, colour = survey)) +
+  facet_grid(species~season, scales = "free_y") +
+  ggsidekick::theme_sleek() +
+  theme(legend.position = "top")
+dev.off()
