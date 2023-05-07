@@ -144,8 +144,18 @@ sim_tbl$pars <- purrr::map(
 sim_pars <- sim_tbl %>% 
   select(species, iter, pars) %>% 
   unnest(cols = c(pars)) %>% 
-  mutate(iter = as.factor(iter),
-         species = abbreviate(species, minlength = 3)) 
+  mutate(
+    iter = as.factor(iter),
+    species = abbreviate(species, minlength = 3),
+    term = fct_recode(
+      as.factor(term), "diel" = "day_nightNIGHT", "depth" = "scale_depth",
+      "dist" = "scale_dist", "spring_int" = "season_fsp", 
+      "summer_int" = "season_fsu", "fall_int" = "season_fwi", 
+      "spring_omega" = "sigma_Z", "summer_omega" = "sigma_Z",
+      "fall_omega" = "sigma_Z_2", "year_omega" = "sigma_Z_3", 
+      "survey_design" = "survey_fipes"
+    )
+  ) 
 saveRDS(sim_pars, here::here("data", "preds", "sim_pars.rds"))
 
 
@@ -165,14 +175,24 @@ fit_effs <- purrr::map2(
       ungroup()
   }
 ) %>% 
-  bind_rows() 
+  bind_rows() %>% 
+  mutate(
+    term = fct_recode(
+      as.factor(term), "diel" = "day_nightNIGHT", "depth" = "scale_depth",
+      "dist" = "scale_dist", "spring_int" = "season_fsp", 
+      "summer_int" = "season_fsu", "fall_int" = "season_fwi", 
+      "spring_omega" = "sigma_Z", "summer_omega" = "sigma_Z",
+      "fall_omega" = "sigma_Z_2", "year_omega" = "sigma_Z_3", 
+      "survey_design" = "survey_fipes"
+    )
+  )
 
 sim_box <- ggplot() +
   geom_boxplot(data = sim_pars, aes(x = species, y = estimate)) +
   geom_point(data = fit_effs, aes(x = species, y = estimate), colour = "red") +
   facet_wrap(~term, scales = "free", ncol = 3) +
   labs(y = "Parameter Estimate", x =  "Species") +
-  ggsidekick::theme_sleek()
+  ggsidekick::theme_sleek() 
 
 png(here::here("figs", "ms_figs_season", "par_recovery_sim_box.png"), 
     height = 8, width = 8, units = "in", res = 200)
@@ -286,9 +306,14 @@ sim_ind_dat <- sim_tbl %>%
   select(species, iter, sim_index) %>% 
   unnest(cols = "sim_index") %>% 
   filter(!season_f == "sp") %>% 
+  left_join(
+    ., 
+    true_ind_dat %>% select(species, ys_index, true_log_est = log_est),
+    by = c("species", "ys_index")) %>% 
   mutate(
     season = fct_recode(season_f, "summer" = "su", "fall" = "wi"),
-    year = as.factor(year)
+    year = as.factor(year),
+    resid_est = true_log_est - log_est
   )
 
 
@@ -301,5 +326,22 @@ ggplot() +
              aes(x = year, y = log_est, colour = survey)) +
   facet_grid(species~season, scales = "free_y") +
   ggsidekick::theme_sleek() +
-  theme(legend.position = "top")
+  theme(legend.position = "top") +
+  scale_x_discrete(breaks = seq(2000, 2020, by = 5)) +
+  labs(y = "Log Estimated Abundance") +
+  theme(axis.title.x = element_blank())
+dev.off()
+
+png(here::here("figs", "ms_figs_season", "resid_index.png"), 
+    height = 8, width = 8, units = "in", res = 200)
+ggplot() +
+  geom_boxplot(data = sim_ind_dat,
+               aes(x = year, y = resid_est)) +
+  geom_hline(yintercept = 0, lty = 2, colour = "red") +
+  facet_grid(species~season, scales = "free_y") +
+  ggsidekick::theme_sleek() +
+  theme(legend.position = "top") +
+  scale_x_discrete(breaks = seq(2000, 2020, by = 5)) +
+  labs(y = "Index Residuals") +
+  theme(axis.title.x = element_blank())
 dev.off()
