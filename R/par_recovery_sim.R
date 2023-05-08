@@ -151,8 +151,8 @@ sim_pars <- sim_tbl %>%
       as.factor(term), "diel" = "day_nightNIGHT", "depth" = "scale_depth",
       "dist" = "scale_dist", "spring_int" = "season_fsp", 
       "summer_int" = "season_fsu", "fall_int" = "season_fwi", 
-      "spring_omega" = "sigma_Z", "summer_omega" = "sigma_Z",
-      "fall_omega" = "sigma_Z_2", "year_omega" = "sigma_Z_3", 
+      "spring_omega" = "sigma_Z", "summer_omega" = "sigma_Z_2",
+      "fall_omega" = "sigma_Z_3", "year_omega" = "sigma_Z_4", 
       "survey_design" = "survey_fipes"
     )
   ) 
@@ -181,8 +181,8 @@ fit_effs <- purrr::map2(
       as.factor(term), "diel" = "day_nightNIGHT", "depth" = "scale_depth",
       "dist" = "scale_dist", "spring_int" = "season_fsp", 
       "summer_int" = "season_fsu", "fall_int" = "season_fwi", 
-      "spring_omega" = "sigma_Z", "summer_omega" = "sigma_Z",
-      "fall_omega" = "sigma_Z_2", "year_omega" = "sigma_Z_3", 
+      "spring_omega" = "sigma_Z", "summer_omega" = "sigma_Z_2",
+      "fall_omega" = "sigma_Z_3", "year_omega" = "sigma_Z_4", 
       "survey_design" = "survey_fipes"
     )
   )

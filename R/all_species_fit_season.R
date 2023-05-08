@@ -190,8 +190,7 @@ alpha_1 <- ggplot(
   scale_shape_manual(values = shape_pal, name = "") +
   geom_pointrange(position = position_dodge(width = 0.35)) +
   guides(fill = "none") +
-  theme(axis.title = element_blank(),
-        axis.text.x = element_blank()) +
+  theme(axis.title = element_blank()) +
   facet_wrap(~term2)
 
 alpha_2 <- ggplot(
@@ -210,7 +209,7 @@ alpha_2 <- ggplot(
 plot_g <- cowplot::plot_grid(alpha_1, alpha_2, ncol = 1)
 y_grob <- grid::textGrob("Parameter Estimate", rot = 90)
 
-png(here::here("figs", "ms_figs_season", "fix_ints.png"), height = 4, width = 8,
+png(here::here("figs", "ms_figs_season", "fix_ints.png"), height = 4, width = 6,
     units = "in", res = 200)
 gridExtra::grid.arrange(
   gridExtra::arrangeGrob(plot_g, left = y_grob)
@@ -295,9 +294,7 @@ depth_preds2 <- depth_preds %>%
     scale_lo = exp(lo) / max_est
   )
 
-png(here::here("figs", "ms_figs_season", "depth_preds.png"), 
-    height = 4, width = 8, units = "in", res = 200)
-ggplot(
+depth_plot <- ggplot(
   data = depth_preds2,
   aes(x = headrope_depth, y = scale_est, ymin = scale_lo, ymax = scale_up, 
       fill = species)
@@ -307,13 +304,12 @@ ggplot(
   geom_ribbon(alpha = 0.3) +
   scale_fill_manual(values = col_pal) +
   scale_x_continuous(expand = c(0, 0)) +
-  facet_grid(model~species) +
+  facet_wrap(~species, nrow = 1) +
   coord_cartesian(y = c(0, 2.5)) +
   xlab("Target Headrope Depth (m)") +
   guides(fill = "none") +
-  ylab("Abundance Index")
-dev.off()
-
+  theme(axis.title.y = element_blank()) +
+  ylab("Scaled Abundance Index") 
 
 
 # distance to coast
@@ -364,10 +360,7 @@ dist_preds2 <- dist_preds %>%
     scale_lo = exp(lo) / max_est
   )
 
-
-png(here::here("figs", "ms_figs_season", "dist_preds.png"), 
-    height = 4, width = 8, units = "in", res = 200)
-ggplot(
+dist_plot <- ggplot(
   data = dist_preds2,
   aes(x = dist_to_coast_km, y = scale_est, ymin = scale_lo, ymax = scale_up, 
       fill = species)
@@ -377,11 +370,21 @@ ggplot(
   geom_ribbon(alpha = 0.3) +
   scale_fill_manual(values = col_pal) +
   scale_x_continuous(expand = c(0, 0)) +
-  facet_grid(model~species) +
+  facet_wrap(~species, nrow = 1) +
   coord_cartesian(y = c(0, 2.5)) +
   xlab("Distance to Coastline (km)") +
-  guides(fill = "none") +
-  ylab("Abundance Index")
+  theme(axis.title.y = element_blank()) +
+  guides(fill = "none") 
+
+plot_g2 <- cowplot::plot_grid(depth_plot, dist_plot, ncol = 1)
+y_grob <- grid::textGrob("Scaled Abundance Index", rot = 90)
+
+png(here::here("figs", "ms_figs_season", "smooth_effs.png"), height = 5, 
+    width = 8,
+    units = "in", res = 200)
+gridExtra::grid.arrange(
+  gridExtra::arrangeGrob(plot_g2, left = y_grob)
+)
 dev.off()
 
 
@@ -419,8 +422,8 @@ pred_grid_list <- rbind(
 index_grid <- pred_grid_list %>%
   purrr::map(., function (x) {
     dum_grid <- if (x$season_f == "su") summer_grid else fall_grid
-    
-    dum_grid %>% 
+
+    dum_grid %>%
       mutate(
         year = x$year,
         year_f = x$year_f,
@@ -428,22 +431,25 @@ index_grid <- pred_grid_list %>%
         season_f = x$season_f,
         ys_index = x$ys_index,
         target_depth = 0,
-        day_night = "DAY"
+        day_night = "DAY",
+        scale_depth = (target_depth - mean(dat$target_depth)) / 
+          sd(dat$target_depth),
+        scale_dist = (dist_to_coast_km - mean(dat$dist_to_coast_km)) / 
+          sd(dat$dist_to_coast_km)
       )
   }) %>%
-  bind_rows() %>% 
+  bind_rows() %>%
   mutate(
     fake_survey = case_when(
       year > 2016 & survey_f == "hss" & season_f == "su" ~ "1",
       year < 2017 & survey_f == "ipes" & season_f == "su" ~ "1",
       TRUE ~ "0")
-  ) %>% 
+  ) %>%
   select(-c(depth, slope, shore_dist))
 
 
 # predictions for index (set to HSS reference values)
 index_grid_hss <- index_grid %>% filter(survey_f == "hss")
-# saveRDS(index_grid_hss, here::here("data", "index_hss_grid.rds"))
 
 ind_preds <- purrr::map(
   dat_tbl %>% pull(fit),
@@ -453,8 +459,7 @@ ind_preds <- purrr::map(
             se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
   }
 )
-saveRDS(ind_preds,
-        here::here("data", "fits", "all_spatial_varying_new_ind_preds.rds"))
+
 
 
 # scalar for spatial predictions; since preds are in m3, multiply by
@@ -468,7 +473,12 @@ index_list <- purrr::map(
   area = sp_scalar,
   bias_correct = TRUE
 )
+saveRDS(index_list, here::here("data", "fits", "season_index_list.rds"))
 
+
+index_list <- readRDS(
+  here::here("data", "fits", "season_index_list.rds")
+)
 
 # define years where survey occurred
 summer_years <- dat %>% 
@@ -502,25 +512,12 @@ index_dat <- purrr::map2(
     ),
     log_lwr = log_est - (1.96 * se),
     log_upr = log_est + (1.96 * se)
-  ) %>%
-  group_by(species, season) %>%
-  mutate(
-    mean_log_est = mean(log_est),
-    max_est = max(est),
-    scale_est = est / max_est,
-    scale_lwr = lwr / max_est,
-    scale_upr = upr / max_est
-  ) %>%
-  ungroup()
+  ) 
 
-saveRDS(index_dat, here::here("data", "season_index.rds"))
-
-index_dat <- readRDS(here::here("data", "season_index.rds"))
-
-
-## scaled abundance with no intervals
+## index plots
 shape_pal <- c(21, 23)
 names(shape_pal) <- unique(index_dat$survey)
+# log abundance 
 log_index <- ggplot(index_dat, aes(year, log_est)) +
   geom_pointrange(aes(ymin = log_lwr, ymax = log_upr, fill = species, 
                       shape = survey)) +
@@ -530,19 +527,43 @@ log_index <- ggplot(index_dat, aes(year, log_est)) +
   ggsidekick::theme_sleek() +
   facet_grid(species~season, scales = "free_y") +
   scale_fill_manual(values = col_pal) +
-  theme(legend.position = "none")
+  theme(legend.position = "none",
+        axis.title.x = element_blank())
+
+png(here::here("figs", "ms_figs_season", "log_index.png"), 
+    height = 8, width = 8, units = "in", res = 200)
+log_index
+dev.off()
 
 
-scaled_index <- ggplot(index_dat, aes(year, scale_est)) +
+## scaled abundance with no intervals
+scaled_index <- index_dat %>% 
+  filter(survey == "sampled")%>%
+  group_by(species, season) %>%
+  mutate(
+    mean_log_est = mean(log_est),
+    max_est = max(est),
+    scale_est = est / max_est,
+    scale_lwr = lwr / max_est,
+    scale_upr = upr / max_est
+  ) %>%
+  ungroup() %>% 
+  ggplot(., aes(year, scale_est)) +
   geom_pointrange(aes(ymin = scale_lwr, ymax = scale_upr, fill = species,
                       shape = survey)) +
   coord_cartesian(ylim = c(0, 2.5)) +
-  labs(x = "Year", y = "Log Abundance Index") +
+  labs(x = "Year", y = "Scaled Abundance Index") +
   scale_shape_manual(values = shape_pal) +
   ggsidekick::theme_sleek() +
   facet_grid(species~season, scales = "free_y") +
   scale_fill_manual(values = col_pal) +
-  theme(legend.position = "none")
+  theme(legend.position = "none",
+        axis.title.x = element_blank())
+
+png(here::here("figs", "ms_figs_season", "scaled_index.png"), 
+    height = 8, width = 8, units = "in", res = 200)
+scaled_index
+dev.off()
 
 
 # check among season correlations
@@ -553,6 +574,47 @@ index_dat %>%
     summ_dat <- x %>% filter(season == "summer") %>% pull(log_est)
     cor(fall_dat, summ_dat)
   })
+
+
+# compare HSS index to one where survey design is not accounted for
+index_grid_true <- index_grid %>% filter(fake_survey == "0")
+ind_preds_true <- purrr::map(
+  dat_tbl %>% pull(fit),
+  ~ {
+    predict(.x,
+            newdata = index_grid_true,
+            se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
+  }
+)
+index_true_survey_list <- purrr::map(
+  ind_preds_true,
+  get_index,
+  area = sp_scalar,
+  bias_correct = TRUE
+)
+saveRDS(index_true_survey_list, 
+        here::here("data", "fits", "season_index_true_survey_list.rds"))
+
+index_dat2 <- purrr::map2(
+  dat_tbl$species, index_true_survey_list,
+  ~ .y %>% 
+    mutate(species = .x) 
+) %>%
+  bind_rows() %>% 
+  left_join(., year_season_key, by = "ys_index") %>% 
+  mutate(preds = "obs")
+
+index_dat %>% 
+  mutate(preds = "hss") %>% 
+  select(colnames(index_dat2)) %>% 
+  rbind(., 
+        index_dat2 ) %>% 
+  filter(season_f == "su",
+         year > 2017) %>% 
+  group_by(preds, species) %>% 
+  summarize(mean_est = mean(est)) %>% 
+  pivot_wider(names_from = preds, values_from = mean_est) %>% 
+  mutate(diff = obs / hss)
 
 
 # SPATIAL PREDS ----------------------------------------------------------------
