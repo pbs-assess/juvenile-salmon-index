@@ -10,11 +10,6 @@
 ## Mar 28, 2023
 
 
-# alternative branch
-devtools::install_github("https://github.com/pbs-assess/sdmTMB",
-                         ref = "zeta-intercept")
-
-
 library(tidyverse)
 library(sdmTMB)
 library(ggplot2)
@@ -95,50 +90,129 @@ missing_surveys <- year_season_key$ys_index[!(year_season_key$ys_index %in%
 
 
 dat_tbl <- readRDS(here::here("data", "fits", 
-                              "all_spatial_varying_new_scale_iso.rds"))
+                              "all_spatial_varying_new_scale_iso2.rds")) %>% 
+  mutate(model = "nb2")
 
 dat_tbl2 <- dat %>%
   group_by(species) %>%
   group_nest()
+dat_tbl2 <- rbind(dat_tbl2 %>% mutate(model = "nb2_mix"), 
+                  dat_tbl2 %>% mutate(model = "nb1"))
+
+dum <- sdmTMB(
+  n_juv ~ 0 + season_f + day_night + survey_f +
+    scale_depth 
+  ,
+  offset = dat_tbl2$data[[1]]$effort,
+  data = dat_tbl2$data[[1]],
+  mesh = spde,
+  family = sdmTMB::nbinom2_mix(),
+  spatial = "on",
+  # spatial = "off",
+  # spatial_varying = ~ 0 + season_f + year_f,
+  # time_varying = ~ 1,
+  # time_varying_type = "rw0",
+  # time = "ys_index",
+  spatiotemporal = "off",
+  anisotropy = FALSE,
+  share_range = TRUE,
+  extra_time = missing_surveys,
+  priors = sdmTMBpriors(
+    phi = halfnormal(0, 10),
+    matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+    matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+  ),
+  control = sdmTMBcontrol(
+    # nlminb_loops = 2,
+    newton_loops = 1,
+    start = list(logit_p_mix = qlogis(0.025)),
+    map = list(
+      # 1 per season, fix all years to same value
+      # ln_tau_Z = factor(
+      #   c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
+      # ),
+      logit_p_mix = factor(NA)
+    )
+  ),
+  silent = FALSE
+)
 
 # fit
-fits_list_iso <- furrr::future_map(
+fits_list_iso <- furrr::future_map2(
   dat_tbl2$data,
-  function(dat_in) {
-   sdmTMB(
-     n_juv ~ 0 + season_f + day_night + survey_f +
-       scale_depth #+ scale_dist
-     ,
-       # target_depth + dist_to_coast_km,
-     offset = dat_in$effort,
-     data = dat_in,
-     mesh = spde,
-     family = sdmTMB::nbinom2(),
-     spatial = "off",
-     spatial_varying = ~ 0 + season_f + year_f,
-     time_varying = ~ 1,
-     time_varying_type = "rw0",
-     time = "ys_index",
-     spatiotemporal = "off",
-     anisotropy = FALSE,
-     share_range = TRUE,
-     extra_time = missing_surveys,
-     priors = sdmTMBpriors(
-       phi = halfnormal(0, 10),
-       matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
-       matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
-     ),
-     control = sdmTMBcontrol(
-       newton_loops = 1,
-       map = list(
-         # 1 per season, fix all years to same value
-         ln_tau_Z = factor(
-           c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
-         )
-       )
-     ),
-     silent = FALSE
-   )
+  dat_tbl2$model,
+  function(dat_in, mod_in) {
+    if (mod_in == "nb2_mix") {
+      sdmTMB(
+        n_juv ~ 0 + season_f + day_night + survey_f +
+          scale_depth #+ scale_dist
+        ,
+        # target_depth + dist_to_coast_km,
+        offset = dat_in$effort,
+        data = dat_in,
+        mesh = spde,
+        family = sdmTMB::nbinom2_mix(),
+        spatial = "off",
+        spatial_varying = ~ 0 + season_f + year_f,
+        time_varying = ~ 1,
+        time_varying_type = "rw0",
+        time = "ys_index",
+        spatiotemporal = "off",
+        anisotropy = FALSE,
+        share_range = TRUE,
+        extra_time = missing_surveys,
+        priors = sdmTMBpriors(
+          phi = halfnormal(0, 10),
+          matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+          matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+        ),
+        control = sdmTMBcontrol(
+          newton_loops = 1,
+          map = list(
+            # 1 per season, fix all years to same value
+            ln_tau_Z = factor(
+              c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
+            )
+          )
+        ),
+        silent = FALSE
+      )
+    } else {
+      sdmTMB(
+        n_juv ~ 0 + season_f + day_night + survey_f +
+          scale_depth #+ scale_dist
+        ,
+        # target_depth + dist_to_coast_km,
+        offset = dat_in$effort,
+        data = dat_in,
+        mesh = spde,
+        family = sdmTMB::nbinom1(),
+        spatial = "off",
+        spatial_varying = ~ 0 + season_f + year_f,
+        time_varying = ~ 1,
+        time_varying_type = "rw0",
+        time = "ys_index",
+        spatiotemporal = "off",
+        anisotropy = FALSE,
+        share_range = TRUE,
+        extra_time = missing_surveys,
+        priors = sdmTMBpriors(
+          phi = halfnormal(0, 10),
+          matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+          matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+        ),
+        control = sdmTMBcontrol(
+          newton_loops = 1,
+          map = list(
+            # 1 per season, fix all years to same value
+            ln_tau_Z = factor(
+              c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
+            )
+          )
+        ),
+        silent = FALSE
+      )
+    }
   }
 )
 
@@ -152,6 +226,36 @@ purrr::map(dat_tbl2$fit, sanity)
 # check residuals
 dat_tbl$sims <- purrr::map(dat_tbl$fit, simulate, nsim = 50)
 qq_list <- purrr::map2(dat_tbl$sims, dat_tbl$fit, dharma_residuals)
+
+
+
+# proportion zeros
+xx <- dat_tbl$sims[[1]]
+length(xx[,1][xx[,1] == 0])  
+hist(apply(xx, 2, function (x) length(x[x == 0])))
+abline(v = length(dat_tbl$data[[1]]$n_juv[dat_tbl$data[[1]]$n_juv == 0]),
+       col = "red")
+length(dat_tbl$data[[1]]$n_juv[dat_tbl$data[[1]]$n_juv == 0])  
+
+
+# dispersion checks
+sims <- simulate(dum, nsim = 50)
+pred_fixed <- dum$family$linkinv(predict(dum)$est_non_rf)
+r_nb <- DHARMa::createDHARMa(
+  simulatedResponse = sims,
+  observedResponse = dum$data$n_juv,
+  fittedPredictedResponse = pred_fixed
+)
+DHARMa::testResiduals(r_nb)
+DHARMa::testZeroInflation(r_nb)
+
+
+# mcmc residuals
+samp <- predict_mle_mcmc(dat_tbl$fit[[1]], mcmc_iter = 201, mcmc_warmup = 200, 
+                         print_stan_model = TRUE)
+mcmc_res <- residuals(dat_tbl$fit[[1]], 
+                      type = "mle-mcmc", mcmc_samples = samp)
+qqnorm(mcmc_res);qqline(mcmc_res)
 
 
 ## PARAMETER ESTIMATES ---------------------------------------------------------
@@ -629,6 +733,13 @@ index_dat %>%
   summarize(mean_est = mean(est)) %>% 
   pivot_wider(names_from = preds, values_from = mean_est) %>% 
   mutate(diff = obs / hss)
+
+# sd of index in summer vs fall
+index_dat %>% 
+  group_by(species, season_f) %>% 
+  summarize(sd_index = sd(log_est)) %>% 
+  pivot_wider(names_from = season_f, values_from = sd_index) %>% 
+  mutate(ppn = wi/su)
 
 
 # SPATIAL PREDS ----------------------------------------------------------------

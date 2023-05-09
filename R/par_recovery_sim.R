@@ -58,6 +58,26 @@ sim_tbl <- purrr::pmap(
 sp_vec <- unique(sim_tbl$species)
 
 
+## DISPERSION ------------------------------------------------------------------
+
+fit_all_sp$true_sd <- purrr::map(
+  fit_all_sp$data, ~ sd(.x$n_juv)
+)
+
+sim_tbl$sim_sd <- purrr::map(
+  sim_tbl$sim_dat, ~ sd(.x$sim_catch)
+)
+
+sim_tbl %>% 
+  select(species, sim_sd) %>% 
+  left_join(., fit_all_sp %>% select(species, true_sd), by = "species") %>% 
+  unnest(cols = c(sim_sd, true_sd)) %>% 
+  ggplot(.) +
+  geom_boxplot(aes(x = as.factor(species), y = sim_sd)) +
+  geom_point(aes(x = as.factor(species), y = true_sd), colour = "red")
+  
+  
+
 ## FIT SIMS  -------------------------------------------------------------------
 
 # fit model to species 
@@ -148,8 +168,10 @@ sim_pars <- sim_tbl %>%
     iter = as.factor(iter),
     species = abbreviate(species, minlength = 3),
     term = fct_recode(
-      as.factor(term), "diel" = "day_nightNIGHT", "depth" = "scale_depth",
-      "dist" = "scale_dist", "spring_int" = "season_fsp", 
+      as.factor(term), 
+      "diel" = "day_nightNIGHT", "depth" = "scale_depth",
+      #"dist" = "scale_dist", 
+      "spring_int" = "season_fsp", 
       "summer_int" = "season_fsu", "fall_int" = "season_fwi", 
       "spring_omega" = "sigma_Z", "summer_omega" = "sigma_Z_2",
       "fall_omega" = "sigma_Z_3", "year_omega" = "sigma_Z_4", 
@@ -179,7 +201,8 @@ fit_effs <- purrr::map2(
   mutate(
     term = fct_recode(
       as.factor(term), "diel" = "day_nightNIGHT", "depth" = "scale_depth",
-      "dist" = "scale_dist", "spring_int" = "season_fsp", 
+      #"dist" = "scale_dist", 
+      "spring_int" = "season_fsp", 
       "summer_int" = "season_fsu", "fall_int" = "season_fwi", 
       "spring_omega" = "sigma_Z", "summer_omega" = "sigma_Z_2",
       "fall_omega" = "sigma_Z_3", "year_omega" = "sigma_Z_4", 
@@ -194,7 +217,7 @@ sim_box <- ggplot() +
   labs(y = "Parameter Estimate", x =  "Species") +
   ggsidekick::theme_sleek() 
 
-png(here::here("figs", "ms_figs_season", "par_recovery_sim_box.png"), 
+png(here::here("figs", "diagnostics", "par_recovery_sim_box_no_dist.png"), 
     height = 8, width = 8, units = "in", res = 200)
 sim_box
 dev.off()
@@ -222,10 +245,11 @@ year_season_key <- readRDS(here::here("data", "year_season_key.rds"))
 
 index_grid_hss <- readRDS(here::here("data", "index_hss_grid.rds")) %>% 
   mutate(
-    scale_dist = (dist_to_coast_km - mean(cov_in$dist_to_coast_km)) / 
-      sd(cov_in$dist_to_coast_km),
-    scale_depth = (target_depth - mean(cov_in$target_depth)) / 
-      sd(cov_in$target_depth))
+    # scale_dist = (dist_to_coast_km - mean(cov_in$dist_to_coast_km)) / 
+    #   sd(cov_in$dist_to_coast_km),
+    scale_depth = (target_depth - mean(cov_in$target_depth)) /
+      sd(cov_in$target_depth)
+    )
 
 sp_scalar <- 1000^2 * 13
 
@@ -245,7 +269,7 @@ true_index_list <- furrr::future_map(
 )
 saveRDS(
   true_index_list,
-  here::here("data", "fits", "season_index_list.rds")
+  here::here("data", "fits", "season_index_list2.rds")
 )
 
 
@@ -263,7 +287,7 @@ for (i in seq_along(sp_vec)) {
   saveRDS(
     sim_ind_list,
     here::here("data", "fits", "sim_fit",
-               paste(sp_vec[i], "_sim_index.rds", sep = ""))
+               paste(sp_vec[i], "_sim_index2.rds", sep = ""))
   )
 }
 
