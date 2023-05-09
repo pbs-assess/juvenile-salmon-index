@@ -36,7 +36,7 @@ year_season_key <- expand.grid(
     ys_index = seq(1, nrow(.), by = 1),
     year_season_f = paste(year, season_f, sep = "_") %>% as.factor()
   )
-saveRDS(year_season_key, here::here("data", "year_season_key.rds"))
+# saveRDS(year_season_key, here::here("data", "year_season_key.rds"))
 
 
 # downscale data and predictive grid
@@ -97,56 +97,57 @@ missing_surveys <- year_season_key$ys_index[!(year_season_key$ys_index %in%
 dat_tbl <- readRDS(here::here("data", "fits", 
                               "all_spatial_varying_new_scale_iso.rds"))
 
-# dat_tbl2 <- dat %>%
-#   group_by(species) %>%
-#   group_nest()
+dat_tbl2 <- dat %>%
+  group_by(species) %>%
+  group_nest()
 
 # fit
-# fits_list_iso <- furrr::future_map(
-#   dat_tbl2$data,
-#   function(dat_in) {
-#    sdmTMB(
-#      n_juv ~ 0 + season_f + day_night + survey_f +
-#        scale_depth + scale_dist,
-#        # target_depth + dist_to_coast_km,
-#      offset = dat_in$effort,
-#      data = dat_in,
-#      mesh = spde,
-#      family = sdmTMB::nbinom2(),
-#      spatial = "off",
-#      spatial_varying = ~ 0 + season_f + year_f,
-#      time_varying = ~ 1,
-#      time_varying_type = "rw0",
-#      time = "ys_index",
-#      spatiotemporal = "off",
-#      anisotropy = FALSE,
-#      share_range = TRUE,
-#      extra_time = missing_surveys,
-#      priors = sdmTMBpriors(
-#        phi = halfnormal(0, 10),
-#        matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
-#        matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
-#      ),
-#      control = sdmTMBcontrol(
-#        newton_loops = 1,
-#        map = list(
-#          # 1 per season, fix all years to same value
-#          ln_tau_Z = factor(
-#            c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
-#          )
-#        )
-#      ),
-#      silent = FALSE
-#    )
-#   }
-# )
-# 
-# dat_tbl2$model <- "tv_iso"
-# dat_tbl2$fit <- fits_list_iso
-# 
-# saveRDS(dat_tbl2, here::here("data", "fits", "all_spatial_varying_new_scale_iso.rds"))
+fits_list_iso <- furrr::future_map(
+  dat_tbl2$data,
+  function(dat_in) {
+   sdmTMB(
+     n_juv ~ 0 + season_f + day_night + survey_f +
+       scale_depth #+ scale_dist
+     ,
+       # target_depth + dist_to_coast_km,
+     offset = dat_in$effort,
+     data = dat_in,
+     mesh = spde,
+     family = sdmTMB::nbinom2(),
+     spatial = "off",
+     spatial_varying = ~ 0 + season_f + year_f,
+     time_varying = ~ 1,
+     time_varying_type = "rw0",
+     time = "ys_index",
+     spatiotemporal = "off",
+     anisotropy = FALSE,
+     share_range = TRUE,
+     extra_time = missing_surveys,
+     priors = sdmTMBpriors(
+       phi = halfnormal(0, 10),
+       matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
+       matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
+     ),
+     control = sdmTMBcontrol(
+       newton_loops = 1,
+       map = list(
+         # 1 per season, fix all years to same value
+         ln_tau_Z = factor(
+           c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
+         )
+       )
+     ),
+     silent = FALSE
+   )
+  }
+)
 
-purrr::map(dat_tbl$fit, sanity)
+dat_tbl2$model <- "tv_no_dist"
+dat_tbl2$fit <- fits_list_iso
+
+saveRDS(dat_tbl2, here::here("data", "fits", "all_spatial_varying_new_scale_iso2.rds"))
+
+purrr::map(dat_tbl2$fit, sanity)
 
 # check residuals
 dat_tbl$sims <- purrr::map(dat_tbl$fit, simulate, nsim = 50)
@@ -225,23 +226,36 @@ ran_pars <- purrr::pmap(
       mutate(
         species = y,
         model = z
-      ) 
+      ) %>% 
+      # add unique identifier for second range term
+      group_by(term) %>% 
+      mutate(
+        par_id = row_number(),
+        term = ifelse(par_id > 1, paste(term, par_id, sep = "_"), term)
+      ) %>% 
+      ungroup() 
   }
 ) %>% 
-  bind_rows() 
+  bind_rows() %>% 
+  mutate(
+    term = fct_recode(
+      as.factor(term),
+      "spring_omega" = "sigma_Z", "summer_omega" = "sigma_Z_2",
+      "fall_omega" = "sigma_Z_3", "year_omega" = "sigma_Z_4"
+    )
+  )
 
 png(here::here("figs", "ms_figs_season", "ran_pars.png"), height = 4, width = 8,
     units = "in", res = 200)
 ggplot(
   ran_pars,
   aes(species, estimate, ymin = conf.low, ymax = conf.high,
-      fill = species, shape = model)
+      fill = species)
 ) +
   ggsidekick::theme_sleek() +
   scale_fill_manual(values = col_pal) +
-  scale_shape_manual(values = c(23, 24)) +
   ylab("Parameter Estimate") +
-  geom_pointrange(position = position_dodge(width = 0.4)) +
+  geom_pointrange(position = position_dodge(width = 0.4), shape = 21) +
   facet_wrap(~term, scales = "free_y") +
   guides(fill = "none")
 dev.off()

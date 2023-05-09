@@ -20,7 +20,7 @@ future::plan(future::multisession, workers = ncores - 3)
 
 # fitted model from all_species_fit.R
 fit_all_sp <- readRDS(
-  here::here("data", "fits", "all_spatial_varying_new_scale_iso.rds")) 
+  here::here("data", "fits", "all_spatial_varying_new_scale_iso2.rds")) 
   
 
 # simulate 20 MC draws from fitted models 
@@ -63,13 +63,13 @@ sp_vec <- unique(sim_tbl$species)
 # fit model to species 
 for (i in seq_along(sp_vec)) {
   sim_tbl_sub <- sim_tbl %>% filter(species == sp_vec[i])
-  fit <- furrr::future_map2(
+  fit <- purrr::map2(
     sim_tbl_sub$sim_dat, sim_tbl_sub$fit, 
     function (x, fit) {
       sdmTMB(
         sim_catch ~ 0 + season_f  + day_night + survey_f + 
-          scale_depth + scale_dist,
-        # target_depth + dist_to_coast_km,
+          scale_depth #+ scale_dist
+        ,
         offset = x$effort,
         data = x,
         mesh =  fit$spde,
@@ -93,7 +93,7 @@ for (i in seq_along(sp_vec)) {
           map = list(
             # 1 per season, fix all years to same value
             ln_tau_Z = factor(
-              c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
+              c(1, 2, 3, rep(4, times = length(unique(x$year)) - 1))
             )
           )
         ),
@@ -103,7 +103,7 @@ for (i in seq_along(sp_vec)) {
   )
   saveRDS(
     fit,
-    here::here("data", "fits", "sim_fit", paste(sp_vec[i], ".rds", sep = ""))
+    here::here("data", "fits", "sim_fit", paste(sp_vec[i], "_iso2.rds", sep = ""))
   )
   }
 
@@ -112,7 +112,7 @@ for (i in seq_along(sp_vec)) {
 sim_fit_list <- purrr::map(
   sp_vec,
   ~ readRDS(
-    here::here("data", "fits", "sim_fit", paste(.x, "_iso.rds", sep = ""))
+    here::here("data", "fits", "sim_fit", paste(.x, "_iso2.rds", sep = ""))
   )
 )
 
