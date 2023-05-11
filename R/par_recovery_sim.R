@@ -13,6 +13,7 @@
 library(tidyverse)
 library(sdmTMB)
 library(ggplot2)
+library(sdmTMBextra)
 
 ncores <- parallel::detectCores() 
 future::plan(future::multisession, workers = ncores - 3)
@@ -21,17 +22,76 @@ future::plan(future::multisession, workers = ncores - 3)
 # fitted model from all_species_fit.R
 fit_all_sp <- readRDS(
   here::here("data", "fits", "all_spatial_varying_new_scale_iso2.rds")) 
-  
+fit_all_sp_p <- readRDS(
+  here::here("data", "fits", "all_spatial_varying_pois.rds")) 
+
+
+## simulate from Stan output fixing FEs at MLE
+set.seed(456)
+sims_list <- purrr::map(
+  fit_all_sp$fit, function (x) {
+    object <- x
+    samp <- sample_mle_mcmc(object, mcmc_iter = 120, mcmc_warmup = 100)
+    
+    obj <- object$tmb_obj
+    random <- unique(names(obj$env$par[obj$env$random]))
+    pl <- as.list(object$sd_report, "Estimate")
+    fixed <- !(names(pl) %in% random)
+    map <- lapply(pl[fixed], function(x) factor(rep(NA, length(x))))
+    obj <- TMB::MakeADFun(obj$env$data, pl, map = map, DLL = "sdmTMB")
+    obj_mle <- object
+    obj_mle$tmb_obj <- obj
+    obj_mle$tmb_map <- map
+    simulate(obj_mle, mcmc_samples = extract_mcmc(samp), nsim = 20)
+  }
+)
+saveRDS(sims_list, 
+        here::here("data", "fits", "nb_mcmc_draws.rds"))
+
+
+# object <- fit_all_sp_p$fit[[2]]
+# samp <- sample_mle_mcmc(object, mcmc_iter = 120, mcmc_warmup = 100)
+# 
+# obj <- object$tmb_obj
+# random <- unique(names(obj$env$par[obj$env$random]))
+# pl <- as.list(object$sd_report, "Estimate")
+# fixed <- !(names(pl) %in% random)
+# map <- lapply(pl[fixed], function(x) factor(rep(NA, length(x))))
+# obj <- TMB::MakeADFun(obj$env$data, pl, map = map, DLL = "sdmTMB")
+# obj_mle <- object
+# obj_mle$tmb_obj <- obj
+# obj_mle$tmb_map <- map
+# s <- simulate(obj_mle, mcmc_samples = extract_mcmc(samp), nsim = 20)
+# 
+# pred_fixed <- object$family$linkinv(predict(object)$est_non_rf)
+# r_pois_chum <- DHARMa::createDHARMa(
+#   simulatedResponse = s,
+#   observedResponse = object$data$n_juv,
+#   fittedPredictedResponse = pred_fixed
+# )
+# DHARMa::testResiduals(r_pois_chum)
+# 
+# pois_res <- residuals(object, mcmc_samples = s, type = "response")
+# qqnorm(pois_res); qqline(pois_res)
+
 
 # simulate 20 MC draws from fitted models 
 set.seed(456)
 nsims = 20
-sims_list <- purrr::map(
-  fit_all_sp$fit, simulate, nsim = nsims#, re_form = ~0
+sims_list2 <- purrr::map(
+  dat_tbl$fit, simulate, nsim = nsims#, re_form = ~0
 )
 
-# purrr::map2(sims_list, fit_all_sp$fit, sdmTMBextra::dharma_residuals)
-
+dharma_list <- purrr::map2(sims_list, fit_all_sp$fit, function (x, y) {
+  pred_fixed <- y$family$linkinv(predict(y)$est_non_rf)
+  r_nb <- DHARMa::createDHARMa(
+    simulatedResponse = x,
+    observedResponse = y$data$n_juv,
+    fittedPredictedResponse = pred_fixed
+  )
+  DHARMa::testResiduals(r_nb)
+} 
+)
 
 ## for each simulated dataset, refit model, recover pars and store
 
@@ -41,7 +101,7 @@ sim_tbl <- purrr::pmap(
   function (sp, fits, x) {
     tibble(
       species = sp,
-      iter = seq(1, nsims, by = 1),
+      iter = seq(1, 20, by = 1),
       sim_dat = lapply(seq_len(ncol(x)), function(i) {
         # use fits instead of data in tibble because mismatched
         fits$data %>% 
@@ -60,6 +120,7 @@ sp_vec <- unique(sim_tbl$species)
 
 ## DISPERSION ------------------------------------------------------------------
 
+
 fit_all_sp$true_sd <- purrr::map(
   fit_all_sp$data, ~ sd(.x$n_juv)
 )
@@ -76,7 +137,18 @@ sim_tbl %>%
   geom_boxplot(aes(x = as.factor(species), y = sim_sd)) +
   geom_point(aes(x = as.factor(species), y = true_sd), colour = "red")
   
-  
+
+## PROPORTION OF ZEROS ---------------------------------------------------------
+
+# proportion zeros
+purrr::map2(fit_all_sp$data, sims_list, function(x, y) {
+  sum(x$n_juv == 0) / length(x$n_juv)
+  sum(y == 0) / length(y)
+})
+
+sum(ff$data$n_juv == 0) / length(ff$data$n_juv)
+sum(s_pois == 0) / length(s_pois)
+
 
 ## FIT SIMS  -------------------------------------------------------------------
 
@@ -88,7 +160,7 @@ for (i in seq_along(sp_vec)) {
     function (x, fit) {
       sdmTMB(
         sim_catch ~ 0 + season_f  + day_night + survey_f + 
-          scale_depth #+ scale_dist
+          scale_depth 
         ,
         offset = x$effort,
         data = x,
