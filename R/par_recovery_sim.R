@@ -76,22 +76,22 @@ saveRDS(sims_list,
 
 
 # simulate 20 MC draws from fitted models 
-set.seed(456)
-nsims = 20
-sims_list2 <- purrr::map(
-  dat_tbl$fit, simulate, nsim = nsims#, re_form = ~0
-)
-
-dharma_list <- purrr::map2(sims_list, fit_all_sp$fit, function (x, y) {
-  pred_fixed <- y$family$linkinv(predict(y)$est_non_rf)
-  r_nb <- DHARMa::createDHARMa(
-    simulatedResponse = x,
-    observedResponse = y$data$n_juv,
-    fittedPredictedResponse = pred_fixed
-  )
-  DHARMa::testResiduals(r_nb)
-} 
-)
+# set.seed(456)
+# nsims = 20
+# sims_list2 <- purrr::map(
+#   dat_tbl$fit, simulate, nsim = nsims#, re_form = ~0
+# )
+# 
+# dharma_list <- purrr::map2(sims_list, fit_all_sp$fit, function (x, y) {
+#   pred_fixed <- y$family$linkinv(predict(y)$est_non_rf)
+#   r_nb <- DHARMa::createDHARMa(
+#     simulatedResponse = x,
+#     observedResponse = y$data$n_juv,
+#     fittedPredictedResponse = pred_fixed
+#   )
+#   DHARMa::testResiduals(r_nb)
+# } 
+# )
 
 ## for each simulated dataset, refit model, recover pars and store
 
@@ -159,7 +159,7 @@ for (i in seq_along(sp_vec)) {
     sim_tbl_sub$sim_dat, sim_tbl_sub$fit, 
     function (x, fit) {
       sdmTMB(
-        sim_catch ~ 0 + season_f  + day_night + survey_f + 
+        sim_catch ~ 0 + season_f + day_night + survey_f + 
           scale_depth 
         ,
         offset = x$effort,
@@ -177,9 +177,8 @@ for (i in seq_along(sp_vec)) {
         anisotropy = FALSE,
         priors = sdmTMBpriors(
           phi = halfnormal(0, 10),
-          matern_s = pc_matern(range_gt = 25, sigma_lt = 10),
-          matern_st = pc_matern(range_gt = 25, sigma_lt = 10)
-        ),
+          matern_s = pc_matern(range_gt = 25, sigma_lt = 10)
+          ),
         control = sdmTMBcontrol(
           newton_loops = 1,
           map = list(
@@ -289,7 +288,7 @@ sim_box <- ggplot() +
   labs(y = "Parameter Estimate", x =  "Species") +
   ggsidekick::theme_sleek() 
 
-png(here::here("figs", "diagnostics", "par_recovery_sim_box_no_dist.png"), 
+png(here::here("figs", "diagnostics", "par_recovery_sim_box_no_dist_mcmc.png"), 
     height = 8, width = 8, units = "in", res = 200)
 sim_box
 dev.off()
