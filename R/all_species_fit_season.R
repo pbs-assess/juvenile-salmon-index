@@ -46,6 +46,7 @@ dat <- dat_in %>%
     scale_depth = scale(as.numeric(target_depth))[ , 1],
     year_season_f = paste(year_f, season_f, sep = "_") %>% as.factor(),
     day_night = as.factor(day_night),
+    # observation level intercept used for RI
     obs_f = 1:nrow(.) %>% as.factor()
   ) %>% 
   left_join(., year_season_key %>% select(ys_index, year_season_f)) %>% 
@@ -94,57 +95,59 @@ dat_tbl <- readRDS(here::here("data", "fits",
                               "all_spatial_varying_new_scale_iso2.rds")) %>% 
   mutate(model = "nb2")
 
-dat_tbl2 <- dat %>%
-  group_by(species) %>%
-  group_nest()
+# dat_tbl2 <- dat %>%
+#   group_by(species) %>%
+#   group_nest()
 
 
 # fit
-fits_list_pois <- furrr::future_map(
-  dat_tbl2$data,
-  function(dat_in) {
-    sdmTMB(
-      n_juv ~ 0 + season_f + day_night + survey_f +
-        scale_depth +
-        (1 | obs_f),
-      offset = dat_in$effort,
-      data = dat_in,
-      mesh = spde,
-      # family = sdmTMB::nbinom2(),
-      family = poisson(link = "log"),
-      spatial = "off",
-      spatial_varying = ~ 0 + season_f + year_f,
-      time_varying = ~ 1,
-      time_varying_type = "rw0",
-      time = "ys_index",
-      spatiotemporal = "off",
-      anisotropy = FALSE,
-      share_range = TRUE,
-      extra_time = missing_surveys,
-      priors = sdmTMBpriors(
-        phi = halfnormal(0, 10),
-        matern_s = pc_matern(range_gt = 25, sigma_lt = 10)
-      ),
-      control = sdmTMBcontrol(
-        newton_loops = 1,
-        map = list(
-          # 1 per season, fix all years to same value
-          ln_tau_Z = factor(
-            c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
-          )
-        )
-      ),
-      silent = FALSE
-    )
-  }
-)
+# fits_list <- furrr::future_map(
+#   dat_tbl2$data,
+#   function(dat_in) {
+#     sdmTMB(
+#       n_juv ~ 0 + season_f + day_night + survey_f +
+#         scale_depth# +
+#         # (1 | obs_f)
+#       ,
+#       offset = dat_in$effort,
+#       data = dat_in,
+#       mesh = spde,
+#       family = sdmTMB::nbinom2(),
+#       # family = poisson(link = "log"),
+#       spatial = "off",
+#       spatial_varying = ~ 0 + season_f + year_f,
+#       time_varying = ~ 1,
+#       time_varying_type = "rw0",
+#       time = "ys_index",
+#       spatiotemporal = "off",
+#       anisotropy = FALSE,
+#       share_range = TRUE,
+#       extra_time = missing_surveys,
+#       priors = sdmTMBpriors(
+#         phi = halfnormal(0, 10),
+#         matern_s = pc_matern(range_gt = 25, sigma_lt = 10)
+#       ),
+#       control = sdmTMBcontrol(
+#         newton_loops = 1,
+#         map = list(
+#           # 1 per season, fix all years to same value
+#           ln_tau_Z = factor(
+#             c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
+#           )
+#         )
+#       ),
+#       silent = FALSE
+#     )
+#   }
+# )
+
+# dat_tbl2$fit <- fits_list_pois
+# 
+# saveRDS(dat_tbl2, here::here("data", "fits", "all_spatial_varying_pois.rds"))
 
 
 
-dat_tbl2$model <- "tv_pois"
-dat_tbl2$fit <- fits_list_pois
-
-saveRDS(dat_tbl2, here::here("data", "fits", "all_spatial_varying_pois.rds"))
+## CHECKS ----------------------------------------------------------------------
 
 purrr::map(dat_tbl2$fit, sanity)
 
@@ -153,34 +156,11 @@ dat_tbl$sims <- purrr::map(dat_tbl$fit, simulate, nsim = 50)
 qq_list <- purrr::map2(dat_tbl$sims, dat_tbl$fit, dharma_residuals)
 
 
-
 # proportion zeros
-xx <- dat_tbl$sims[[1]]
-length(xx[,1][xx[,1] == 0])  
-hist(apply(xx, 2, function (x) length(x[x == 0])))
-abline(v = length(dat_tbl$data[[1]]$n_juv[dat_tbl$data[[1]]$n_juv == 0]),
-       col = "red")
-length(dat_tbl$data[[1]]$n_juv[dat_tbl$data[[1]]$n_juv == 0])  
+purrr::map2(dat_tbl$data, dat_tbl$sims, function(x, y) {
+  (sum(x$n_juv == 0) / length(x$n_juv)) / (sum(y == 0) / length(y))
+})
 
-
-# dispersion checks
-sims <- simulate(dum, nsim = 50)
-pred_fixed <- dum$family$linkinv(predict(dum)$est_non_rf)
-r_nb <- DHARMa::createDHARMa(
-  simulatedResponse = sims,
-  observedResponse = dum$data$n_juv,
-  fittedPredictedResponse = pred_fixed
-)
-DHARMa::testResiduals(r_nb)
-DHARMa::testZeroInflation(r_nb)
-
-
-# mcmc residuals
-samp <- predict_mle_mcmc(dat_tbl$fit[[1]], mcmc_iter = 201, mcmc_warmup = 200, 
-                         print_stan_model = TRUE)
-mcmc_res <- residuals(dat_tbl$fit[[1]], 
-                      type = "mle-mcmc", mcmc_samples = samp)
-qqnorm(mcmc_res);qqline(mcmc_res)
 
 
 ## PARAMETER ESTIMATES ---------------------------------------------------------
@@ -354,81 +334,87 @@ depth_plot <- ggplot(
   theme(axis.title.y = element_blank()) +
   ylab("Scaled Abundance Index") 
 
-
-# distance to coast
-dist_dat <- expand.grid(
-  dist_to_coast_km = seq(0.1, max(dat$dist_to_coast_km), length.out = 100),
-  scale_depth = 0,
-  day_night = unique(dat$day_night),
-  season_f = unique(dat$season_f),
-  target_depth = 0,
-  survey_f = unique(dat$survey_f),
-  year = unique(dat$year)
-  ) %>% 
-  mutate(
-    scale_dist = (dist_to_coast_km - mean(dat$dist_to_coast_km)) / 
-      sd(dat$dist_to_coast_km),
-    year_f = as.factor(year),
-    season_year_f = paste(season_f, year_f, sep = "_") %>% as.factor()
-  ) %>% 
-  filter(
-    day_night == "DAY", season_f == "su", survey_f == "hss", year_f == "2012"
-  ) %>% 
-  left_join(
-    ., year_season_key, by = c("season_f", "year")
-  )
-
-dist_preds <- purrr::pmap(
-  list(dat_tbl$fit, dat_tbl$species, dat_tbl$model),
-  function(x, y, z) {
-    predict(x, newdata = dist_dat, se_fit = T, re_form = NA, 
-            re_form_iid = NA) %>% 
-      mutate(species = y,
-             model = z)
-  }
-) %>%
-  bind_rows()
-
-dist_preds2 <- dist_preds %>% 
-  group_by(species, model) %>% 
-  mutate(
-    exp_est = exp(est),
-    max_est = max(exp_est),
-    scale_est = exp_est / max_est,
-    up = (est + 1.96 * est_se),
-    lo = (est - 1.96 * est_se),
-    exp_up = exp(up),
-    exp_lo = exp(lo),
-    scale_up = exp(up) / max_est,
-    scale_lo = exp(lo) / max_est
-  )
-
-dist_plot <- ggplot(
-  data = dist_preds2,
-  aes(x = dist_to_coast_km, y = scale_est, ymin = scale_lo, ymax = scale_up, 
-      fill = species)
-) +
-  ggsidekick::theme_sleek() +
-  geom_line() +
-  geom_ribbon(alpha = 0.3) +
-  scale_fill_manual(values = col_pal) +
-  scale_x_continuous(expand = c(0, 0)) +
-  facet_wrap(~species, nrow = 1) +
-  coord_cartesian(y = c(0, 2.5)) +
-  xlab("Distance to Coastline (km)") +
-  theme(axis.title.y = element_blank()) +
-  guides(fill = "none") 
-
-plot_g2 <- cowplot::plot_grid(depth_plot, dist_plot, ncol = 1)
-y_grob <- grid::textGrob("Scaled Abundance Index", rot = 90)
-
-png(here::here("figs", "ms_figs_season", "smooth_effs.png"), height = 5, 
-    width = 8,
+png(here::here("figs", "ms_figs_season", "depth_eff.png"), 
+    height = 3, width = 8,
     units = "in", res = 200)
-gridExtra::grid.arrange(
-  gridExtra::arrangeGrob(plot_g2, left = y_grob)
-)
+depth_plot
 dev.off()
+
+
+# distance to coast (REMOVED DUE TO CORRELATIONS W RANDOM FIELDS)
+# dist_dat <- expand.grid(
+#   dist_to_coast_km = seq(0.1, max(dat$dist_to_coast_km), length.out = 100),
+#   scale_depth = 0,
+#   day_night = unique(dat$day_night),
+#   season_f = unique(dat$season_f),
+#   target_depth = 0,
+#   survey_f = unique(dat$survey_f),
+#   year = unique(dat$year)
+#   ) %>% 
+#   mutate(
+#     scale_dist = (dist_to_coast_km - mean(dat$dist_to_coast_km)) / 
+#       sd(dat$dist_to_coast_km),
+#     year_f = as.factor(year),
+#     season_year_f = paste(season_f, year_f, sep = "_") %>% as.factor()
+#   ) %>% 
+#   filter(
+#     day_night == "DAY", season_f == "su", survey_f == "hss", year_f == "2012"
+#   ) %>% 
+#   left_join(
+#     ., year_season_key, by = c("season_f", "year")
+#   )
+# 
+# dist_preds <- purrr::pmap(
+#   list(dat_tbl$fit, dat_tbl$species, dat_tbl$model),
+#   function(x, y, z) {
+#     predict(x, newdata = dist_dat, se_fit = T, re_form = NA, 
+#             re_form_iid = NA) %>% 
+#       mutate(species = y,
+#              model = z)
+#   }
+# ) %>%
+#   bind_rows()
+# 
+# dist_preds2 <- dist_preds %>% 
+#   group_by(species, model) %>% 
+#   mutate(
+#     exp_est = exp(est),
+#     max_est = max(exp_est),
+#     scale_est = exp_est / max_est,
+#     up = (est + 1.96 * est_se),
+#     lo = (est - 1.96 * est_se),
+#     exp_up = exp(up),
+#     exp_lo = exp(lo),
+#     scale_up = exp(up) / max_est,
+#     scale_lo = exp(lo) / max_est
+#   )
+# 
+# dist_plot <- ggplot(
+#   data = dist_preds2,
+#   aes(x = dist_to_coast_km, y = scale_est, ymin = scale_lo, ymax = scale_up, 
+#       fill = species)
+# ) +
+#   ggsidekick::theme_sleek() +
+#   geom_line() +
+#   geom_ribbon(alpha = 0.3) +
+#   scale_fill_manual(values = col_pal) +
+#   scale_x_continuous(expand = c(0, 0)) +
+#   facet_wrap(~species, nrow = 1) +
+#   coord_cartesian(y = c(0, 2.5)) +
+#   xlab("Distance to Coastline (km)") +
+#   theme(axis.title.y = element_blank()) +
+#   guides(fill = "none") 
+# 
+# plot_g2 <- cowplot::plot_grid(depth_plot, dist_plot, ncol = 1)
+# y_grob <- grid::textGrob("Scaled Abundance Index", rot = 90)
+# 
+# png(here::here("figs", "ms_figs_season", "smooth_effs.png"), height = 5, 
+#     width = 8,
+#     units = "in", res = 200)
+# gridExtra::grid.arrange(
+#   gridExtra::arrangeGrob(plot_g2, left = y_grob)
+# )
+# dev.off()
 
 
 
@@ -504,7 +490,6 @@ ind_preds <- purrr::map(
 )
 
 
-
 # scalar for spatial predictions; since preds are in m3, multiply by
 # (1000 * 1000 * 13) because effort in m but using 1x1 km grid cells and 
 # assuming mean net opening (13 m)
@@ -555,7 +540,10 @@ index_dat <- purrr::map2(
     ),
     log_lwr = log_est - (1.96 * se),
     log_upr = log_est + (1.96 * se)
-  ) 
+  ) %>% 
+  group_by(season, species) %>% 
+  mutate(mean_log_est = mean(log_est)) %>% 
+  ungroup()
 
 ## index plots
 shape_pal <- c(21, 23)
@@ -579,7 +567,7 @@ log_index
 dev.off()
 
 
-## scaled abundance with no intervals
+## scaled abundance 
 scaled_index <- index_dat %>% 
   filter(survey == "sampled")%>%
   group_by(species, season) %>%
@@ -784,7 +772,7 @@ omega_yr <- sub_spatial %>%
   filter(year_f == year_seq[1], season_f == "su") %>% 
   select(X, Y, species, year_field_seq) %>% 
   pivot_longer(cols = starts_with("zeta"), values_to = "omega_est", 
-             names_to = "year", names_prefix = "zeta_s_year_f")
+             names_to = "year", names_prefix = "zeta_s_year_f") 
 
 png(here::here("figs", "ms_figs_season", "year_rf.png"), 
     height = 6, width = 7.5, units = "in", res = 200)
