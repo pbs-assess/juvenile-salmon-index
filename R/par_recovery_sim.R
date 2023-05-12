@@ -20,90 +20,70 @@ future::plan(future::multisession, workers = ncores - 3)
 
 
 # fitted model from all_species_fit.R
-fit_all_sp <- readRDS(
-  here::here("data", "fits", "all_spatial_varying_new_scale_iso2.rds")) 
-fit_all_sp_p <- readRDS(
-  here::here("data", "fits", "all_spatial_varying_pois.rds")) 
+fit_all_sp_nb2 <- readRDS(
+  here::here("data", "fits", "all_spatial_varying_nb2.rds")) %>% 
+  mutate(model = "nb2")
+fit_all_sp_nb1 <- readRDS(
+  here::here("data", "fits", "all_spatial_varying_nb1.rds")) %>% 
+  select(species, data, model, fit)
 
 
 ## simulate from Stan output fixing FEs at MLE
-set.seed(456)
-sims_list <- purrr::map(
-  fit_all_sp$fit, function (x) {
-    object <- x
-    samp <- sample_mle_mcmc(object, mcmc_iter = 120, mcmc_warmup = 100)
-    
-    obj <- object$tmb_obj
-    random <- unique(names(obj$env$par[obj$env$random]))
-    pl <- as.list(object$sd_report, "Estimate")
-    fixed <- !(names(pl) %in% random)
-    map <- lapply(pl[fixed], function(x) factor(rep(NA, length(x))))
-    obj <- TMB::MakeADFun(obj$env$data, pl, map = map, DLL = "sdmTMB")
-    obj_mle <- object
-    obj_mle$tmb_obj <- obj
-    obj_mle$tmb_map <- map
-    simulate(obj_mle, mcmc_samples = extract_mcmc(samp), nsim = 20)
-  }
-)
-saveRDS(sims_list, 
-        here::here("data", "fits", "nb_mcmc_draws.rds"))
-
-
-# object <- fit_all_sp_p$fit[[2]]
-# samp <- sample_mle_mcmc(object, mcmc_iter = 120, mcmc_warmup = 100)
-# 
-# obj <- object$tmb_obj
-# random <- unique(names(obj$env$par[obj$env$random]))
-# pl <- as.list(object$sd_report, "Estimate")
-# fixed <- !(names(pl) %in% random)
-# map <- lapply(pl[fixed], function(x) factor(rep(NA, length(x))))
-# obj <- TMB::MakeADFun(obj$env$data, pl, map = map, DLL = "sdmTMB")
-# obj_mle <- object
-# obj_mle$tmb_obj <- obj
-# obj_mle$tmb_map <- map
-# s <- simulate(obj_mle, mcmc_samples = extract_mcmc(samp), nsim = 20)
-# 
-# pred_fixed <- object$family$linkinv(predict(object)$est_non_rf)
-# r_pois_chum <- DHARMa::createDHARMa(
-#   simulatedResponse = s,
-#   observedResponse = object$data$n_juv,
-#   fittedPredictedResponse = pred_fixed
-# )
-# DHARMa::testResiduals(r_pois_chum)
-# 
-# pois_res <- residuals(object, mcmc_samples = s, type = "response")
-# qqnorm(pois_res); qqline(pois_res)
-
-
-# simulate 20 MC draws from fitted models 
 # set.seed(456)
-# nsims = 20
-# sims_list2 <- purrr::map(
-#   dat_tbl$fit, simulate, nsim = nsims#, re_form = ~0
+# sims_list <- furrr::future_map(
+#   fit_all_sp_nb1$fit, function (x) {
+#     object <- x
+#     samp <- sample_mle_mcmc(object, mcmc_iter = 120, mcmc_warmup = 100)
+#     
+#     obj <- object$tmb_obj
+#     random <- unique(names(obj$env$par[obj$env$random]))
+#     pl <- as.list(object$sd_report, "Estimate")
+#     fixed <- !(names(pl) %in% random)
+#     map <- lapply(pl[fixed], function(x) factor(rep(NA, length(x))))
+#     obj <- TMB::MakeADFun(obj$env$data, pl, map = map, DLL = "sdmTMB")
+#     obj_mle <- object
+#     obj_mle$tmb_obj <- obj
+#     obj_mle$tmb_map <- map
+#     simulate(obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp), nsim = 20)
+#   }
 # )
-# 
-# dharma_list <- purrr::map2(sims_list, fit_all_sp$fit, function (x, y) {
-#   pred_fixed <- y$family$linkinv(predict(y)$est_non_rf)
-#   r_nb <- DHARMa::createDHARMa(
-#     simulatedResponse = x,
-#     observedResponse = y$data$n_juv,
-#     fittedPredictedResponse = pred_fixed
-#   )
-#   DHARMa::testResiduals(r_nb)
-# } 
-# )
+# saveRDS(sims_list, 
+#         here::here("data", "fits", "nb1_mcmc_draws.rds"))
+
+fit_all_sp_nb1$sims <- readRDS(here::here("data", "fits", "nb1_mcmc_draws.rds"))
+fit_all_sp_nb2$sims <- readRDS(here::here("data", "fits", "nb_mcmc_draws.rds"))
+
+fit_all_sp <- rbind(fit_all_sp_nb1, fit_all_sp_nb2)
+
+# subset to use nbinom1 for pink/chum
+fit_all_sp_trim <- fit_all_sp %>% 
+  filter((species %in% c("chum", "pink") & model == "nb1") | 
+           (!species %in% c("chum", "pink") & model == "nb2"))
+
+
+dharma_list <- purrr::map2(fit_all_sp_trim$sims, fit_all_sp_trim$fit,
+                           function (x, y) {
+  pred_fixed <- y$family$linkinv(predict(y)$est_non_rf)
+  r_nb <- DHARMa::createDHARMa(
+    simulatedResponse = x,
+    observedResponse = y$data$n_juv,
+    fittedPredictedResponse = pred_fixed
+  )
+  DHARMa::testResiduals(r_nb)
+}
+)
 
 ## for each simulated dataset, refit model, recover pars and store
 
 # make a tibble for each species simulations
 sim_tbl <- purrr::pmap(
-  list(fit_all_sp$species, fit_all_sp$fit, sims_list),
+  list(fit_all_sp_trim$species, fit_all_sp_trim$fit, fit_all_sp_trim$sims),
   function (sp, fits, x) {
     tibble(
       species = sp,
       iter = seq(1, 20, by = 1),
       sim_dat = lapply(seq_len(ncol(x)), function(i) {
-        # use fits instead of data in tibble because mismatched
+        # use fits instead of data in tibble because mismatched from extra_time
         fits$data %>% 
           mutate(sim_catch = x[ , i])
       })
@@ -112,7 +92,7 @@ sim_tbl <- purrr::pmap(
 ) %>% 
   bind_rows() %>% 
   left_join(., 
-            fit_all_sp %>% select(species, fit), 
+            fit_all_sp_trim %>% select(species, fit), 
             by = c("species"))
 
 sp_vec <- unique(sim_tbl$species)
@@ -121,8 +101,8 @@ sp_vec <- unique(sim_tbl$species)
 ## DISPERSION ------------------------------------------------------------------
 
 
-fit_all_sp$true_sd <- purrr::map(
-  fit_all_sp$data, ~ sd(.x$n_juv)
+fit_all_sp_trim$true_sd <- purrr::map(
+  fit_all_sp_trim$data, ~ sd(.x$n_juv)
 )
 
 sim_tbl$sim_sd <- purrr::map(
@@ -131,7 +111,7 @@ sim_tbl$sim_sd <- purrr::map(
 
 sim_tbl %>% 
   select(species, sim_sd) %>% 
-  left_join(., fit_all_sp %>% select(species, true_sd), by = "species") %>% 
+  left_join(., fit_all_sp_trim %>% select(species, true_sd), by = "species") %>% 
   unnest(cols = c(sim_sd, true_sd)) %>% 
   ggplot(.) +
   geom_boxplot(aes(x = as.factor(species), y = sim_sd)) +
@@ -141,60 +121,92 @@ sim_tbl %>%
 ## PROPORTION OF ZEROS ---------------------------------------------------------
 
 # proportion zeros
-purrr::map2(fit_all_sp$data, sims_list, function(x, y) {
-  sum(x$n_juv == 0) / length(x$n_juv)
-  sum(y == 0) / length(y)
+purrr::map2(fit_all_sp_trim$data, fit_all_sp_trim$sims, function(x, y) {
+  (sum(x$n_juv == 0) / length(x$n_juv)) / (sum(y == 0) / length(y))
 })
-
-sum(ff$data$n_juv == 0) / length(ff$data$n_juv)
-sum(s_pois == 0) / length(s_pois)
 
 
 ## FIT SIMS  -------------------------------------------------------------------
 
 # fit model to species 
-for (i in seq_along(sp_vec)) {
+for (i in 1:2) {#seq_along(sp_vec)) {
   sim_tbl_sub <- sim_tbl %>% filter(species == sp_vec[i])
   fit <- purrr::map2(
     sim_tbl_sub$sim_dat, sim_tbl_sub$fit, 
     function (x, fit) {
-      sdmTMB(
-        sim_catch ~ 0 + season_f + day_night + survey_f + 
-          scale_depth 
-        ,
-        offset = x$effort,
-        data = x,
-        mesh =  fit$spde,
-        family = sdmTMB::nbinom2(),
-        spatial = "off",
-        spatiotemporal = "off",
-        spatial_varying = ~ 0 + season_f + year_f,
-        time_varying = ~ 1,
-        time_varying_type = "rw0",
-        time = "ys_index",
-        extra_time = fit$extra_time,
-        share_range = TRUE,
-        anisotropy = FALSE,
-        priors = sdmTMBpriors(
-          phi = halfnormal(0, 10),
-          matern_s = pc_matern(range_gt = 25, sigma_lt = 10)
+      if (sp_vec[i] %in% c("pink", "chum")) {
+        sdmTMB(
+          sim_catch ~ 0 + season_f + day_night + survey_f + 
+            scale_depth 
+          ,
+          offset = x$effort,
+          data = x,
+          mesh =  fit$spde,
+          family = sdmTMB::nbinom1(),
+          spatial = "off",
+          spatiotemporal = "off",
+          spatial_varying = ~ 0 + season_f + year_f,
+          time_varying = ~ 1,
+          time_varying_type = "rw0",
+          time = "ys_index",
+          extra_time = fit$extra_time,
+          share_range = TRUE,
+          anisotropy = FALSE,
+          priors = sdmTMBpriors(
+            phi = halfnormal(0, 10),
+            matern_s = pc_matern(range_gt = 25, sigma_lt = 10)
           ),
-        control = sdmTMBcontrol(
-          newton_loops = 1,
-          map = list(
-            # 1 per season, fix all years to same value
-            ln_tau_Z = factor(
-              c(1, 2, 3, rep(4, times = length(unique(x$year)) - 1))
+          control = sdmTMBcontrol(
+            newton_loops = 1,
+            map = list(
+              # 1 per season, fix all years to same value
+              ln_tau_Z = factor(
+                c(1, 2, 3, rep(4, times = length(unique(x$year)) - 1))
+              )
             )
-          )
-        ),
-        silent = FALSE
-      )
+          ),
+          silent = FALSE
+        )
+      } else {
+        sdmTMB(
+          sim_catch ~ 0 + season_f + day_night + survey_f + 
+            scale_depth 
+          ,
+          offset = x$effort,
+          data = x,
+          mesh =  fit$spde,
+          family = sdmTMB::nbinom2(),
+          spatial = "off",
+          spatiotemporal = "off",
+          spatial_varying = ~ 0 + season_f + year_f,
+          time_varying = ~ 1,
+          time_varying_type = "rw0",
+          time = "ys_index",
+          extra_time = fit$extra_time,
+          share_range = TRUE,
+          anisotropy = FALSE,
+          priors = sdmTMBpriors(
+            phi = halfnormal(0, 10),
+            matern_s = pc_matern(range_gt = 25, sigma_lt = 10)
+          ),
+          control = sdmTMBcontrol(
+            newton_loops = 1,
+            map = list(
+              # 1 per season, fix all years to same value
+              ln_tau_Z = factor(
+                c(1, 2, 3, rep(4, times = length(unique(x$year)) - 1))
+              )
+            )
+          ),
+          silent = FALSE
+        )
+      }
     }
   )
   saveRDS(
     fit,
-    here::here("data", "fits", "sim_fit", paste(sp_vec[i], "_iso2.rds", sep = ""))
+    here::here("data", "fits", "sim_fit", 
+               paste(sp_vec[i], "_mix_link.rds", sep = ""))
   )
   }
 
@@ -203,7 +215,7 @@ for (i in seq_along(sp_vec)) {
 sim_fit_list <- purrr::map(
   sp_vec,
   ~ readRDS(
-    here::here("data", "fits", "sim_fit", paste(.x, "_iso2.rds", sep = ""))
+    here::here("data", "fits", "sim_fit", paste(.x, "_mix_link.rds", sep = ""))
   )
 )
 
