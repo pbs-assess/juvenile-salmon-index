@@ -41,7 +41,7 @@ dat <- dat_in %>%
     yday = lubridate::yday(date),
     utm_x_1000 = utm_x / 1000,
     utm_y_1000 = utm_y / 1000,
-    effort = log(volume_m3),
+    effort = log(volume_km3),
     scale_dist = scale(as.numeric(dist_to_coast_km))[ , 1],
     scale_depth = scale(as.numeric(target_depth))[ , 1],
     year_season_f = paste(year_f, season_f, sep = "_") %>% as.factor(),
@@ -90,74 +90,117 @@ spde <- make_mesh(
 missing_surveys <- year_season_key$ys_index[!(year_season_key$ys_index %in% 
                                                 dat$ys_index)]
 
-
-dat_tbl <- readRDS(here::here("data", "fits", 
-                              "all_spatial_varying_new_scale_iso2.rds")) %>% 
-  mutate(model = "nb2")
-
-# dat_tbl2 <- dat %>%
-#   group_by(species) %>%
-#   group_nest()
-
+dat_tbl2 <- dat %>%
+  group_by(species) %>%
+  group_nest()
 
 # fit
-# fits_list <- furrr::future_map(
-#   dat_tbl2$data,
-#   function(dat_in) {
-#     sdmTMB(
-#       n_juv ~ 0 + season_f + day_night + survey_f +
-#         scale_depth# +
-#         # (1 | obs_f)
-#       ,
-#       offset = dat_in$effort,
-#       data = dat_in,
-#       mesh = spde,
-#       family = sdmTMB::nbinom2(),
-#       # family = poisson(link = "log"),
-#       spatial = "off",
-#       spatial_varying = ~ 0 + season_f + year_f,
-#       time_varying = ~ 1,
-#       time_varying_type = "rw0",
-#       time = "ys_index",
-#       spatiotemporal = "off",
-#       anisotropy = FALSE,
-#       share_range = TRUE,
-#       extra_time = missing_surveys,
-#       priors = sdmTMBpriors(
-#         phi = halfnormal(0, 10),
-#         matern_s = pc_matern(range_gt = 25, sigma_lt = 10)
-#       ),
-#       control = sdmTMBcontrol(
-#         newton_loops = 1,
-#         map = list(
-#           # 1 per season, fix all years to same value
-#           ln_tau_Z = factor(
-#             c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
-#           )
-#         )
-#       ),
-#       silent = FALSE
-#     )
-#   }
-# )
+fits_list_nb1 <- furrr::future_map(
+  dat_tbl1$data, 
+  function(dat_in) {
+    sdmTMB(
+        n_juv ~ 0 + season_f + day_night + survey_f +
+          scale_depth
+        ,
+        offset = dat_in$effort,
+        data = dat_in,
+        mesh = spde,
+        family = sdmTMB::nbinom1(),
+        spatial = "off",
+        spatial_varying = ~ 0 + season_f + year_f,
+        time_varying = ~ 1,
+        time_varying_type = "rw0",
+        time = "ys_index",
+        spatiotemporal = "off",
+        anisotropy = FALSE,
+        share_range = TRUE,
+        extra_time = missing_surveys,
+        priors = sdmTMBpriors(
+          phi = halfnormal(0, 10),
+          matern_s = pc_matern(range_gt = 25, sigma_lt = 10)
+        ),
+        control = sdmTMBcontrol(
+          newton_loops = 1,
+          map = list(
+            # 1 per season, fix all years to same value
+            ln_tau_Z = factor(
+              c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
+            )
+          )
+        ),
+        silent = FALSE
+      )
+  }
+  )
+fits_list_nb2 <- furrr::future_map(
+  dat_tbl2$data, 
+  function(dat_in) {
+    sdmTMB(
+      n_juv ~ 0 + season_f + day_night + survey_f +
+        scale_depth
+      ,
+      offset = dat_in$effort,
+      data = dat_in,
+      mesh = spde,
+      family = sdmTMB::nbinom2(),
+      spatial = "off",
+      spatial_varying = ~ 0 + season_f + year_f,
+      time_varying = ~ 1,
+      time_varying_type = "rw0",
+      time = "ys_index",
+      spatiotemporal = "off",
+      anisotropy = FALSE,
+      share_range = TRUE,
+      extra_time = missing_surveys,
+      priors = sdmTMBpriors(
+        phi = halfnormal(0, 10),
+        matern_s = pc_matern(range_gt = 25, sigma_lt = 10)
+      ),
+      control = sdmTMBcontrol(
+        newton_loops = 1,
+        map = list(
+          # 1 per season, fix all years to same value
+          ln_tau_Z = factor(
+            c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
+          )
+        )
+      ),
+      silent = FALSE
+    )
+  }
+)
 
-# dat_tbl2$fit <- fits_list_pois
-# 
-# saveRDS(dat_tbl2, here::here("data", "fits", "all_spatial_varying_pois.rds"))
+dat_tbl_nbl2 <- dat_tbl2 %>% 
+  mutate(model = "nb2",
+         fit = fits_list_nb2)
+dat_tbl_nbl1 <- dat_tbl2 %>% 
+  mutate(model = "nb1",
+         fit = fits_list_nb1)
+
+
+dat_tbl_out <- rbind(dat_tbl_nbl2, dat_tbl_nbl1)
+saveRDS(dat_tbl_out, here::here("data", "fits", "all_spatial_varying_nb.rds"))
+
+
+dat_tbl <- dat_tbl_out %>% 
+  filter((species %in% c("pink", "chum")))
 
 
 
 ## CHECKS ----------------------------------------------------------------------
 
-purrr::map(dat_tbl2$fit, sanity)
+purrr::map(dat_tbl_out$fit, sanity)
 
 # check residuals
-dat_tbl$sims <- purrr::map(dat_tbl$fit, simulate, nsim = 50)
-qq_list <- purrr::map2(dat_tbl$sims, dat_tbl$fit, dharma_residuals)
+dat_tbl_out$sims <- purrr::map(dat_tbl_out$fit, simulate, nsim = 50)
+qq_list_nb2 <- purrr::map2(dat_tbl_out$sims[1:5], dat_tbl_out$fit[1:5], 
+                           dharma_residuals)
+qq_list_nb1 <- purrr::map2(dat_tbl_out$sims[6:10], dat_tbl_out$fit[6:10], 
+                           dharma_residuals)
 
 
 # proportion zeros
-purrr::map2(dat_tbl$data, dat_tbl$sims, function(x, y) {
+purrr::map2(dat_tbl_out$data, dat_tbl_out$sims, function(x, y) {
   (sum(x$n_juv == 0) / length(x$n_juv)) / (sum(y == 0) / length(y))
 })
 

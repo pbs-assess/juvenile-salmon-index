@@ -20,21 +20,16 @@ future::plan(future::multisession, workers = ncores - 3)
 
 
 # fitted model from all_species_fit.R
-fit_all_sp_nb2 <- readRDS(
-  here::here("data", "fits", "all_spatial_varying_nb2.rds")) %>% 
-  mutate(model = "nb2")
-fit_all_sp_nb1 <- readRDS(
-  here::here("data", "fits", "all_spatial_varying_nb1.rds")) %>% 
-  select(species, data, model, fit)
+all_fit_tbl <- readRDS(here::here("data", "fits", "all_spatial_varying_nb.rds"))
 
 
-## simulate from Stan output fixing FEs at MLE
+# simulate from Stan output fixing FEs at MLE
 # set.seed(456)
 # sims_list <- furrr::future_map(
-#   fit_all_sp_nb1$fit, function (x) {
+#   all_fit_tbl$fit, function (x) {
 #     object <- x
 #     samp <- sample_mle_mcmc(object, mcmc_iter = 120, mcmc_warmup = 100)
-#     
+# 
 #     obj <- object$tmb_obj
 #     random <- unique(names(obj$env$par[obj$env$random]))
 #     pl <- as.list(object$sd_report, "Estimate")
@@ -47,16 +42,16 @@ fit_all_sp_nb1 <- readRDS(
 #     simulate(obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp), nsim = 20)
 #   }
 # )
-# saveRDS(sims_list, 
-#         here::here("data", "fits", "nb1_mcmc_draws.rds"))
+# saveRDS(sims_list,
+#         here::here("data", "fits", "nb_mcmc_draws.rds"))
+# 
+sims_list <- readRDS(here::here("data", "fits", "nb_mcmc_draws.rds"))
 
-fit_all_sp_nb1$sims <- readRDS(here::here("data", "fits", "nb1_mcmc_draws.rds"))
-fit_all_sp_nb2$sims <- readRDS(here::here("data", "fits", "nb_mcmc_draws.rds"))
+all_fit_tbl$sims <- sims_list 
 
-fit_all_sp <- rbind(fit_all_sp_nb1, fit_all_sp_nb2)
 
 # subset to use nbinom1 for pink/chum
-fit_all_sp_trim <- fit_all_sp %>% 
+fit_all_sp_trim <- all_fit_tbl %>% 
   filter((species %in% c("chum", "pink") & model == "nb1") | 
            (!species %in% c("chum", "pink") & model == "nb2"))
 
@@ -129,7 +124,7 @@ purrr::map2(fit_all_sp_trim$data, fit_all_sp_trim$sims, function(x, y) {
 ## FIT SIMS  -------------------------------------------------------------------
 
 # fit model to species 
-for (i in 1:2) {#seq_along(sp_vec)) {
+for (i in seq_along(sp_vec)) {
   sim_tbl_sub <- sim_tbl %>% filter(species == sp_vec[i])
   fit <- purrr::map2(
     sim_tbl_sub$sim_dat, sim_tbl_sub$fit, 
