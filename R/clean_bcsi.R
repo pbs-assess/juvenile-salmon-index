@@ -280,7 +280,7 @@ set_map <- ggplot() +
   coord_sf(ylim = c(min_lat + 0.15, max_lat - 0.15), 
            xlim = c(min_lon + 0.15, max_lon - 0.15))
   
-png(here::here("figs", "ms_figs", "set_map.png"), height = 5, width = 5, 
+png(here::here("figs", "ms_figs_season", "set_map.png"), height = 5, width = 5, 
     units = "in", res = 250)
 set_map
 dev.off()
@@ -304,7 +304,7 @@ seasonal_effort <- dat_trim %>%
   geom_point(aes(x = week, y = n)) +
   labs(y = "Number of Tows in Dataset")
 
-pdf(here::here("figs", "set_coverage.pdf"), height = 4, width = 8)
+pdf(here::here("figs", "diagnostics",  "set_coverage.pdf"), height = 4, width = 8)
 set_map_month
 seasonal_effort
 dev.off()
@@ -341,7 +341,7 @@ stacked_headrope_depth <- dat_trim %>%
   scale_x_discrete(breaks = seq(1998, 2020, by = 5))
 
 
-png(here::here("figs", "ms_figs", "headrope.png"), height = 3.5, width = 7, 
+png(here::here("figs", "ms_figs_season", "headrope.png"), height = 3.5, width = 7, 
     units = "in", res = 250)
 stacked_headrope_depth
 dev.off()
@@ -361,7 +361,7 @@ stacked_daynight <- dat_trim %>%
   ) +
   scale_x_discrete(breaks = seq(1995, 2020, by = 5))
 
-png(here::here("figs", "ms_figs", "dn_tows.png"), height = 3.5, width = 7, 
+png(here::here("figs", "ms_figs_season", "dn_tows.png"), height = 3.5, width = 7, 
     units = "in", res = 250)
 stacked_daynight
 dev.off()
@@ -384,7 +384,7 @@ bubble_temp_coverage <- dat_trim %>%
   ) +
   labs(x = "Week")
 
-png(here::here("figs", "ms_figs", "temp_cov.png"), height = 5.5, width = 5.5, 
+png(here::here("figs", "ms_figs_season", "temp_cov.png"), height = 5.5, width = 5.5, 
     units = "in", res = 250)
 bubble_temp_coverage
 dev.off()

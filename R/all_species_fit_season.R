@@ -372,7 +372,8 @@ depth_plot <- ggplot(
   coord_cartesian(y = c(0, 2.5)) +
   xlab("Target Headrope Depth (m)") +
   guides(fill = "none") +
-  theme(axis.title.y = element_blank()) +
+  theme(axis.title.y = element_blank(),
+        panel.spacing = unit(0.8, "lines")) +
   ylab("Scaled Abundance Index") 
 
 png(here::here("figs", "ms_figs_season", "depth_eff.png"), 
@@ -649,23 +650,25 @@ index_dat %>%
 
 
 # compare HSS index to one where survey design is not accounted for
-index_grid_true <- index_grid %>% filter(fake_survey == "0")
-ind_preds_true <- purrr::map(
-  dat_tbl %>% pull(fit),
-  ~ {
-    predict(.x,
-            newdata = index_grid_true,
-            se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
-  }
-)
-index_true_survey_list <- purrr::map(
-  ind_preds_true,
-  get_index,
-  area = sp_scalar,
-  bias_correct = TRUE
-)
-saveRDS(index_true_survey_list, 
-        here::here("data", "fits", "season_index_true_survey_list.rds"))
+# index_grid_true <- index_grid %>% filter(fake_survey == "0")
+# ind_preds_true <- purrr::map(
+#   dat_tbl %>% pull(fit),
+#   ~ {
+#     predict(.x,
+#             newdata = index_grid_true,
+#             se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
+#   }
+# )
+# index_true_survey_list <- purrr::map(
+#   ind_preds_true,
+#   get_index,
+#   area = sp_scalar,
+#   bias_correct = TRUE
+# )
+# saveRDS(index_true_survey_list, 
+#         here::here("data", "fits", "season_index_true_survey_list.rds"))
+index_true_survey_list <- readRDS(
+  here::here("data", "fits", "season_index_true_survey_list.rds"))
 
 index_dat2 <- purrr::map2(
   dat_tbl$species, index_true_survey_list,
@@ -685,17 +688,21 @@ index_dat2 <- purrr::map2(
     by = c("species", "season_f")
   )
 
+
+png(here::here("figs", "ms_figs_season", "log_index_no_survey_eff.png"), 
+    height = 8, width = 8, units = "in", res = 200)
 ggplot(index_dat2, aes(year, log_est)) +
   geom_pointrange(aes(ymin = log_lwr, ymax = log_upr, fill = species),
-                  shape = 21) +
+                  shape = 24) +
   geom_hline(aes(yintercept = mean_log_est), lty = 2) +
   labs(x = "Year", y = "Log Abundance Index") +
   scale_shape_manual(values = shape_pal) +
   ggsidekick::theme_sleek() +
-  facet_grid(species~season_f, scales = "free_y") +
+  facet_wrap(~species, scales = "free_y", ncol =  1) +
   scale_fill_manual(values = col_pal) +
   theme(legend.position = "none",
         axis.title.x = element_blank())
+dev.off()
 
 # ppn of years below long term average
 dum <- index_dat2 %>% 
@@ -796,8 +803,7 @@ sub_spatial$scale_est2 <- ifelse(
   sub_spatial$scale_est
 )
 
-png(here::here("figs", "ms_figs_season", 
-               "scaled_sp_preds_su.png"), 
+png(here::here("figs", "ms_figs_season", "scaled_sp_preds_su.png"), 
     height = 8, width = 8, units = "in", res = 200)
 ggplot() + 
   geom_raster(data = sub_spatial %>% filter(season_f == "su"),
@@ -811,12 +817,13 @@ ggplot() +
   ) +
   facet_grid(year~species) +
   theme(axis.title = element_blank(),
-        axis.text = element_blank())
+        axis.text = element_blank(),
+        legend.position = "top",
+        legend.key.size = unit(0.75, 'cm'))
 dev.off()
 
 
-png(here::here("figs", "ms_figs_season", 
-               "scaled_sp_preds_fall.png"), 
+png(here::here("figs", "ms_figs_season", "scaled_sp_preds_fall.png"), 
     height = 8, width = 8, units = "in", res = 200)
 ggplot() + 
   geom_raster(data = sub_spatial %>% filter(season_f == "wi"),
@@ -830,7 +837,9 @@ ggplot() +
   ) +
   facet_grid(year~species) +
   theme(axis.title = element_blank(),
-        axis.text = element_blank())
+        axis.text = element_blank(),
+        legend.position = "top",
+        legend.key.size = unit(0.75, 'cm'))
 dev.off()
 
 year_field_seq <- paste("zeta_s_year_f", year_seq, sep = "")
@@ -853,8 +862,9 @@ ggplot() +
   facet_grid(year~species) +
   theme(
     axis.title = element_blank(),
+    legend.position = "top",
     axis.text = element_blank(),
-    legend.key.size = unit(1, 'cm')
+    legend.key.size = unit(0.75, 'cm')
   )
 dev.off()
 
@@ -876,11 +886,10 @@ ggplot() +
   geom_sf(data = coast, color = "black", fill = "white") +
   ggsidekick::theme_sleek() +
   scale_fill_gradient2(name = "Spatial\nField") +
-  facet_grid(season~species) +
+  facet_grid(species~season) +
   theme(
     axis.title = element_blank(),
-    legend.position = "top",
     axis.text = element_blank(),
-    legend.key.size = unit(1, 'cm')
+    legend.key.size = unit(0.75, 'cm')
   )
 dev.off()

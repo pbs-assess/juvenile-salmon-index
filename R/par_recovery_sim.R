@@ -294,7 +294,7 @@ sim_box <- ggplot() +
   labs(y = "Parameter Estimate", x =  "Species") +
   ggsidekick::theme_sleek() 
 
-png(here::here("figs", "diagnostics", "par_recovery_sim_box_no_dist_mcmc.png"), 
+png(here::here("figs", "ms_figs_season", "par_recovery_sim_box_no_dist_mcmc.png"), 
     height = 8, width = 8, units = "in", res = 200)
 sim_box
 dev.off()
@@ -331,25 +331,7 @@ index_grid_hss <- readRDS(here::here("data", "index_hss_grid.rds")) %>%
 sp_scalar <- 1 * (13 / 1000)
 
 
-# estimate true index
-true_pred_list <- furrr::future_map(
-  fit_all_sp$fit,
-  predict,
-  newdata = index_grid_hss,
-  se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE
-)
-true_index_list <- furrr::future_map(
-  true_pred_list,
-  get_index,
-  area = sp_scalar,
-  bias_correct = TRUE
-)
-saveRDS(
-  true_index_list,
-  here::here("data", "fits", "season_index_list2.rds")
-)
-
-
+# estimate index for each simulation draw
 for (i in seq_along(sp_vec)) {
   sim_tbl_sub <- sim_tbl %>% filter(species == sp_vec[i])
   sim_ind_list <- purrr::map(
@@ -369,10 +351,11 @@ for (i in seq_along(sp_vec)) {
 }
 
 
-# import saved indices
+# import saved indices from all_species_fit_season.R
 true_index_list <- readRDS(
   here::here("data", "fits", "season_index_list.rds")
 )
+
 true_ind_dat <- tibble(
   species = sp_vec,
   true_index = true_index_list
@@ -397,7 +380,7 @@ sim_index_list <- purrr::map(
   sp_vec,
   ~ readRDS(
     here::here("data", "fits", "sim_fit",
-               paste(.x, "_sim_index.rds", sep = ""))
+               paste(.x, "_sim_index2.rds", sep = ""))
   )
 )
 
