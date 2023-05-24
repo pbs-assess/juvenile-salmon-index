@@ -90,101 +90,99 @@ spde <- make_mesh(
 missing_surveys <- year_season_key$ys_index[!(year_season_key$ys_index %in% 
                                                 dat$ys_index)]
 
-dat_tbl2 <- dat %>%
-  group_by(species) %>%
-  group_nest()
+# dat_tbl2 <- dat %>%
+#   group_by(species) %>%
+#   group_nest()
+# 
+# # fit
+# fits_list_nb1 <- furrr::future_map(
+#   dat_tbl1$data, 
+#   function(dat_in) {
+#     sdmTMB(
+#         n_juv ~ 0 + season_f + day_night + survey_f +
+#           scale_depth
+#         ,
+#         offset = dat_in$effort,
+#         data = dat_in,
+#         mesh = spde,
+#         family = sdmTMB::nbinom1(),
+#         spatial = "off",
+#         spatial_varying = ~ 0 + season_f + year_f,
+#         time_varying = ~ 1,
+#         time_varying_type = "rw0",
+#         time = "ys_index",
+#         spatiotemporal = "off",
+#         anisotropy = FALSE,
+#         share_range = TRUE,
+#         extra_time = missing_surveys,
+#         priors = sdmTMBpriors(
+#           phi = halfnormal(0, 10),
+#           matern_s = pc_matern(range_gt = 25, sigma_lt = 10)
+#         ),
+#         control = sdmTMBcontrol(
+#           newton_loops = 1,
+#           map = list(
+#             # 1 per season, fix all years to same value
+#             ln_tau_Z = factor(
+#               c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
+#             )
+#           )
+#         ),
+#         silent = FALSE
+#       )
+#   }
+#   )
+# fits_list_nb2 <- furrr::future_map(
+#   dat_tbl2$data, 
+#   function(dat_in) {
+#     sdmTMB(
+#       n_juv ~ 0 + season_f + day_night + survey_f +
+#         scale_depth
+#       ,
+#       offset = dat_in$effort,
+#       data = dat_in,
+#       mesh = spde,
+#       family = sdmTMB::nbinom2(),
+#       spatial = "off",
+#       spatial_varying = ~ 0 + season_f + year_f,
+#       time_varying = ~ 1,
+#       time_varying_type = "rw0",
+#       time = "ys_index",
+#       spatiotemporal = "off",
+#       anisotropy = FALSE,
+#       share_range = TRUE,
+#       extra_time = missing_surveys,
+#       priors = sdmTMBpriors(
+#         phi = halfnormal(0, 10),
+#         matern_s = pc_matern(range_gt = 25, sigma_lt = 10)
+#       ),
+#       control = sdmTMBcontrol(
+#         newton_loops = 1,
+#         map = list(
+#           # 1 per season, fix all years to same value
+#           ln_tau_Z = factor(
+#             c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
+#           )
+#         )
+#       ),
+#       silent = FALSE
+#     )
+#   }
+# )
+# 
+# dat_tbl_nbl2 <- dat_tbl2 %>% 
+#   mutate(model = "nb2",
+#          fit = fits_list_nb2)
+# dat_tbl_nbl1 <- dat_tbl2 %>% 
+#   mutate(model = "nb1",
+#          fit = fits_list_nb1)
+# 
+# 
+# dat_tbl_out <- rbind(dat_tbl_nbl2, dat_tbl_nbl1)
+# saveRDS(dat_tbl_out, here::here("data", "fits", "all_spatial_varying_nb.rds"))
 
-# fit
-fits_list_nb1 <- furrr::future_map(
-  dat_tbl1$data, 
-  function(dat_in) {
-    sdmTMB(
-        n_juv ~ 0 + season_f + day_night + survey_f +
-          scale_depth
-        ,
-        offset = dat_in$effort,
-        data = dat_in,
-        mesh = spde,
-        family = sdmTMB::nbinom1(),
-        spatial = "off",
-        spatial_varying = ~ 0 + season_f + year_f,
-        time_varying = ~ 1,
-        time_varying_type = "rw0",
-        time = "ys_index",
-        spatiotemporal = "off",
-        anisotropy = FALSE,
-        share_range = TRUE,
-        extra_time = missing_surveys,
-        priors = sdmTMBpriors(
-          phi = halfnormal(0, 10),
-          matern_s = pc_matern(range_gt = 25, sigma_lt = 10)
-        ),
-        control = sdmTMBcontrol(
-          newton_loops = 1,
-          map = list(
-            # 1 per season, fix all years to same value
-            ln_tau_Z = factor(
-              c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
-            )
-          )
-        ),
-        silent = FALSE
-      )
-  }
-  )
-fits_list_nb2 <- furrr::future_map(
-  dat_tbl2$data, 
-  function(dat_in) {
-    sdmTMB(
-      n_juv ~ 0 + season_f + day_night + survey_f +
-        scale_depth
-      ,
-      offset = dat_in$effort,
-      data = dat_in,
-      mesh = spde,
-      family = sdmTMB::nbinom2(),
-      spatial = "off",
-      spatial_varying = ~ 0 + season_f + year_f,
-      time_varying = ~ 1,
-      time_varying_type = "rw0",
-      time = "ys_index",
-      spatiotemporal = "off",
-      anisotropy = FALSE,
-      share_range = TRUE,
-      extra_time = missing_surveys,
-      priors = sdmTMBpriors(
-        phi = halfnormal(0, 10),
-        matern_s = pc_matern(range_gt = 25, sigma_lt = 10)
-      ),
-      control = sdmTMBcontrol(
-        newton_loops = 1,
-        map = list(
-          # 1 per season, fix all years to same value
-          ln_tau_Z = factor(
-            c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
-          )
-        )
-      ),
-      silent = FALSE
-    )
-  }
-)
-
-dat_tbl_nbl2 <- dat_tbl2 %>% 
-  mutate(model = "nb2",
-         fit = fits_list_nb2)
-dat_tbl_nbl1 <- dat_tbl2 %>% 
-  mutate(model = "nb1",
-         fit = fits_list_nb1)
-
-
-dat_tbl_out <- rbind(dat_tbl_nbl2, dat_tbl_nbl1)
-saveRDS(dat_tbl_out, here::here("data", "fits", "all_spatial_varying_nb.rds"))
-
-
-dat_tbl <- dat_tbl_out %>% 
-  filter((species %in% c("pink", "chum")))
-
+dat_tbl_out <- readRDS(here::here("data", "fits", "all_spatial_varying_nb.rds"))
+dat_tbl <- dat_tbl_out %>% filter(model == "nb2")
 
 
 ## CHECKS ----------------------------------------------------------------------
@@ -534,9 +532,9 @@ ind_preds <- purrr::map(
 
 
 # scalar for spatial predictions; since preds are in m3, multiply by
-# (1000 * 1000 * 13) because effort in m but using 1x1 km grid cells and 
+# (1 * 1 * 13) because effort in m but using 1x1 km grid cells and 
 # assuming mean net opening (13 m)
-sp_scalar <- 1000^2 * 13
+sp_scalar <- 1 * (13 / 1000)
 
 index_list <- purrr::map(
   ind_preds,
@@ -589,7 +587,7 @@ index_dat <- purrr::map2(
   ungroup()
 
 ## index plots
-shape_pal <- c(21, 23)
+shape_pal <- c(21, 1)
 names(shape_pal) <- unique(index_dat$survey)
 # log abundance 
 log_index <- ggplot(index_dat, aes(year, log_est)) +
@@ -676,19 +674,44 @@ index_dat2 <- purrr::map2(
 ) %>%
   bind_rows() %>% 
   left_join(., year_season_key, by = "ys_index") %>% 
-  mutate(preds = "obs")
+  mutate(preds = "obs",
+         log_lwr = log_est - (1.96 * se),
+         log_upr = log_est + (1.96 * se)
+  ) %>% 
+  filter(season_f == "su") %>% 
+  left_join(
+    ., 
+    index_dat %>% select(species, season_f, mean_log_est) %>% distinct(),
+    by = c("species", "season_f")
+  )
 
-index_dat %>% 
-  mutate(preds = "hss") %>% 
-  select(colnames(index_dat2)) %>% 
-  rbind(., 
-        index_dat2 ) %>% 
-  filter(season_f == "su",
-         year > 2017) %>% 
-  group_by(preds, species) %>% 
-  summarize(mean_est = mean(est)) %>% 
-  pivot_wider(names_from = preds, values_from = mean_est) %>% 
-  mutate(diff = obs / hss)
+ggplot(index_dat2, aes(year, log_est)) +
+  geom_pointrange(aes(ymin = log_lwr, ymax = log_upr, fill = species),
+                  shape = 21) +
+  geom_hline(aes(yintercept = mean_log_est), lty = 2) +
+  labs(x = "Year", y = "Log Abundance Index") +
+  scale_shape_manual(values = shape_pal) +
+  ggsidekick::theme_sleek() +
+  facet_grid(species~season_f, scales = "free_y") +
+  scale_fill_manual(values = col_pal) +
+  theme(legend.position = "none",
+        axis.title.x = element_blank())
+
+# ppn of years below long term average
+dum <- index_dat2 %>% 
+  filter(year > 2016) %>% 
+  mutate(
+    below_avg = ifelse(log_est < mean_log_est, 1, 0),
+    n_yrs = length(unique(year))
+  )
+
+dum %>% 
+  group_by(species) %>% 
+  summarize(
+    ppn_below = sum(below_avg) / n_yrs
+  ) %>% 
+  distinct()
+
 
 # sd of index in summer vs fall
 index_dat %>% 
@@ -720,7 +743,9 @@ spatial_grid <- pred_grid_list %>%
         season_f = x$season_f,
         ys_index = x$ys_index,
         target_depth = 0,
-        day_night = "DAY"
+        day_night = "DAY",
+        scale_depth = (target_depth - mean(dat$target_depth)) / 
+          sd(dat$target_depth)
       )
   }) %>%
   bind_rows() %>% 
@@ -739,7 +764,6 @@ spatial_preds_list <- purrr::map2(
       mutate(species = .y)
   }
 )
-spatial_preds_list <- spatial_preds
 spatial_preds <- spatial_preds_list %>%
   bind_rows() %>% 
   filter(!season_f == "sp")
@@ -813,7 +837,7 @@ year_field_seq <- paste("zeta_s_year_f", year_seq, sep = "")
 omega_yr <- sub_spatial %>% 
   # values will be duplicated across years, seasons and surveys; select one
   filter(year_f == year_seq[1], season_f == "su") %>% 
-  select(X, Y, species, year_field_seq) %>% 
+  select(X, Y, species, all_of(year_field_seq)) %>% 
   pivot_longer(cols = starts_with("zeta"), values_to = "omega_est", 
              names_to = "year", names_prefix = "zeta_s_year_f") 
 
@@ -825,7 +849,6 @@ ggplot() +
   geom_sf(data = coast, color = "black", fill = "white") +
   ggsidekick::theme_sleek() +
   scale_fill_distiller(palette = "Spectral", 
-                       # limits = c(-1 * eps_max, eps_max),
                        name = "Spatial\nField") +
   facet_grid(year~species) +
   theme(
@@ -843,7 +866,8 @@ omega_season <- sub_spatial %>%
   select(X, Y, species, starts_with("zeta_s_season_")) %>%
   pivot_longer(cols = starts_with("zeta"), values_to = "omega_est", 
                names_to = "season", names_prefix = "zeta_s_season_f") %>% 
-  filter(!season == "sp")
+  filter(!season == "sp") %>% 
+  mutate(season = fct_recode(season, "summer" = "su", "fall" = "wi"))
 
 png(here::here("figs", "ms_figs_season", "seasonal_rf.png"), 
     height = 6, width = 7.5, units = "in", res = 200)

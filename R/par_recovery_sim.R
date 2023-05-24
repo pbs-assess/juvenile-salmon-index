@@ -53,9 +53,7 @@ all_fit_tbl$sims <- sims_list
 # subset to use nbinom1 for pink/chum
 fit_all_sp_trim <- all_fit_tbl %>% 
   filter(model == "nb2")
-  filter((species %in% c("chum", "pink") & model == "nb1") | 
-           (!species %in% c("chum", "pink") & model == "nb2"))
-
+  
 
 dharma_list <- purrr::map2(fit_all_sp_trim$sims, fit_all_sp_trim$fit,
                            function (x, y) {
@@ -330,7 +328,7 @@ index_grid_hss <- readRDS(here::here("data", "index_hss_grid.rds")) %>%
       sd(cov_in$target_depth)
     )
 
-sp_scalar <- 1000^2 * 13
+sp_scalar <- 1 * (13 / 1000)
 
 
 # estimate true index
