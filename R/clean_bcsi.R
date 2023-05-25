@@ -251,19 +251,6 @@ coast <- rbind(rnaturalearth::ne_states( "United States of America",
                rnaturalearth::ne_states( "Canada", returnclass = "sf")) %>% 
   st_crop(., xmin = min_lon, ymin = min_lat, xmax = max_lon, ymax = max_lat) %>%
   st_transform(., crs = sp::CRS("+proj=longlat +datum=WGS84"))
-  # st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
-
-# 
-# ggplot() +
-#   geom_sf(data = coast, color = "black", fill = "white") +
-#   geom_point(data = dat_trim %>% filter(!bath_depth_mean_m > 0),
-#              aes(x = utm_x, y = utm_y, fill = survey_f),
-#              shape = 21) +
-#   scale_fill_discrete(name = "Survey") +
-#   ggsidekick::theme_sleek() +
-#   theme(axis.title = element_blank()) 
-  
-
 
 # map of set locations
 set_map <- ggplot() +
@@ -400,7 +387,7 @@ bubble_temp_coverage <- dat_trim %>%
                   fill = survey_f),
               alpha = 0.3, width = 0.25, shape = 21) +
   ggsidekick::theme_sleek() +
-  scale_size(name = "Number\nof\nTows") +
+  scale_size_area(name = "Number\nof\nTows") +
   scale_fill_discrete(name = "Survey") +
   theme(
     axis.title.y = element_blank()
