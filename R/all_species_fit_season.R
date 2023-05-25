@@ -90,9 +90,9 @@ spde <- make_mesh(
 missing_surveys <- year_season_key$ys_index[!(year_season_key$ys_index %in% 
                                                 dat$ys_index)]
 
-# dat_tbl2 <- dat %>%
-#   group_by(species) %>%
-#   group_nest()
+dat_tbl2 <- dat %>%
+  group_by(species) %>%
+  group_nest()
 # 
 # # fit
 # fits_list_nb1 <- furrr::future_map(
@@ -132,43 +132,41 @@ missing_surveys <- year_season_key$ys_index[!(year_season_key$ys_index %in%
 #       )
 #   }
 #   )
-# fits_list_nb2 <- furrr::future_map(
-#   dat_tbl2$data, 
-#   function(dat_in) {
-#     sdmTMB(
-#       n_juv ~ 0 + season_f + day_night + survey_f +
-#         scale_depth
-#       ,
-#       offset = dat_in$effort,
-#       data = dat_in,
-#       mesh = spde,
-#       family = sdmTMB::nbinom2(),
-#       spatial = "off",
-#       spatial_varying = ~ 0 + season_f + year_f,
-#       time_varying = ~ 1,
-#       time_varying_type = "rw0",
-#       time = "ys_index",
-#       spatiotemporal = "off",
-#       anisotropy = FALSE,
-#       share_range = TRUE,
-#       extra_time = missing_surveys,
-#       priors = sdmTMBpriors(
-#         phi = halfnormal(0, 10),
-#         matern_s = pc_matern(range_gt = 25, sigma_lt = 10)
-#       ),
-#       control = sdmTMBcontrol(
-#         newton_loops = 1,
-#         map = list(
-#           # 1 per season, fix all years to same value
-#           ln_tau_Z = factor(
-#             c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
-#           )
-#         )
-#       ),
-#       silent = FALSE
-#     )
-#   }
-# )
+fits_list_nb2_aniso2 <- furrr::future_map(
+  dat_tbl2$data,
+  function(dat_in) {
+    sdmTMB(
+      n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+        scale_depth
+      ,
+      offset = dat_in$effort,
+      data = dat_in,
+      mesh = spde,
+      family = sdmTMB::nbinom2(),
+      spatial = "off",
+      spatial_varying = ~ 0 + season_f + year_f,
+      time_varying = ~ 1,
+      time_varying_type = "rw0",
+      time = "ys_index",
+      spatiotemporal = "off",
+      anisotropy = TRUE,
+      extra_time = missing_surveys,
+      # priors = sdmTMBpriors(
+      #   matern_s = pc_matern(range_gt = 25, sigma_lt = 10)
+      # ),
+      control = sdmTMBcontrol(
+        newton_loops = 1,
+        map = list(
+          # 1 per season, fix all years to same value
+          ln_tau_Z = factor(
+            c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
+          )
+        )
+      ),
+      silent = FALSE
+    )
+  }
+)
 # 
 # dat_tbl_nbl2 <- dat_tbl2 %>% 
 #   mutate(model = "nb2",
@@ -183,6 +181,14 @@ missing_surveys <- year_season_key$ys_index[!(year_season_key$ys_index %in%
 
 dat_tbl_out <- readRDS(here::here("data", "fits", "all_spatial_varying_nb.rds"))
 dat_tbl <- dat_tbl_out %>% filter(model == "nb2")
+
+
+purrr::map(
+  fits_list_nb2_aniso2,
+  sanity
+)
+dat_tbl$fit <- fits_list_nb2_aniso2
+saveRDS(dat_tbl, here::here("data", "fits", "all_spatial_varying_nb2_aniso.rds"))
 
 
 ## CHECKS ----------------------------------------------------------------------
@@ -581,11 +587,20 @@ index_dat <- purrr::map2(
       TRUE ~ "no survey"
     ),
     log_lwr = log_est - (1.96 * se),
-    log_upr = log_est + (1.96 * se)
+    log_upr = log_est + (1.96 * se),
+    sparse = case_when(
+      survey == "no survey" ~ "yes",
+      season == "summer" & 
+        year %in% c("1998", "2000", "2003", "2013", "2014") ~ "yes",
+      season == "fall" & 
+        year %in% c("2016", "2017", "2019") ~ "yes",
+      TRUE ~ "no"
+    )
   ) %>% 
   group_by(season, species) %>% 
   mutate(mean_log_est = mean(log_est)) %>% 
   ungroup()
+
 
 ## index plots
 shape_pal <- c(21, 1)
@@ -604,6 +619,26 @@ log_index <- ggplot(index_dat, aes(year, log_est)) +
         axis.title.x = element_blank())
 
 png(here::here("figs", "ms_figs_season", "log_index.png"), 
+    height = 8, width = 8, units = "in", res = 200)
+log_index
+dev.off()
+
+
+# log abundance coded by survey coverage (looks good)
+shape_pal2 <- c(1, 21)
+names(shape_pal2) <- unique(index_dat$sparse)
+log_index_sparse <- ggplot(index_dat, aes(year, log_est)) +
+  geom_pointrange(aes(ymin = log_lwr, ymax = log_upr, fill = species, 
+                      shape = sparse)) +
+  geom_hline(aes(yintercept = mean_log_est), lty = 2) +
+  labs(x = "Year", y = "Log Abundance Index") +
+  scale_shape_manual(values = shape_pal2) +
+  ggsidekick::theme_sleek() +
+  facet_grid(species~season, scales = "free_y") +
+  scale_fill_manual(values = col_pal) +
+  theme(axis.title.x = element_blank())
+
+png(here::here("figs", "diagnostics", "log_index_sparse.png"), 
     height = 8, width = 8, units = "in", res = 200)
 log_index
 dev.off()

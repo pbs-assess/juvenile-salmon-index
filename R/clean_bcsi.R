@@ -310,6 +310,29 @@ seasonal_effort
 dev.off()
 
 
+
+# set locations by year
+set_map_year <- ggplot() +
+  geom_sf(data = coast, color = "black", fill = "white", size = 1.25) +
+  geom_point(data = dat_trim,
+             aes(x = lon, y = lat, fill = season_f), 
+             shape = 21, alpha = 0.4) +
+  scale_fill_discrete(name = "Survey") +
+  ggsidekick::theme_sleek() +
+  theme(axis.title = element_blank()) +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  facet_wrap(~year) +
+  # hacky way to ensure borders are correct
+  coord_sf(ylim = c(min_lat + 0.15, max_lat - 0.15), 
+           xlim = c(min_lon + 0.15, max_lon - 0.15))
+
+
+pdf(here::here("figs", "diagnostics",  "set_coverage_year.pdf"))
+set_map_year
+dev.off()
+
+
 # map of spatial covariates (exclude for now)
 # bc_raster <- readRDS(
 #   here::here("data", "spatial", "full_coast_raster_latlon_1000m.RDS"))
