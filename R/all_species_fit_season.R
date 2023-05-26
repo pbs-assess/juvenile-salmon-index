@@ -90,51 +90,16 @@ spde <- make_mesh(
 missing_surveys <- year_season_key$ys_index[!(year_season_key$ys_index %in% 
                                                 dat$ys_index)]
 
-dat_tbl2 <- dat %>%
+dat_tbl <- dat %>%
   group_by(species) %>%
-  group_nest()
-# 
-# # fit
-# fits_list_nb1 <- furrr::future_map(
-#   dat_tbl1$data, 
-#   function(dat_in) {
-#     sdmTMB(
-#         n_juv ~ 0 + season_f + day_night + survey_f +
-#           scale_depth
-#         ,
-#         offset = dat_in$effort,
-#         data = dat_in,
-#         mesh = spde,
-#         family = sdmTMB::nbinom1(),
-#         spatial = "off",
-#         spatial_varying = ~ 0 + season_f + year_f,
-#         time_varying = ~ 1,
-#         time_varying_type = "rw0",
-#         time = "ys_index",
-#         spatiotemporal = "off",
-#         anisotropy = FALSE,
-#         share_range = TRUE,
-#         extra_time = missing_surveys,
-#         priors = sdmTMBpriors(
-#           phi = halfnormal(0, 10),
-#           matern_s = pc_matern(range_gt = 25, sigma_lt = 10)
-#         ),
-#         control = sdmTMBcontrol(
-#           newton_loops = 1,
-#           map = list(
-#             # 1 per season, fix all years to same value
-#             ln_tau_Z = factor(
-#               c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
-#             )
-#           )
-#         ),
-#         silent = FALSE
-#       )
-#   }
-#   )
-fits_list_nb2_aniso2 <- furrr::future_map(
-  dat_tbl2$data,
-  function(dat_in) {
+  group_nest() %>% 
+  mutate(
+    anisotropy = ifelse(species == "pink", FALSE, TRUE)
+  )
+
+fits_list_nb2 <- furrr::future_map2(
+  dat_tbl$data, dat_tbl$anisotropy,
+  function(dat_in, aniso) {
     sdmTMB(
       n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
         scale_depth
@@ -149,11 +114,8 @@ fits_list_nb2_aniso2 <- furrr::future_map(
       time_varying_type = "rw0",
       time = "ys_index",
       spatiotemporal = "off",
-      anisotropy = TRUE,
+      anisotropy = aniso,
       extra_time = missing_surveys,
-      # priors = sdmTMBpriors(
-      #   matern_s = pc_matern(range_gt = 25, sigma_lt = 10)
-      # ),
       control = sdmTMBcontrol(
         newton_loops = 1,
         map = list(
@@ -167,28 +129,11 @@ fits_list_nb2_aniso2 <- furrr::future_map(
     )
   }
 )
-# 
-# dat_tbl_nbl2 <- dat_tbl2 %>% 
-#   mutate(model = "nb2",
-#          fit = fits_list_nb2)
-# dat_tbl_nbl1 <- dat_tbl2 %>% 
-#   mutate(model = "nb1",
-#          fit = fits_list_nb1)
-# 
-# 
-# dat_tbl_out <- rbind(dat_tbl_nbl2, dat_tbl_nbl1)
-# saveRDS(dat_tbl_out, here::here("data", "fits", "all_spatial_varying_nb.rds"))
 
-dat_tbl_out <- readRDS(here::here("data", "fits", "all_spatial_varying_nb.rds"))
-dat_tbl <- dat_tbl_out %>% filter(model == "nb2")
+dat_tbl$fit <- fits_list_nb2
+saveRDS(dat_tbl, here::here("data", "fits", "all_spatial_varying_nb2_final.rds"))
 
-
-purrr::map(
-  fits_list_nb2_aniso2,
-  sanity
-)
-dat_tbl$fit <- fits_list_nb2_aniso2
-saveRDS(dat_tbl, here::here("data", "fits", "all_spatial_varying_nb2_aniso.rds"))
+dat_tbl <- readRDS(here::here("data", "fits", "all_spatial_varying_nb2_aniso.rds"))
 
 
 ## CHECKS ----------------------------------------------------------------------
@@ -685,23 +630,23 @@ index_dat %>%
 
 
 # compare HSS index to one where survey design is not accounted for
-# index_grid_true <- index_grid %>% filter(fake_survey == "0")
-# ind_preds_true <- purrr::map(
-#   dat_tbl %>% pull(fit),
-#   ~ {
-#     predict(.x,
-#             newdata = index_grid_true,
-#             se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
-#   }
-# )
-# index_true_survey_list <- purrr::map(
-#   ind_preds_true,
-#   get_index,
-#   area = sp_scalar,
-#   bias_correct = TRUE
-# )
-# saveRDS(index_true_survey_list, 
-#         here::here("data", "fits", "season_index_true_survey_list.rds"))
+index_grid_true <- index_grid %>% filter(fake_survey == "0")
+ind_preds_true <- purrr::map(
+  dat_tbl %>% pull(fit),
+  ~ {
+    predict(.x,
+            newdata = index_grid_true,
+            se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
+  }
+)
+index_true_survey_list <- purrr::map(
+  ind_preds_true,
+  get_index,
+  area = sp_scalar,
+  bias_correct = TRUE
+)
+saveRDS(index_true_survey_list,
+        here::here("data", "fits", "season_index_true_survey_list.rds"))
 index_true_survey_list <- readRDS(
   here::here("data", "fits", "season_index_true_survey_list.rds"))
 
@@ -739,20 +684,6 @@ ggplot(index_dat2, aes(year, log_est)) +
         axis.title.x = element_blank())
 dev.off()
 
-# ppn of years below long term average
-dum <- index_dat2 %>% 
-  filter(year > 2016) %>% 
-  mutate(
-    below_avg = ifelse(log_est < mean_log_est, 1, 0),
-    n_yrs = length(unique(year))
-  )
-
-dum %>% 
-  group_by(species) %>% 
-  summarize(
-    ppn_below = sum(below_avg) / n_yrs
-  ) %>% 
-  distinct()
 
 
 # sd of index in summer vs fall
@@ -762,6 +693,98 @@ index_dat %>%
   pivot_wider(names_from = season_f, values_from = sd_index) %>% 
   mutate(ppn = wi/su)
 
+
+# ESTIMATE DECLINE -------------------------------------------------------------
+
+# ppn of years below long term average
+dum <- index_dat2 %>% 
+  select(season_f, species, log_est, mean_log_est, year) %>% 
+  distinct() %>% 
+  filter(year > 2016) %>% 
+  mutate(
+    below_avg = ifelse(log_est < mean_log_est, 1, 0)
+  )
+n_yrs <- length(unique(dum$year))
+
+dum %>% 
+  group_by(species, season_f) %>% 
+  summarize(
+    ppn_below = sum(below_avg) / n_yrs
+  ) 
+
+
+# join
+index_lm_dat <- rbind(
+  index_dat %>% 
+    filter(season_f == "su",
+           year > 2010) %>% 
+    select(log_est, species, year, season_f) %>% 
+    mutate(survey_eff = "yes"),
+  index_dat2 %>% 
+    select(log_est, species, year, season_f) %>% 
+    filter(year > 2010) %>% 
+    mutate(survey_eff = "no")
+) %>% 
+  group_by(species, survey_eff) %>% 
+  group_nest()
+
+# fit
+index_lm_dat$fit <- purrr::map(
+  index_lm_dat$data, 
+  ~ lm(log_est ~ year, data = .x)
+)
+
+# predict
+index_lm_dat$pred <- purrr::map2(
+  index_lm_dat$fit, index_lm_dat$data, 
+  function(x , y) {
+    pp <- predict(x, se.fit = TRUE) 
+    y %>% 
+      mutate(
+        pred_mean = as.numeric(pp$fit),
+        pred_se = as.numeric(pp$se.fit)
+      )
+  }
+)
+
+# plot trends
+index_lm_dat %>% 
+  select(species, survey_eff, pred) %>% 
+  unnest(cols = c(pred)) %>%
+  mutate(upr = pred_mean + 1.96 * pred_se,
+         lwr = pred_mean - 1.96 * pred_se) %>% 
+  ggplot(., aes(x = year, y = pred_mean, colour = species)) +
+  geom_line(aes(linetype = survey_eff)) +
+  geom_ribbon(aes(ymin = lwr, ymax = upr, fill = species, 
+                  linetype = survey_eff),
+              alpha = 0.2) +
+  facet_wrap(~species) +
+  scale_color_manual(values = col_pal) +
+  scale_fill_manual(values = col_pal) +
+  ggsidekick::theme_sleek()
+
+
+# slope estimates 
+index_lm_dat$coefs <- purrr::map(
+   index_lm_dat$fit,
+   ~ tidy(.x, conf.int = TRUE)
+ ) 
+ 
+index_lm_dat %>% 
+  select(species, survey_eff, coefs) %>% 
+  unnest(cols = c(coefs)) %>% 
+  filter(term == "year") %>% 
+  ggplot(., aes(x = survey_eff, y = estimate)) +
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high, fill = species),
+              shape = 21) +
+  geom_hline(aes(yintercept = 0), linetype = 2, colour = "red") +
+  facet_wrap(~species) +
+  scale_color_manual(values = col_pal) +
+  scale_fill_manual(values = col_pal) +
+  ggsidekick::theme_sleek()
+ 
+ 
+  
 
 # SPATIAL PREDS ----------------------------------------------------------------
 
