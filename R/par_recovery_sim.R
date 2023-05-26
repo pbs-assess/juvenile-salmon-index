@@ -20,7 +20,7 @@ future::plan(future::multisession, workers = ncores - 3)
 
 
 # fitted model from all_species_fit.R
-all_fit_tbl <- readRDS(here::here("data", "fits", "all_spatial_varying_nb.rds"))
+all_fit_tbl <- readRDS(here::here("data", "fits", "all_spatial_varying_nb2_aniso.rds"))
 
 
 # simulate from Stan output fixing FEs at MLE
@@ -43,9 +43,9 @@ all_fit_tbl <- readRDS(here::here("data", "fits", "all_spatial_varying_nb.rds"))
 #   }
 # )
 # saveRDS(sims_list,
-#         here::here("data", "fits", "nb_mcmc_draws.rds"))
-# 
-sims_list <- readRDS(here::here("data", "fits", "nb_mcmc_draws.rds"))
+#         here::here("data", "fits", "nb_mcmc_draws_aniso.rds"))
+
+sims_list <- readRDS(here::here("data", "fits", "nb_mcmc_draws_aniso.rds"))
 
 all_fit_tbl$sims <- sims_list 
 
@@ -94,7 +94,6 @@ sp_vec <- unique(sim_tbl$species)
 
 ## DISPERSION ------------------------------------------------------------------
 
-
 fit_all_sp_trim$true_sd <- purrr::map(
   fit_all_sp_trim$data, ~ sd(.x$n_juv)
 )
@@ -123,48 +122,15 @@ purrr::map2(fit_all_sp_trim$data, fit_all_sp_trim$sims, function(x, y) {
 ## FIT SIMS  -------------------------------------------------------------------
 
 # fit model to species 
-for (i in c(2, 4)) {# seq_along(sp_vec)) {
+for (i in seq_along(sp_vec)) {
   sim_tbl_sub <- sim_tbl %>% filter(species == sp_vec[i])
   fit <- purrr::map2(
     sim_tbl_sub$sim_dat, sim_tbl_sub$fit, 
     function (x, fit) {
-      # if (sp_vec[i] %in% c("pink", "chum")) {
-      #   sdmTMB(
-      #     sim_catch ~ 0 + season_f + day_night + survey_f + 
-      #       scale_depth 
-      #     ,
-      #     offset = x$effort,
-      #     data = x,
-      #     mesh =  fit$spde,
-      #     family = sdmTMB::nbinom1(),
-      #     spatial = "off",
-      #     spatiotemporal = "off",
-      #     spatial_varying = ~ 0 + season_f + year_f,
-      #     time_varying = ~ 1,
-      #     time_varying_type = "rw0",
-      #     time = "ys_index",
-      #     extra_time = fit$extra_time,
-      #     share_range = TRUE,
-      #     anisotropy = FALSE,
-      #     priors = sdmTMBpriors(
-      #       phi = halfnormal(0, 10),
-      #       matern_s = pc_matern(range_gt = 25, sigma_lt = 10)
-      #     ),
-      #     control = sdmTMBcontrol(
-      #       newton_loops = 1,
-      #       map = list(
-      #         # 1 per season, fix all years to same value
-      #         ln_tau_Z = factor(
-      #           c(1, 2, 3, rep(4, times = length(unique(x$year)) - 1))
-      #         )
-      #       )
-      #     ),
-      #     silent = FALSE
-      #   )
-      # } else {
+      if (sp_vec[i] %in% c("pink")) {
         sdmTMB(
           sim_catch ~ 0 + season_f + day_night + survey_f + 
-            scale_depth 
+            scale_depth + scale_dist
           ,
           offset = x$effort,
           data = x,
@@ -177,12 +143,7 @@ for (i in c(2, 4)) {# seq_along(sp_vec)) {
           time_varying_type = "rw0",
           time = "ys_index",
           extra_time = fit$extra_time,
-          share_range = TRUE,
           anisotropy = FALSE,
-          priors = sdmTMBpriors(
-            phi = halfnormal(0, 10),
-            matern_s = pc_matern(range_gt = 25, sigma_lt = 10)
-          ),
           control = sdmTMBcontrol(
             newton_loops = 1,
             map = list(
@@ -194,13 +155,41 @@ for (i in c(2, 4)) {# seq_along(sp_vec)) {
           ),
           silent = FALSE
         )
-    #   }
+      } else {
+        sdmTMB(
+          sim_catch ~ 0 + season_f + day_night + survey_f + 
+            scale_depth + scale_dist
+          ,
+          offset = x$effort,
+          data = x,
+          mesh =  fit$spde,
+          family = sdmTMB::nbinom2(),
+          spatial = "off",
+          spatiotemporal = "off",
+          spatial_varying = ~ 0 + season_f + year_f,
+          time_varying = ~ 1,
+          time_varying_type = "rw0",
+          time = "ys_index",
+          extra_time = fit$extra_time,
+          anisotropy = TRUE,
+          control = sdmTMBcontrol(
+            newton_loops = 1,
+            map = list(
+              # 1 per season, fix all years to same value
+              ln_tau_Z = factor(
+                c(1, 2, 3, rep(4, times = length(unique(x$year)) - 1))
+              )
+            )
+          ),
+          silent = FALSE
+        )
+      }
     }
   )
   saveRDS(
     fit,
     here::here("data", "fits", "sim_fit", 
-               paste(sp_vec[i], "_nb2_link.rds", sep = ""))
+               paste(sp_vec[i], "_nb2.rds", sep = ""))
   )
   }
 
@@ -209,12 +198,11 @@ for (i in c(2, 4)) {# seq_along(sp_vec)) {
 sim_fit_list <- purrr::map(
   sp_vec,
   ~ readRDS(
-    here::here("data", "fits", "sim_fit", paste(.x, "_nb2_link.rds", sep = ""))
+    here::here("data", "fits", "sim_fit", paste(.x, "_nb2_aniso.rds", sep = ""))
   )
 )
 
-# some issues with b_j gradient (may need to drop dist to coast or std)
-purrr::map(sim_fit_list[[5]], ~ sanity(.x))
+purrr::map(sim_fit_list[[4]], ~ sanity(.x))
 
 sim_tbl$sim_fit <- do.call(c, sim_fit_list)
 
@@ -247,7 +235,7 @@ sim_pars <- sim_tbl %>%
     term = fct_recode(
       as.factor(term), 
       "diel" = "day_nightNIGHT", "depth" = "scale_depth",
-      #"dist" = "scale_dist", 
+      "dist" = "scale_dist",
       "spring_int" = "season_fsp", 
       "summer_int" = "season_fsu", "fall_int" = "season_fwi", 
       "spring_omega" = "sigma_Z", "summer_omega" = "sigma_Z_2",
@@ -278,7 +266,7 @@ fit_effs <- purrr::map2(
   mutate(
     term = fct_recode(
       as.factor(term), "diel" = "day_nightNIGHT", "depth" = "scale_depth",
-      #"dist" = "scale_dist", 
+      "dist" = "scale_dist",
       "spring_int" = "season_fsp", 
       "summer_int" = "season_fsu", "fall_int" = "season_fwi", 
       "spring_omega" = "sigma_Z", "summer_omega" = "sigma_Z_2",
