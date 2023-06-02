@@ -20,7 +20,9 @@ future::plan(future::multisession, workers = ncores - 3)
 
 
 # fitted model from all_species_fit.R
-all_fit_tbl <- readRDS(here::here("data", "fits", "all_spatial_varying_nb2_aniso.rds"))
+all_fit_tbl <- readRDS(
+  here::here("data", "fits", "all_spatial_varying_nb2_final.rds")
+  )
 
 
 # simulate from Stan output fixing FEs at MLE

@@ -133,7 +133,7 @@ fits_list_nb2 <- furrr::future_map2(
 dat_tbl$fit <- fits_list_nb2
 saveRDS(dat_tbl, here::here("data", "fits", "all_spatial_varying_nb2_final.rds"))
 
-dat_tbl <- readRDS(here::here("data", "fits", "all_spatial_varying_nb2_aniso.rds"))
+dat_tbl <- readRDS(here::here("data", "fits", "all_spatial_varying_nb2_final.rds"))
 
 
 ## CHECKS ----------------------------------------------------------------------
@@ -685,32 +685,32 @@ ggplot(index_dat2, aes(year, log_est)) +
 dev.off()
 
 
-
 # sd of index in summer vs fall
 index_dat %>% 
   group_by(species, season_f) %>% 
   summarize(sd_index = sd(log_est)) %>% 
   pivot_wider(names_from = season_f, values_from = sd_index) %>% 
-  mutate(ppn = wi/su)
+  mutate(
+    ppn = wi / su)
 
 
 # ESTIMATE DECLINE -------------------------------------------------------------
 
 # ppn of years below long term average
-dum <- index_dat2 %>% 
-  select(season_f, species, log_est, mean_log_est, year) %>% 
-  distinct() %>% 
-  filter(year > 2016) %>% 
-  mutate(
-    below_avg = ifelse(log_est < mean_log_est, 1, 0)
-  )
-n_yrs <- length(unique(dum$year))
-
-dum %>% 
-  group_by(species, season_f) %>% 
-  summarize(
-    ppn_below = sum(below_avg) / n_yrs
-  ) 
+# dum <- index_dat2 %>% 
+#   select(season_f, species, log_est, mean_log_est, year) %>% 
+#   distinct() %>% 
+#   filter(year > 2016) %>% 
+#   mutate(
+#     below_avg = ifelse(log_est < mean_log_est, 1, 0)
+#   )
+# n_yrs <- length(unique(dum$year))
+# 
+# dum %>% 
+#   group_by(species, season_f) %>% 
+#   summarize(
+#     ppn_below = sum(below_avg) / n_yrs
+#   ) 
 
 
 # join
@@ -761,7 +761,7 @@ index_lm_dat %>%
   facet_wrap(~species) +
   scale_color_manual(values = col_pal) +
   scale_fill_manual(values = col_pal) +
-  ggsidekick::theme_sleek()
+  ggsidekick::theme_sleek() 
 
 
 # slope estimates 
@@ -770,22 +770,29 @@ index_lm_dat$coefs <- purrr::map(
    ~ tidy(.x, conf.int = TRUE)
  ) 
  
-index_lm_dat %>% 
+index_lm_plot_dat <- index_lm_dat %>% 
   select(species, survey_eff, coefs) %>% 
   unnest(cols = c(coefs)) %>% 
   filter(term == "year") %>% 
-  ggplot(., aes(x = survey_eff, y = estimate)) +
+  mutate(survey_eff = fct_relevel(as.factor(survey_eff), "no", after = Inf))
+  
+png(here::here("figs", "ms_figs_season", "decline_survey_effect.png"), 
+    height = 5, width = 5, units = "in", res = 200)
+ggplot(index_lm_plot_dat, 
+       aes(x = survey_eff, y = estimate)) +
   geom_pointrange(aes(ymin = conf.low, ymax = conf.high, fill = species),
-              shape = 21) +
+                  shape = 21) +
   geom_hline(aes(yintercept = 0), linetype = 2, colour = "red") +
   facet_wrap(~species) +
   scale_color_manual(values = col_pal) +
   scale_fill_manual(values = col_pal) +
-  ggsidekick::theme_sleek()
- 
+  ggsidekick::theme_sleek() +
+  labs(x = "Survey Effects Accounted For", y = "Estimated Decline") +
+  theme(legend.position = "none")
+dev.off()
+
  
   
-
 # SPATIAL PREDS ----------------------------------------------------------------
 
 # shape file for coastline
