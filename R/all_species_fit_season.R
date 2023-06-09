@@ -90,69 +90,68 @@ spde <- make_mesh(
 missing_surveys <- year_season_key$ys_index[!(year_season_key$ys_index %in% 
                                                 dat$ys_index)]
 
-dat_tbl <- dat %>%
-  group_by(species) %>%
-  group_nest() %>% 
-  mutate(
-    anisotropy = ifelse(species == "pink", FALSE, TRUE)
-  )
-
-fits_list_nb2 <- furrr::future_map2(
-  dat_tbl$data, dat_tbl$anisotropy,
-  function(dat_in, aniso) {
-    sdmTMB(
-      n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
-        scale_depth
-      ,
-      offset = dat_in$effort,
-      data = dat_in,
-      mesh = spde,
-      family = sdmTMB::nbinom2(),
-      spatial = "off",
-      spatial_varying = ~ 0 + season_f + year_f,
-      time_varying = ~ 1,
-      time_varying_type = "rw0",
-      time = "ys_index",
-      spatiotemporal = "off",
-      anisotropy = aniso,
-      extra_time = missing_surveys,
-      control = sdmTMBcontrol(
-        newton_loops = 1,
-        map = list(
-          # 1 per season, fix all years to same value
-          ln_tau_Z = factor(
-            c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
-          )
-        )
-      ),
-      silent = FALSE
-    )
-  }
-)
-
-dat_tbl$fit <- fits_list_nb2
-saveRDS(dat_tbl, here::here("data", "fits", "all_spatial_varying_nb2_final.rds"))
+# fitting anisotropic models to pink data leads to convergence issues; adjust
+# accordingly
+# dat_tbl <- dat %>%
+#   group_by(species) %>%
+#   group_nest() %>% 
+#   mutate(
+#     anisotropy = ifelse(species == "pink", FALSE, TRUE)
+#   )
+# 
+# fits_list_nb2 <- furrr::future_map2(
+#   dat_tbl$data, dat_tbl$anisotropy,
+#   function(dat_in, aniso) {
+#     sdmTMB(
+#       n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+#         scale_depth
+#       ,
+#       offset = dat_in$effort,
+#       data = dat_in,
+#       mesh = spde,
+#       family = sdmTMB::nbinom2(),
+#       spatial = "off",
+#       spatial_varying = ~ 0 + season_f + year_f,
+#       time_varying = ~ 1,
+#       time_varying_type = "rw0",
+#       time = "ys_index",
+#       spatiotemporal = "off",
+#       anisotropy = aniso,
+#       extra_time = missing_surveys,
+#       control = sdmTMBcontrol(
+#         newton_loops = 1,
+#         map = list(
+#           # 1 per season, fix all years to same value
+#           ln_tau_Z = factor(
+#             c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
+#           )
+#         )
+#       ),
+#       silent = FALSE
+#     )
+#   }
+# )
+# 
+# dat_tbl$fit <- fits_list_nb2
+# saveRDS(dat_tbl, here::here("data", "fits", "all_spatial_varying_nb2_final.rds"))
 
 dat_tbl <- readRDS(here::here("data", "fits", "all_spatial_varying_nb2_final.rds"))
 
 
 ## CHECKS ----------------------------------------------------------------------
 
-purrr::map(dat_tbl_out$fit, sanity)
+purrr::map(dat_tbl$fit, sanity)
 
 # check residuals
-dat_tbl_out$sims <- purrr::map(dat_tbl_out$fit, simulate, nsim = 50)
-qq_list_nb2 <- purrr::map2(dat_tbl_out$sims[1:5], dat_tbl_out$fit[1:5], 
-                           dharma_residuals)
-qq_list_nb1 <- purrr::map2(dat_tbl_out$sims[6:10], dat_tbl_out$fit[6:10], 
+dat_tbl$sims <- purrr::map(dat_tbl$fit, simulate, nsim = 50)
+qq_list_nb2 <- purrr::map2(dat_tbl$sims, dat_tbl$fit, 
                            dharma_residuals)
 
 
 # proportion zeros
-purrr::map2(dat_tbl_out$data, dat_tbl_out$sims, function(x, y) {
+purrr::map2(dat_tbl$data, dat_tbl$sims, function(x, y) {
   (sum(x$n_juv == 0) / length(x$n_juv)) / (sum(y == 0) / length(y))
 })
-
 
 
 ## PARAMETER ESTIMATES ---------------------------------------------------------
@@ -221,12 +220,11 @@ dev.off()
 
 ## random parameter estimates
 ran_pars <- purrr::pmap(
-  list(dat_tbl$fit, dat_tbl$species, dat_tbl$model),
+  list(dat_tbl$fit, dat_tbl$species),
   function(x, y, z) {
     tidy(x, effects = "ran_par", conf.int = T) %>% 
       mutate(
-        species = y,
-        model = z
+        species = y
       ) %>% 
       # add unique identifier for second range term
       group_by(term) %>% 
@@ -285,18 +283,17 @@ target_dat <- expand.grid(
   )
 
 depth_preds <- purrr::pmap(
-  list(dat_tbl$fit, dat_tbl$species, dat_tbl$model),
+  list(dat_tbl$fit, dat_tbl$species),
   function(x, y, z) {
     predict(x, newdata = target_dat, se_fit = T, re_form = NA, 
             re_form_iid = NA) %>% 
-      mutate(species = y,
-             model = z)
+      mutate(species = y)
   }
 ) %>%
   bind_rows()
 
 depth_preds2 <- depth_preds %>% 
-  group_by(species, model) %>% 
+  group_by(species) %>% 
   mutate(
     exp_est = exp(est),
     max_est = max(exp_est),
@@ -327,87 +324,86 @@ depth_plot <- ggplot(
         panel.spacing = unit(0.8, "lines")) +
   ylab("Scaled Abundance Index") 
 
-png(here::here("figs", "ms_figs_season", "depth_eff.png"), 
-    height = 3, width = 8,
-    units = "in", res = 200)
-depth_plot
-dev.off()
-
-
-# distance to coast (REMOVED DUE TO CORRELATIONS W RANDOM FIELDS)
-# dist_dat <- expand.grid(
-#   dist_to_coast_km = seq(0.1, max(dat$dist_to_coast_km), length.out = 100),
-#   scale_depth = 0,
-#   day_night = unique(dat$day_night),
-#   season_f = unique(dat$season_f),
-#   target_depth = 0,
-#   survey_f = unique(dat$survey_f),
-#   year = unique(dat$year)
-#   ) %>% 
-#   mutate(
-#     scale_dist = (dist_to_coast_km - mean(dat$dist_to_coast_km)) / 
-#       sd(dat$dist_to_coast_km),
-#     year_f = as.factor(year),
-#     season_year_f = paste(season_f, year_f, sep = "_") %>% as.factor()
-#   ) %>% 
-#   filter(
-#     day_night == "DAY", season_f == "su", survey_f == "hss", year_f == "2012"
-#   ) %>% 
-#   left_join(
-#     ., year_season_key, by = c("season_f", "year")
-#   )
-# 
-# dist_preds <- purrr::pmap(
-#   list(dat_tbl$fit, dat_tbl$species, dat_tbl$model),
-#   function(x, y, z) {
-#     predict(x, newdata = dist_dat, se_fit = T, re_form = NA, 
-#             re_form_iid = NA) %>% 
-#       mutate(species = y,
-#              model = z)
-#   }
-# ) %>%
-#   bind_rows()
-# 
-# dist_preds2 <- dist_preds %>% 
-#   group_by(species, model) %>% 
-#   mutate(
-#     exp_est = exp(est),
-#     max_est = max(exp_est),
-#     scale_est = exp_est / max_est,
-#     up = (est + 1.96 * est_se),
-#     lo = (est - 1.96 * est_se),
-#     exp_up = exp(up),
-#     exp_lo = exp(lo),
-#     scale_up = exp(up) / max_est,
-#     scale_lo = exp(lo) / max_est
-#   )
-# 
-# dist_plot <- ggplot(
-#   data = dist_preds2,
-#   aes(x = dist_to_coast_km, y = scale_est, ymin = scale_lo, ymax = scale_up, 
-#       fill = species)
-# ) +
-#   ggsidekick::theme_sleek() +
-#   geom_line() +
-#   geom_ribbon(alpha = 0.3) +
-#   scale_fill_manual(values = col_pal) +
-#   scale_x_continuous(expand = c(0, 0)) +
-#   facet_wrap(~species, nrow = 1) +
-#   coord_cartesian(y = c(0, 2.5)) +
-#   xlab("Distance to Coastline (km)") +
-#   theme(axis.title.y = element_blank()) +
-#   guides(fill = "none") 
-# 
-# plot_g2 <- cowplot::plot_grid(depth_plot, dist_plot, ncol = 1)
-# y_grob <- grid::textGrob("Scaled Abundance Index", rot = 90)
-# 
-# png(here::here("figs", "ms_figs_season", "smooth_effs.png"), height = 5, 
-#     width = 8,
+# png(here::here("figs", "ms_figs_season", "depth_eff.png"), 
+#     height = 3, width = 8,
 #     units = "in", res = 200)
-# gridExtra::grid.arrange(
-#   gridExtra::arrangeGrob(plot_g2, left = y_grob)
-# )
+# depth_plot
 # dev.off()
+
+
+# distance to coast 
+dist_dat <- expand.grid(
+  dist_to_coast_km = seq(0.1, max(dat$dist_to_coast_km), length.out = 100),
+  scale_depth = 0,
+  day_night = unique(dat$day_night),
+  season_f = unique(dat$season_f),
+  target_depth = 0,
+  survey_f = unique(dat$survey_f),
+  year = unique(dat$year)
+  ) %>%
+  mutate(
+    scale_dist = (dist_to_coast_km - mean(dat$dist_to_coast_km)) /
+      sd(dat$dist_to_coast_km),
+    year_f = as.factor(year),
+    season_year_f = paste(season_f, year_f, sep = "_") %>% as.factor()
+  ) %>%
+  filter(
+    day_night == "DAY", season_f == "su", survey_f == "hss", year_f == "2012"
+  ) %>%
+  left_join(
+    ., year_season_key, by = c("season_f", "year")
+  )
+
+dist_preds <- purrr::pmap(
+  list(dat_tbl$fit, dat_tbl$species),
+  function(x, y, z) {
+    predict(x, newdata = dist_dat, se_fit = T, re_form = NA,
+            re_form_iid = NA) %>%
+      mutate(species = y)
+  }
+) %>%
+  bind_rows()
+
+dist_preds2 <- dist_preds %>%
+  group_by(species) %>%
+  mutate(
+    exp_est = exp(est),
+    max_est = max(exp_est),
+    scale_est = exp_est / max_est,
+    up = (est + 1.96 * est_se),
+    lo = (est - 1.96 * est_se),
+    exp_up = exp(up),
+    exp_lo = exp(lo),
+    scale_up = exp(up) / max_est,
+    scale_lo = exp(lo) / max_est
+  )
+
+dist_plot <- ggplot(
+  data = dist_preds2,
+  aes(x = dist_to_coast_km, y = scale_est, ymin = scale_lo, ymax = scale_up,
+      fill = species)
+) +
+  ggsidekick::theme_sleek() +
+  geom_line() +
+  geom_ribbon(alpha = 0.3) +
+  scale_fill_manual(values = col_pal) +
+  scale_x_continuous(expand = c(0, 0)) +
+  facet_wrap(~species, nrow = 1) +
+  coord_cartesian(y = c(0, 2.5)) +
+  xlab("Distance to Coastline (km)") +
+  theme(axis.title.y = element_blank()) +
+  guides(fill = "none")
+
+plot_g2 <- cowplot::plot_grid(depth_plot, dist_plot, ncol = 1)
+y_grob <- grid::textGrob("Scaled Abundance Index", rot = 90)
+
+png(here::here("figs", "ms_figs_season", "smooth_effs.png"), height = 5,
+    width = 8,
+    units = "in", res = 200)
+gridExtra::grid.arrange(
+  gridExtra::arrangeGrob(plot_g2, left = y_grob)
+)
+dev.off()
 
 
 
@@ -630,23 +626,23 @@ index_dat %>%
 
 
 # compare HSS index to one where survey design is not accounted for
-index_grid_true <- index_grid %>% filter(fake_survey == "0")
-ind_preds_true <- purrr::map(
-  dat_tbl %>% pull(fit),
-  ~ {
-    predict(.x,
-            newdata = index_grid_true,
-            se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
-  }
-)
-index_true_survey_list <- purrr::map(
-  ind_preds_true,
-  get_index,
-  area = sp_scalar,
-  bias_correct = TRUE
-)
-saveRDS(index_true_survey_list,
-        here::here("data", "fits", "season_index_true_survey_list.rds"))
+# index_grid_true <- index_grid %>% filter(fake_survey == "0")
+# ind_preds_true <- purrr::map(
+#   dat_tbl %>% pull(fit),
+#   ~ {
+#     predict(.x,
+#             newdata = index_grid_true,
+#             se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
+#   }
+# )
+# index_true_survey_list <- purrr::map(
+#   ind_preds_true,
+#   get_index,
+#   area = sp_scalar,
+#   bias_correct = TRUE
+# )
+# saveRDS(index_true_survey_list,
+#         here::here("data", "fits", "season_index_true_survey_list.rds"))
 index_true_survey_list <- readRDS(
   here::here("data", "fits", "season_index_true_survey_list.rds"))
 
@@ -817,14 +813,16 @@ spatial_grid <- pred_grid_list %>%
         target_depth = 0,
         day_night = "DAY",
         scale_depth = (target_depth - mean(dat$target_depth)) / 
-          sd(dat$target_depth)
+          sd(dat$target_depth),
+        scale_dist = (dist_to_coast_km  - mean(dat$dist_to_coast_km )) / 
+          sd(dat$dist_to_coast_km )
       )
   }) %>%
   bind_rows() %>% 
   filter(
     !survey_f == "ipes"
   ) %>% 
-  select(-c(depth, slope, shore_dist)) 
+  select(-c(depth, slope)) 
 
 spatial_preds_list <- purrr::map2(
   dat_tbl$fit,
