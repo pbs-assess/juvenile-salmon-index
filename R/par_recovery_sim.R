@@ -25,36 +25,36 @@ all_fit_tbl <- readRDS(
   )
 
 
-# simulate from Stan output fixing FEs at MLE
-# set.seed(456)
-# sims_list <- furrr::future_map(
-#   all_fit_tbl$fit, function (x) {
-#     object <- x
-#     samp <- sample_mle_mcmc(object, mcmc_iter = 120, mcmc_warmup = 100)
-# 
-#     obj <- object$tmb_obj
-#     random <- unique(names(obj$env$par[obj$env$random]))
-#     pl <- as.list(object$sd_report, "Estimate")
-#     fixed <- !(names(pl) %in% random)
-#     map <- lapply(pl[fixed], function(x) factor(rep(NA, length(x))))
-#     obj <- TMB::MakeADFun(obj$env$data, pl, map = map, DLL = "sdmTMB")
-#     obj_mle <- object
-#     obj_mle$tmb_obj <- obj
-#     obj_mle$tmb_map <- map
-#     simulate(obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp), nsim = 20)
-#   }
-# )
-# saveRDS(sims_list,
-#         here::here("data", "fits", "nb_mcmc_draws_aniso.rds"))
+#simulate from Stan output fixing FEs at MLE
+set.seed(456)
+sims_list <- furrr::future_map(
+  all_fit_tbl$fit, function (x) {
+    object <- x
+    samp <- sample_mle_mcmc(object, mcmc_iter = 120, mcmc_warmup = 100)
 
-sims_list <- readRDS(here::here("data", "fits", "nb_mcmc_draws_aniso.rds"))
+    obj <- object$tmb_obj
+    random <- unique(names(obj$env$par[obj$env$random]))
+    pl <- as.list(object$sd_report, "Estimate")
+    fixed <- !(names(pl) %in% random)
+    map <- lapply(pl[fixed], function(x) factor(rep(NA, length(x))))
+    obj <- TMB::MakeADFun(obj$env$data, pl, map = map, DLL = "sdmTMB")
+    obj_mle <- object
+    obj_mle$tmb_obj <- obj
+    obj_mle$tmb_map <- map
+    simulate(obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp), nsim = 20)
+  }
+)
+saveRDS(sims_list,
+        here::here("data", "fits", "nb_mcmc_draws_nb2_final.rds"))
+
+# sims_list <- readRDS(here::here("data", "fits", "nb_mcmc_draws_nb2_final.rds"))
 
 all_fit_tbl$sims <- sims_list 
 
 
 # subset to use nbinom1 for pink/chum
-fit_all_sp_trim <- all_fit_tbl %>% 
-  filter(model == "nb2")
+fit_all_sp_trim <- all_fit_tbl #%>% 
+  # filter(model == "nb2")
   
 
 dharma_list <- purrr::map2(fit_all_sp_trim$sims, fit_all_sp_trim$fit,
@@ -191,7 +191,7 @@ for (i in seq_along(sp_vec)) {
   saveRDS(
     fit,
     here::here("data", "fits", "sim_fit", 
-               paste(sp_vec[i], "_nb2.rds", sep = ""))
+               paste(sp_vec[i], "_nb2_final.rds", sep = ""))
   )
   }
 
@@ -200,7 +200,7 @@ for (i in seq_along(sp_vec)) {
 sim_fit_list <- purrr::map(
   sp_vec,
   ~ readRDS(
-    here::here("data", "fits", "sim_fit", paste(.x, "_nb2_aniso.rds", sep = ""))
+    here::here("data", "fits", "sim_fit", paste(.x, "_nb2_final.rds", sep = ""))
   )
 )
 
@@ -284,7 +284,7 @@ sim_box <- ggplot() +
   labs(y = "Parameter Estimate", x =  "Species") +
   ggsidekick::theme_sleek() 
 
-png(here::here("figs", "ms_figs_season", "par_recovery_sim_box_no_dist_mcmc.png"), 
+png(here::here("figs", "ms_figs_season", "par_recovery_sim_box_mcmc.png"), 
     height = 8, width = 8, units = "in", res = 200)
 sim_box
 dev.off()
@@ -312,8 +312,8 @@ year_season_key <- readRDS(here::here("data", "year_season_key.rds"))
 
 index_grid_hss <- readRDS(here::here("data", "index_hss_grid.rds")) %>% 
   mutate(
-    # scale_dist = (dist_to_coast_km - mean(cov_in$dist_to_coast_km)) / 
-    #   sd(cov_in$dist_to_coast_km),
+    scale_dist = (dist_to_coast_km - mean(cov_in$dist_to_coast_km)) /
+      sd(cov_in$dist_to_coast_km),
     scale_depth = (target_depth - mean(cov_in$target_depth)) /
       sd(cov_in$target_depth)
     )
@@ -336,7 +336,7 @@ for (i in seq_along(sp_vec)) {
   saveRDS(
     sim_ind_list,
     here::here("data", "fits", "sim_fit",
-               paste(sp_vec[i], "_sim_index2.rds", sep = ""))
+               paste(sp_vec[i], "_sim_index_final.rds", sep = ""))
   )
 }
 
@@ -370,7 +370,7 @@ sim_index_list <- purrr::map(
   sp_vec,
   ~ readRDS(
     here::here("data", "fits", "sim_fit",
-               paste(.x, "_sim_index2.rds", sep = ""))
+               paste(.x, "_sim_index_final.rds", sep = ""))
   )
 )
 
