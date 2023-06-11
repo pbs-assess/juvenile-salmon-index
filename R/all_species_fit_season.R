@@ -773,13 +773,13 @@ index_lm_plot_dat <- index_lm_dat %>%
   mutate(survey_eff = fct_relevel(as.factor(survey_eff), "no", after = Inf))
   
 png(here::here("figs", "ms_figs_season", "decline_survey_effect.png"), 
-    height = 5, width = 5, units = "in", res = 200)
+    height = 3, width = 8, units = "in", res = 200)
 ggplot(index_lm_plot_dat, 
        aes(x = survey_eff, y = estimate)) +
   geom_pointrange(aes(ymin = conf.low, ymax = conf.high, fill = species),
                   shape = 21) +
   geom_hline(aes(yintercept = 0), linetype = 2, colour = "red") +
-  facet_wrap(~species) +
+  facet_wrap(~species, nrow = 1) +
   scale_color_manual(values = col_pal) +
   scale_fill_manual(values = col_pal) +
   ggsidekick::theme_sleek() +
