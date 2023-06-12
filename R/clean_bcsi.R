@@ -394,8 +394,8 @@ bubble_temp_coverage <- dat_trim %>%
   ) +
   labs(x = "Week")
 
-png(here::here("figs", "ms_figs_season", "temp_cov.png"), height = 5.5, width = 5.5, 
-    units = "in", res = 250)
+png(here::here("figs", "ms_figs_season", "temp_cov.png"), height = 5.5, 
+    width = 5.5, units = "in", res = 250)
 bubble_temp_coverage
 dev.off()
 

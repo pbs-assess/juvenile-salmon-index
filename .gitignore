@@ -11,6 +11,7 @@ prediction-grids/*
 !data/spatial/*.rds
 !data/preds/*.rds
 data/fits/*.rds
+figs/sopo_figs/
 .DS_Store
 R/hidden/
 *.dll
