@@ -54,10 +54,6 @@ dat <- dat_in %>%
   droplevels()
 
 
-# ggplot(dat %>% filter(!n_juv == "0")) +
-#   geom_boxplot(aes(x = season_f, y = log(n_juv))) +
-#   facet_wrap(~species)
-
 ## plotting color palette
 col_pal <- c('#7fc97f','#beaed4','#fdc086','#ffff99','#386cb0')
 names(col_pal) <- c('chinook','pink','chum','coho','sockeye')
@@ -788,7 +784,6 @@ ggplot(index_lm_plot_dat,
 dev.off()
 
  
-  
 # SPATIAL PREDS ----------------------------------------------------------------
 
 # shape file for coastline
@@ -956,3 +951,28 @@ ggplot() +
     legend.key.size = unit(0.75, 'cm')
   )
 dev.off()
+
+
+## SUMMARY TABLE INFO ----------------------------------------------------------
+
+#ntows
+length(dat$unique_event)
+
+#ntows w/ zero salmon
+dat %>% 
+  filter(n_juv == "0") %>% 
+  group_by(species) %>% 
+  tally() %>% 
+  mutate(
+    ppn = n / length(dat$unique_event)
+  )
+
+# effort
+dum <- dat %>% filter(species == "chinook", n_juv < 200)
+mean(dum$volume_km3)
+sd(dum$volume_km3)
+
+# depth
+mean(dum$target_depth)
+sd(dum$target_depth)
+
