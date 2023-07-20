@@ -523,8 +523,6 @@ index_dat <- purrr::map2(
       season == "summer" & year %in% summer_years ~ "sampled",
       TRUE ~ "no survey"
     ),
-    log_lwr = log_est - (1.96 * se),
-    log_upr = log_est + (1.96 * se),
     sparse = case_when(
       survey == "no survey" ~ "yes",
       season == "summer" & 
@@ -532,17 +530,17 @@ index_dat <- purrr::map2(
       season == "fall" & 
         year %in% c("2016", "2017", "2019") ~ "yes",
       TRUE ~ "no"
-    ),
+    )#,
     #remove CIs in real space for unsampled years (too large)
-    lwr = ifelse(
-      survey == "sampled", lwr, 0
-    ),
-    upr = ifelse(
-      survey == "sampled", upr, 0
-    )
+    # lwr = ifelse(
+    #   survey == "sampled", lwr, 0
+    # ),
+    # upr = ifelse(
+    #   survey == "sampled", upr, 0
+    # )
   ) %>% 
   group_by(season, species) %>% 
-  mutate(mean_log_est = mean(log_est)) %>% 
+  mutate(mean_est = mean(est)) %>% 
   ungroup()
 
 
@@ -551,12 +549,13 @@ shape_pal <- c(21, 1)
 names(shape_pal) <- unique(index_dat$survey)
 
 # log abundance 
-log_index <- ggplot(index_dat, aes(year, log_est)) +
-  geom_pointrange(aes(ymin = log_lwr, ymax = log_upr, fill = species, 
+log_index <- ggplot(index_dat, aes(year, est)) +
+  geom_pointrange(aes(ymin = lwr, ymax = upr, fill = species,
                       shape = survey)) +
-  geom_hline(aes(yintercept = mean_log_est), lty = 2) +
-  labs(x = "Year", y = "Log Abundance Index") +
+  geom_hline(aes(yintercept = mean_est), lty = 2) +
+  labs(x = "Year", y = "Abundance Index") +
   scale_shape_manual(values = shape_pal) +
+  scale_y_log10() +
   ggsidekick::theme_sleek() +
   facet_grid(species~season, scales = "free_y") +
   scale_fill_manual(values = col_pal) +
