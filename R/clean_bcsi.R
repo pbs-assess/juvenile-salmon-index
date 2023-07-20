@@ -376,23 +376,26 @@ png(here::here("figs", "ms_figs_season", "dn_tows.png"), height = 3.5, width = 7
 stacked_daynight
 dev.off()
 
+dat_trim$season_f2 <- fct_recode(
+  dat_trim$season_f, "spring" = "sp", "summer" = "su", "fall" = "wi"
+)
+shape_pal <- c(21, 22, 23)
+names(shape_pal) <- unique(dat_trim$season_f2)
 
 # bubble plots of temporal coverage
 bubble_temp_coverage <- dat_trim %>% 
-  group_by(year, week, survey_f) %>% 
+ group_by(year, week, survey_f, season_f2) %>% 
   summarize(n_tows = length(unique_event), .groups = "drop") %>% 
   ungroup() %>% 
   ggplot(.) +
-  geom_jitter(aes(x = week, y = year, size = n_tows, 
-                  fill = survey_f),
-              alpha = 0.3, width = 0.25, shape = 21) +
+  geom_jitter(aes(y = week, x = year, size = n_tows, fill = survey_f, 
+                  shape = season_f2),
+              alpha = 0.3, width = 0.25) +
   ggsidekick::theme_sleek() +
   scale_size_area(name = "Number\nof\nTows") +
   scale_fill_discrete(name = "Survey") +
-  theme(
-    axis.title.y = element_blank()
-  ) +
-  labs(x = "Week")
+  scale_shape_manual(values = shape_pal, name = "Season") +
+  labs(x = "Year", y = "Week")
 
 png(here::here("figs", "ms_figs_season", "temp_cov.png"), height = 5.5, 
     width = 5.5, units = "in", res = 250)

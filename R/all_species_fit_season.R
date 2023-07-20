@@ -532,6 +532,13 @@ index_dat <- purrr::map2(
       season == "fall" & 
         year %in% c("2016", "2017", "2019") ~ "yes",
       TRUE ~ "no"
+    ),
+    #remove CIs in real space for unsampled years (too large)
+    lwr = ifelse(
+      survey == "sampled", lwr, 0
+    ),
+    upr = ifelse(
+      survey == "sampled", upr, 0
     )
   ) %>% 
   group_by(season, species) %>% 
@@ -542,6 +549,7 @@ index_dat <- purrr::map2(
 ## index plots
 shape_pal <- c(21, 1)
 names(shape_pal) <- unique(index_dat$survey)
+
 # log abundance 
 log_index <- ggplot(index_dat, aes(year, log_est)) +
   geom_pointrange(aes(ymin = log_lwr, ymax = log_upr, fill = species, 
@@ -561,29 +569,47 @@ log_index
 dev.off()
 
 
-# log abundance coded by survey coverage (looks good)
-shape_pal2 <- c(1, 21)
-names(shape_pal2) <- unique(index_dat$sparse)
-log_index_sparse <- ggplot(index_dat, aes(year, log_est)) +
-  geom_pointrange(aes(ymin = log_lwr, ymax = log_upr, fill = species, 
-                      shape = sparse)) +
+# exp abundance 
+exp_index <- ggplot(index_dat, aes(year, est)) +
+  geom_pointrange(aes(ymin = lwr, ymax = upr, fill = species,
+                      shape = survey)) +
   geom_hline(aes(yintercept = mean_log_est), lty = 2) +
-  labs(x = "Year", y = "Log Abundance Index") +
-  scale_shape_manual(values = shape_pal2) +
+  labs(x = "Year", y = "Abundance Index") +
+  scale_shape_manual(values = shape_pal) +
   ggsidekick::theme_sleek() +
   facet_grid(species~season, scales = "free_y") +
   scale_fill_manual(values = col_pal) +
-  theme(axis.title.x = element_blank())
+  theme(legend.position = "none",
+        axis.title.x = element_blank())
 
-png(here::here("figs", "diagnostics", "log_index_sparse.png"), 
+png(here::here("figs", "ms_figs_season", "real_index.png"), 
     height = 8, width = 8, units = "in", res = 200)
-log_index
+exp_index
 dev.off()
+
+# log abundance coded by survey coverage (looks good)
+# shape_pal2 <- c(1, 21)
+# names(shape_pal2) <- unique(index_dat$sparse)
+# log_index_sparse <- ggplot(index_dat, aes(year, log_est)) +
+#   geom_pointrange(aes(ymin = log_lwr, ymax = log_upr, fill = species, 
+#                       shape = sparse)) +
+#   geom_hline(aes(yintercept = mean_log_est), lty = 2) +
+#   labs(x = "Year", y = "Log Abundance Index") +
+#   scale_shape_manual(values = shape_pal2) +
+#   ggsidekick::theme_sleek() +
+#   facet_grid(species~season, scales = "free_y") +
+#   scale_fill_manual(values = col_pal) +
+#   theme(axis.title.x = element_blank())
+# 
+# png(here::here("figs", "diagnostics", "log_index_sparse.png"), 
+#     height = 8, width = 8, units = "in", res = 200)
+# log_index
+# dev.off()
 
 
 ## scaled abundance 
 scaled_index <- index_dat %>% 
-  filter(survey == "sampled")%>%
+  # filter(survey == "sampled")%>%
   group_by(species, season) %>%
   mutate(
     mean_log_est = mean(log_est),
@@ -796,45 +822,46 @@ coast <- rbind(rnaturalearth::ne_states( "United States of America",
 
 # similar to index grid except only HSS and fall survey domain to highlight 
 # spatial contrasts
-spatial_grid <- pred_grid_list %>%
-  purrr::map(., function (x) {
-    fall_grid %>% 
-      mutate(
-        year = x$year,
-        year_f = x$year_f,
-        survey_f = x$survey_f,
-        season_f = x$season_f,
-        ys_index = x$ys_index,
-        target_depth = 0,
-        day_night = "DAY",
-        scale_depth = (target_depth - mean(dat$target_depth)) / 
-          sd(dat$target_depth),
-        scale_dist = (dist_to_coast_km  - mean(dat$dist_to_coast_km )) / 
-          sd(dat$dist_to_coast_km )
-      )
-  }) %>%
-  bind_rows() %>% 
-  filter(
-    !survey_f == "ipes"
-  ) %>% 
-  select(-c(depth, slope)) 
+# spatial_grid <- pred_grid_list %>%
+#   purrr::map(., function (x) {
+#     fall_grid %>% 
+#       mutate(
+#         year = x$year,
+#         year_f = x$year_f,
+#         survey_f = x$survey_f,
+#         season_f = x$season_f,
+#         ys_index = x$ys_index,
+#         target_depth = 0,
+#         day_night = "DAY",
+#         scale_depth = (target_depth - mean(dat$target_depth)) / 
+#           sd(dat$target_depth),
+#         scale_dist = (dist_to_coast_km  - mean(dat$dist_to_coast_km )) / 
+#           sd(dat$dist_to_coast_km )
+#       )
+#   }) %>%
+#   bind_rows() %>% 
+#   filter(
+#     !survey_f == "ipes"
+#   ) %>% 
+#   select(-c(depth, slope)) 
+# 
+# spatial_preds_list <- purrr::map2(
+#   dat_tbl$fit,
+#   dat_tbl$species,
+#   ~ {
+#     predict(.x,
+#             newdata = spatial_grid,
+#             se_fit = FALSE, re_form = NULL) %>% 
+#       mutate(species = .y)
+#   }
+# )
+# spatial_preds <- spatial_preds_list %>%
+#   bind_rows() %>% 
+#   filter(!season_f == "sp")
+# saveRDS(spatial_preds,
+#         here::here("data", "fits", "all_spatial_varying_new_sp_preds.rds"))
 
-spatial_preds_list <- purrr::map2(
-  dat_tbl$fit,
-  dat_tbl$species,
-  ~ {
-    predict(.x,
-            newdata = spatial_grid,
-            se_fit = FALSE, re_form = NULL) %>% 
-      mutate(species = .y)
-  }
-)
-spatial_preds <- spatial_preds_list %>%
-  bind_rows() %>% 
-  filter(!season_f == "sp")
-saveRDS(spatial_preds,
-        here::here("data", "fits", "all_spatial_varying_new_sp_preds.rds"))
-
+spatial_preds <- readRDS(here::here("data", "fits", "all_spatial_varying_new_sp_preds.rds"))
 
 plot_map_raster <- function(dat, column = est) {
   ggplot(dat, aes(X, Y, fill = {{ column }})) +
@@ -847,7 +874,7 @@ plot_map_raster <- function(dat, column = est) {
 # spatiotemporal and total preds random fields for subset of years
 year_seq <- seq(1999, 2019, by = 5)
 sub_spatial <- spatial_preds %>% 
-  filter(year %in% year_seq) %>% 
+  filter(year %in% year_seq) %>%
   group_by(species) %>% 
   mutate(
     grid_est = sp_scalar * exp(est),
@@ -899,6 +926,22 @@ ggplot() +
         legend.position = "top",
         legend.key.size = unit(0.75, 'cm'))
 dev.off()
+
+# focus on pink salmon to identify odd/even year pattern
+# ggplot() + 
+#   geom_raster(data = sub_spatial %>% 
+#                 filter(season_f == "su", species == "pink"),
+#               aes(X, Y, fill = scale_est2)) +
+#   coord_fixed() +
+#   geom_sf(data = coast, color = "black", fill = "white") +
+#   ggsidekick::theme_sleek() +
+#   scale_fill_viridis_c(
+#     trans = "sqrt",
+#     name = "Scaled\nAbundance"
+#   ) +
+#   facet_wrap(~year)
+
+
 
 year_field_seq <- paste("zeta_s_year_f", year_seq, sep = "")
 omega_yr <- sub_spatial %>% 
