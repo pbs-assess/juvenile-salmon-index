@@ -134,6 +134,12 @@ missing_surveys <- year_season_key$ys_index[!(year_season_key$ys_index %in%
 dat_tbl <- readRDS(here::here("data", "fits", "all_spatial_varying_nb2_final.rds"))
 
 
+# scalar for spatial predictions; since preds are in m3, multiply by
+# (1 * 1 * 13) because effort in m but using 1x1 km grid cells and 
+# assuming mean net opening (13 m)
+sp_scalar <- 1 * (13 / 1000)
+
+
 ## CHECKS ----------------------------------------------------------------------
 
 purrr::map(dat_tbl$fit, sanity)
@@ -474,12 +480,6 @@ ind_preds <- purrr::map(
   }
 )
 
-
-# scalar for spatial predictions; since preds are in m3, multiply by
-# (1 * 1 * 13) because effort in m but using 1x1 km grid cells and 
-# assuming mean net opening (13 m)
-sp_scalar <- 1 * (13 / 1000)
-
 index_list <- purrr::map(
   ind_preds,
   get_index,
@@ -815,7 +815,7 @@ dev.off()
 coast <- rbind(rnaturalearth::ne_states( "United States of America", 
                                          returnclass = "sf"), 
                rnaturalearth::ne_states( "Canada", returnclass = "sf")) %>% 
-  sf::st_crop(., xmin = -129, ymin = 48.25, xmax = -124, ymax = 51.2) %>% 
+  sf::st_crop(., xmin = -129, ymin = 48.25, xmax = -123.25, ymax = 51.3) %>% 
   sf::st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
 
 
@@ -888,11 +888,10 @@ sub_spatial$scale_est2 <- ifelse(
 )
 
 png(here::here("figs", "ms_figs_season", "scaled_sp_preds_su.png"), 
-    height = 8, width = 8, units = "in", res = 200)
+    height = 8.5, width = 8.5, units = "in", res = 200)
 ggplot() + 
   geom_raster(data = sub_spatial %>% filter(season_f == "su"),
               aes(X, Y, fill = scale_est2)) +
-  coord_fixed() +
   geom_sf(data = coast, color = "black", fill = "white") +
   ggsidekick::theme_sleek() +
   scale_fill_viridis_c(
@@ -903,12 +902,14 @@ ggplot() +
   theme(axis.title = element_blank(),
         axis.text = element_blank(),
         legend.position = "top",
-        legend.key.size = unit(0.75, 'cm'))
+        legend.key.size = unit(1.1, 'cm')) +
+  scale_x_continuous(limits = c(462700, 814800), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(5350050, 5681850), expand = c(0, 0))
 dev.off()
 
 
 png(here::here("figs", "ms_figs_season", "scaled_sp_preds_fall.png"), 
-    height = 8, width = 8, units = "in", res = 200)
+    height = 8.5, width = 8.5, units = "in", res = 200)
 ggplot() + 
   geom_raster(data = sub_spatial %>% filter(season_f == "wi"),
               aes(X, Y, fill = scale_est2)) +
@@ -923,8 +924,11 @@ ggplot() +
   theme(axis.title = element_blank(),
         axis.text = element_blank(),
         legend.position = "top",
-        legend.key.size = unit(0.75, 'cm'))
+        legend.key.size = unit(1.1, 'cm')) +
+  scale_x_continuous(limits = c(462700, 814800), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(5350050, 5681850), expand = c(0, 0))
 dev.off()
+
 
 # focus on pink salmon to identify odd/even year pattern
 # ggplot() + 
@@ -951,7 +955,7 @@ omega_yr <- sub_spatial %>%
              names_to = "year", names_prefix = "zeta_s_year_f") 
 
 png(here::here("figs", "ms_figs_season", "year_rf.png"), 
-    height = 6, width = 7.5, units = "in", res = 200)
+    height = 8.5, width = 8.5, units = "in", res = 200)
 ggplot() +
   geom_raster(data = omega_yr,
               aes(X, Y, fill = omega_est)) +
@@ -964,8 +968,10 @@ ggplot() +
     axis.title = element_blank(),
     legend.position = "top",
     axis.text = element_blank(),
-    legend.key.size = unit(0.75, 'cm')
-  )
+    legend.key.size = unit(1.1, 'cm')
+  ) +
+  scale_x_continuous(limits = c(462700, 814800), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(5350050, 5681850), expand = c(0, 0))
 dev.off()
 
 
@@ -980,7 +986,7 @@ omega_season <- sub_spatial %>%
   mutate(season = fct_recode(season, "summer" = "su", "fall" = "wi"))
 
 png(here::here("figs", "ms_figs_season", "seasonal_rf.png"), 
-    height = 6, width = 7.5, units = "in", res = 200)
+    height = 7, width = 6, units = "in", res = 200)
 ggplot() +
   geom_raster(data = omega_season, aes(X, Y, fill = omega_est)) +
   geom_sf(data = coast, color = "black", fill = "white") +
@@ -990,8 +996,10 @@ ggplot() +
   theme(
     axis.title = element_blank(),
     axis.text = element_blank(),
-    legend.key.size = unit(0.75, 'cm')
-  )
+    legend.key.size = unit(.95, 'cm')
+  ) +
+  scale_x_continuous(limits = c(462700, 814800), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(5350050, 5681850), expand = c(0, 0))
 dev.off()
 
 
