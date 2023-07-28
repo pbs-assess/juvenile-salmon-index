@@ -7,7 +7,6 @@ library(sp)
 
 
 bridge_raw <- read.csv(here::here("data", "BCSI_TowInfo_2023215.csv")) %>% 
-  #read.csv(here::here("data", "BCSI_Bridge_Info_20220929.csv")) %>% 
   janitor::clean_names()  %>%
   # exclude some absurdly deep tows
   filter(!target_depth > 75,
@@ -252,6 +251,7 @@ coast <- rbind(rnaturalearth::ne_states( "United States of America",
   st_crop(., xmin = min_lon, ymin = min_lat, xmax = max_lon, ymax = max_lat) %>%
   st_transform(., crs = sp::CRS("+proj=longlat +datum=WGS84"))
 
+
 # map of set locations
 set_map <- ggplot() +
   geom_sf(data = coast, color = "black", fill = "white", size = 1.25) +
@@ -267,9 +267,33 @@ set_map <- ggplot() +
   coord_sf(ylim = c(min_lat + 0.15, max_lat - 0.15), 
            xlim = c(min_lon + 0.15, max_lon - 0.15))
   
-png(here::here("figs", "ms_figs_season", "set_map.png"), height = 5, width = 5, 
+
+# inset
+w_can <- map_data("world", region = c("usa", "canada")) %>%
+  fortify(.)
+inset_map <- ggplot() +
+  geom_polygon(data = w_can, mapping = aes(x = long, y = lat, group = group), 
+               color = "black", fill = "grey") + 
+  labs(x = "", y = "") +
+  geom_rect(aes(xmin = min_lon, xmax = max_lon, ymin = min_lat, ymax = max_lat),
+            fill = NA, lty = 2, col = "red") +
+  coord_map("azequalarea", 
+            orientation = c(60, -140, 20),
+            ylim = c(40, 65), xlim = c(-145, -120)) +
+  ggsidekick::theme_sleek() +
+  theme(strip.background = element_rect(colour="white", fill="white"),
+        legend.position = "top",
+        axis.title = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text = element_blank()) 
+
+
+png(here::here("figs", "ms_figs_season", "set_map.png"), height = 4.5, width = 6, 
     units = "in", res = 250)
-set_map
+cowplot::ggdraw(set_map) +
+  cowplot::draw_plot(inset_map, x = 0.03, y = 0.085, #vjust = -0.2,
+                     hjust = 0.1,
+                     width = 0.4, height = 0.4)
 dev.off()
 
   
@@ -318,20 +342,6 @@ set_map_year <- ggplot() +
 pdf(here::here("figs", "diagnostics",  "set_coverage_year.pdf"))
 set_map_year
 dev.off()
-
-
-# map of spatial covariates (exclude for now)
-# bc_raster <- readRDS(
-#   here::here("data", "spatial", "full_coast_raster_latlon_1000m.RDS"))
-# 
-# # # merge and add aspect/slope
-# ipes_raster_slope <- terrain(ipes_raster_utm, opt = 'slope', unit = 'degrees',
-#                              neighbors = 8)
-# ipes_raster_aspect <- terrain(ipes_raster_utm, opt = 'aspect', unit = 'degrees',
-#                               neighbors = 8)
-# ipes_raster_list <- list(depth = ipes_raster_utm,
-#                          slope = ipes_raster_slope,
-#                          aspect = ipes_raster_aspect)
 
 
 # stacked bar plots for headrope depth and ppn day/night
