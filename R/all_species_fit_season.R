@@ -139,6 +139,10 @@ dat_tbl <- readRDS(here::here("data", "fits", "all_spatial_varying_nb2_final.rds
 # assuming mean net opening (13 m)
 sp_scalar <- 1 * (13 / 1000)
 
+ggplot(dat_in %>% filter(species == "chinook" & season_f == "wi")) +
+  geom_histogram(aes(x = n_juv)) +
+  facet_wrap(~year_f, scales = "free_x")
+
 
 ## CHECKS ----------------------------------------------------------------------
 
@@ -439,54 +443,54 @@ pred_grid_list <- rbind(
 ## INDICES ---------------------------------------------------------------------
 
 # add unique years and seasons
-index_grid <- pred_grid_list %>%
-  purrr::map(., function (x) {
-    dum_grid <- if (x$season_f == "su") summer_grid else fall_grid
-
-    dum_grid %>%
-      mutate(
-        year = x$year,
-        year_f = x$year_f,
-        survey_f = x$survey_f,
-        season_f = x$season_f,
-        ys_index = x$ys_index,
-        target_depth = 0,
-        day_night = "DAY",
-        scale_depth = (target_depth - mean(dat$target_depth)) / 
-          sd(dat$target_depth),
-        scale_dist = (dist_to_coast_km - mean(dat$dist_to_coast_km)) / 
-          sd(dat$dist_to_coast_km)
-      )
-  }) %>%
-  bind_rows() %>%
-  mutate(
-    fake_survey = case_when(
-      year > 2016 & survey_f == "hss" & season_f == "su" ~ "1",
-      year < 2017 & survey_f == "ipes" & season_f == "su" ~ "1",
-      TRUE ~ "0")
-  ) %>%
-  select(-c(depth, slope, shore_dist))
-
-
-# predictions for index (set to HSS reference values)
-index_grid_hss <- index_grid %>% filter(survey_f == "hss")
-
-ind_preds <- purrr::map(
-  dat_tbl %>% pull(fit),
-  ~ {
-    predict(.x,
-            newdata = index_grid_hss,
-            se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
-  }
-)
-
-index_list <- purrr::map(
-  ind_preds,
-  get_index,
-  area = sp_scalar,
-  bias_correct = TRUE
-)
-saveRDS(index_list, here::here("data", "fits", "season_index_list.rds"))
+# index_grid <- pred_grid_list %>%
+#   purrr::map(., function (x) {
+#     dum_grid <- if (x$season_f == "su") summer_grid else fall_grid
+# 
+#     dum_grid %>%
+#       mutate(
+#         year = x$year,
+#         year_f = x$year_f,
+#         survey_f = x$survey_f,
+#         season_f = x$season_f,
+#         ys_index = x$ys_index,
+#         target_depth = 0,
+#         day_night = "DAY",
+#         scale_depth = (target_depth - mean(dat$target_depth)) / 
+#           sd(dat$target_depth),
+#         scale_dist = (dist_to_coast_km - mean(dat$dist_to_coast_km)) / 
+#           sd(dat$dist_to_coast_km)
+#       )
+#   }) %>%
+#   bind_rows() %>%
+#   mutate(
+#     fake_survey = case_when(
+#       year > 2016 & survey_f == "hss" & season_f == "su" ~ "1",
+#       year < 2017 & survey_f == "ipes" & season_f == "su" ~ "1",
+#       TRUE ~ "0")
+#   ) %>%
+#   select(-c(depth, slope, shore_dist))
+# 
+# 
+# # predictions for index (set to HSS reference values)
+# index_grid_hss <- index_grid %>% filter(survey_f == "hss")
+# 
+# ind_preds <- purrr::map(
+#   dat_tbl %>% pull(fit),
+#   ~ {
+#     predict(.x,
+#             newdata = index_grid_hss,
+#             se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
+#   }
+# )
+# 
+# index_list <- purrr::map(
+#   ind_preds,
+#   get_index,
+#   area = sp_scalar,
+#   bias_correct = TRUE
+# )
+# saveRDS(index_list, here::here("data", "fits", "season_index_list.rds"))
 
 
 index_list <- readRDS(
@@ -540,8 +544,14 @@ index_dat <- purrr::map2(
     # )
   ) %>% 
   group_by(season, species) %>% 
-  mutate(mean_est = mean(est)) %>% 
-  ungroup()
+  mutate(mean_est = mean(est),
+         geo_mean_est = exp(mean(log_est))) %>% 
+  ungroup() %>% 
+  mutate(
+    scale_geo_est = est / geo_mean_est,
+    scale_geo_lwr = ifelse(survey == "sampled", lwr / geo_mean_est, scale_geo_est),
+    scale_geo_upr = ifelse(survey == "sampled", upr / geo_mean_est, scale_geo_est)
+  )
 
 
 ## index plots
@@ -549,22 +559,42 @@ shape_pal <- c(21, 1)
 names(shape_pal) <- unique(index_dat$survey)
 
 # log abundance 
-log_index <- ggplot(index_dat, aes(year, est)) +
-  geom_pointrange(aes(ymin = lwr, ymax = upr, fill = species,
+# log_index <- ggplot(index_dat, aes(year, est)) +
+#   geom_pointrange(aes(ymin = lwr, ymax = upr, fill = species,
+#                       shape = survey)) +
+#   geom_hline(aes(yintercept = mean_est), lty = 2) +
+#   labs(x = "Year", y = "Abundance Index") +
+#   scale_shape_manual(values = shape_pal) +
+#   scale_y_log10() +
+#   ggsidekick::theme_sleek() +
+#   facet_grid(species~season, scales = "free_y") +
+#   scale_fill_manual(values = col_pal) +
+#   theme(legend.position = "none",
+#         axis.title.x = element_blank())
+# 
+# png(here::here("figs", "ms_figs_season", "log_index.png"), 
+#     height = 8, width = 8, units = "in", res = 200)
+# log_index
+# dev.off()
+
+
+# scaled geometric mean abundance 
+geo_mean_index <- ggplot(index_dat, aes(year, scale_geo_est)) +
+  geom_pointrange(aes(ymin = scale_geo_lwr, ymax = scale_geo_upr, 
+                      fill = species,
                       shape = survey)) +
-  geom_hline(aes(yintercept = mean_est), lty = 2) +
-  labs(x = "Year", y = "Abundance Index") +
+  labs(x = "Year", y = "Abundance Index (Geometric Mean)") +
   scale_shape_manual(values = shape_pal) +
-  scale_y_log10() +
+  scale_y_log10(labels = scales::comma) +
   ggsidekick::theme_sleek() +
   facet_grid(species~season, scales = "free_y") +
   scale_fill_manual(values = col_pal) +
   theme(legend.position = "none",
-        axis.title.x = element_blank())
+        axis.title.x = element_blank()) 
 
-png(here::here("figs", "ms_figs_season", "log_index.png"), 
+png(here::here("figs", "ms_figs_season", "gm_index.png"), 
     height = 8, width = 8, units = "in", res = 200)
-log_index
+geo_mean_index
 dev.off()
 
 
@@ -678,12 +708,7 @@ index_dat2 <- purrr::map2(
          log_lwr = log_est - (1.96 * se),
          log_upr = log_est + (1.96 * se)
   ) %>% 
-  filter(season_f == "su") %>% 
-  left_join(
-    ., 
-    index_dat %>% select(species, season_f, mean_log_est) %>% distinct(),
-    by = c("species", "season_f")
-  )
+  filter(season_f == "su")
 
 
 png(here::here("figs", "ms_figs_season", "log_index_no_survey_eff.png"), 
@@ -691,7 +716,6 @@ png(here::here("figs", "ms_figs_season", "log_index_no_survey_eff.png"),
 ggplot(index_dat2, aes(year, log_est)) +
   geom_pointrange(aes(ymin = log_lwr, ymax = log_upr, fill = species),
                   shape = 24) +
-  geom_hline(aes(yintercept = mean_log_est), lty = 2) +
   labs(x = "Year", y = "Log Abundance Index") +
   scale_shape_manual(values = shape_pal) +
   ggsidekick::theme_sleek() +
@@ -735,12 +759,14 @@ index_lm_dat <- rbind(
   index_dat %>% 
     filter(season_f == "su",
            year > 2010) %>% 
-    select(log_est, species, year, season_f) %>% 
-    mutate(survey_eff = "yes"),
+    select(log_est, se, species, year, season_f) %>% 
+    mutate(survey_eff = "yes",
+           weight = (1 / se^2)),
   index_dat2 %>% 
-    select(log_est, species, year, season_f) %>% 
+    select(log_est, se, species, year, season_f) %>% 
     filter(year > 2010) %>% 
-    mutate(survey_eff = "no")
+    mutate(survey_eff = "no",
+           weight = (1 / se^2))
 ) %>% 
   group_by(species, survey_eff) %>% 
   group_nest()
@@ -748,7 +774,7 @@ index_lm_dat <- rbind(
 # fit
 index_lm_dat$fit <- purrr::map(
   index_lm_dat$data, 
-  ~ lm(log_est ~ year, data = .x)
+  ~ lm(log_est ~ year, data = .x, weights = weight)
 )
 
 # predict
@@ -791,21 +817,30 @@ index_lm_plot_dat <- index_lm_dat %>%
   select(species, survey_eff, coefs) %>% 
   unnest(cols = c(coefs)) %>% 
   filter(term == "year") %>% 
-  mutate(survey_eff = fct_relevel(as.factor(survey_eff), "no", after = Inf))
+  mutate(
+    survey_eff = fct_relevel(as.factor(survey_eff), "no", after = Inf)
+  )
   
 png(here::here("figs", "ms_figs_season", "decline_survey_effect.png"), 
     height = 3, width = 8, units = "in", res = 200)
 ggplot(index_lm_plot_dat, 
-       aes(x = survey_eff, y = estimate)) +
-  geom_pointrange(aes(ymin = conf.low, ymax = conf.high, fill = species),
-                  shape = 21) +
+       aes(x = survey_eff, y = (exp(estimate) - 1) * 100)) +
+  geom_pointrange(
+    aes(ymin = (exp(conf.low) - 1) * 100, ymax = (exp(conf.high) - 1) * 100,
+        fill = species),
+    shape = 21
+  ) +
   geom_hline(aes(yintercept = 0), linetype = 2, colour = "red") +
   facet_wrap(~species, nrow = 1) +
   scale_color_manual(values = col_pal) +
   scale_fill_manual(values = col_pal) +
   ggsidekick::theme_sleek() +
   labs(x = "Survey Effects Accounted For", y = "Estimated Decline") +
-  theme(legend.position = "none")
+  theme(legend.position = "none") +
+  scale_y_continuous(
+    breaks = seq(-60, 20, by = 20),
+    labels = paste(seq(-60, 20, by = 20), "%", sep = "")
+  )
 dev.off()
 
  
