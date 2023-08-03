@@ -88,48 +88,48 @@ missing_surveys <- year_season_key$ys_index[!(year_season_key$ys_index %in%
 
 # fitting anisotropic models to pink data leads to convergence issues; adjust
 # accordingly
-# dat_tbl <- dat %>%
-#   group_by(species) %>%
-#   group_nest() %>% 
-#   mutate(
-#     anisotropy = ifelse(species == "pink", FALSE, TRUE)
-#   )
-# 
-# fits_list_nb2 <- furrr::future_map2(
-#   dat_tbl$data, dat_tbl$anisotropy,
-#   function(dat_in, aniso) {
-#     sdmTMB(
-#       n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
-#         scale_depth
-#       ,
-#       offset = dat_in$effort,
-#       data = dat_in,
-#       mesh = spde,
-#       family = sdmTMB::nbinom2(),
-#       spatial = "off",
-#       spatial_varying = ~ 0 + season_f + year_f,
-#       time_varying = ~ 1,
-#       time_varying_type = "rw0",
-#       time = "ys_index",
-#       spatiotemporal = "off",
-#       anisotropy = aniso,
-#       extra_time = missing_surveys,
-#       control = sdmTMBcontrol(
-#         newton_loops = 1,
-#         map = list(
-#           # 1 per season, fix all years to same value
-#           ln_tau_Z = factor(
-#             c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
-#           )
-#         )
-#       ),
-#       silent = FALSE
-#     )
-#   }
-# )
-# 
-# dat_tbl$fit <- fits_list_nb2
-# saveRDS(dat_tbl, here::here("data", "fits", "all_spatial_varying_nb2_final.rds"))
+dat_tbl <- dat %>%
+  group_by(species) %>%
+  group_nest() %>%
+  mutate(
+    anisotropy = ifelse(species == "pink", FALSE, TRUE)
+  )
+
+fits_list_nb2 <- furrr::future_map2(
+  dat_tbl$data, dat_tbl$anisotropy,
+  function(dat_in, aniso) {
+    sdmTMB(
+      n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+        scale_depth
+      ,
+      offset = dat_in$effort,
+      data = dat_in,
+      mesh = spde,
+      family = sdmTMB::nbinom2(),
+      spatial = "off",
+      spatial_varying = ~ 0 + season_f + year_f,
+      time_varying = ~ 1,
+      time_varying_type = "rw0",
+      time = "ys_index",
+      spatiotemporal = "off",
+      anisotropy = aniso,
+      extra_time = missing_surveys,
+      control = sdmTMBcontrol(
+        newton_loops = 1,
+        map = list(
+          # 1 per season, fix all years to same value
+          ln_tau_Z = factor(
+            c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
+          )
+        )
+      ),
+      silent = FALSE
+    )
+  }
+)
+
+dat_tbl$fit <- fits_list_nb2
+saveRDS(dat_tbl, here::here("data", "fits", "all_spatial_varying_nb2_final.rds"))
 
 dat_tbl <- readRDS(here::here("data", "fits", "all_spatial_varying_nb2_final.rds"))
 
@@ -139,9 +139,6 @@ dat_tbl <- readRDS(here::here("data", "fits", "all_spatial_varying_nb2_final.rds
 # assuming mean net opening (13 m)
 sp_scalar <- 1 * (13 / 1000)
 
-ggplot(dat_in %>% filter(species == "chinook" & season_f == "wi")) +
-  geom_histogram(aes(x = n_juv)) +
-  facet_wrap(~year_f, scales = "free_x")
 
 
 ## CHECKS ----------------------------------------------------------------------
