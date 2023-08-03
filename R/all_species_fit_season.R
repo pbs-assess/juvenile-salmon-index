@@ -15,6 +15,7 @@ library(sdmTMB)
 library(ggplot2)
 library(sdmTMBextra)
 
+dir.create("data/fits", recursive = TRUE, showWarnings = FALSE)
 
 # downscale data and predictive grid
 dat_in <- readRDS(here::here("data", "catch_survey_sbc.rds")) 
