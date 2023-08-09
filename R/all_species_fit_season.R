@@ -994,8 +994,7 @@ ggplot() +
               aes(X, Y, fill = omega_est)) +
   geom_sf(data = coast, color = "black", fill = "white") +
   ggsidekick::theme_sleek() +
-  scale_fill_distiller(palette = "Spectral", 
-                       name = "Spatial\nField") +
+  scale_fill_gradient2(name = "Spatial\nField") +
   facet_grid(year~species) +
   theme(
     axis.title = element_blank(),
