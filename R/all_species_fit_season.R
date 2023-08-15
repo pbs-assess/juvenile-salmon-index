@@ -15,7 +15,9 @@ library(sdmTMB)
 library(ggplot2)
 library(sdmTMBextra)
 
+# make subdirectories for storage
 dir.create("data/fits", recursive = TRUE, showWarnings = FALSE)
+dir.create("data/preds", recursive = TRUE, showWarnings = FALSE)
 
 # downscale data and predictive grid
 dat_in <- readRDS(here::here("data", "catch_survey_sbc.rds")) 
@@ -440,55 +442,55 @@ pred_grid_list <- rbind(
 
 ## INDICES ---------------------------------------------------------------------
 
-# add unique years and seasons
-# index_grid <- pred_grid_list %>%
-#   purrr::map(., function (x) {
-#     dum_grid <- if (x$season_f == "su") summer_grid else fall_grid
-# 
-#     dum_grid %>%
-#       mutate(
-#         year = x$year,
-#         year_f = x$year_f,
-#         survey_f = x$survey_f,
-#         season_f = x$season_f,
-#         ys_index = x$ys_index,
-#         target_depth = 0,
-#         day_night = "DAY",
-#         scale_depth = (target_depth - mean(dat$target_depth)) / 
-#           sd(dat$target_depth),
-#         scale_dist = (dist_to_coast_km - mean(dat$dist_to_coast_km)) / 
-#           sd(dat$dist_to_coast_km)
-#       )
-#   }) %>%
-#   bind_rows() %>%
-#   mutate(
-#     fake_survey = case_when(
-#       year > 2016 & survey_f == "hss" & season_f == "su" ~ "1",
-#       year < 2017 & survey_f == "ipes" & season_f == "su" ~ "1",
-#       TRUE ~ "0")
-#   ) %>%
-#   select(-c(depth, slope, shore_dist))
-# 
-# 
-# # predictions for index (set to HSS reference values)
-# index_grid_hss <- index_grid %>% filter(survey_f == "hss")
-# 
-# ind_preds <- purrr::map(
-#   dat_tbl %>% pull(fit),
-#   ~ {
-#     predict(.x,
-#             newdata = index_grid_hss,
-#             se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
-#   }
-# )
-# 
-# index_list <- purrr::map(
-#   ind_preds,
-#   get_index,
-#   area = sp_scalar,
-#   bias_correct = TRUE
-# )
-# saveRDS(index_list, here::here("data", "fits", "season_index_list.rds"))
+#add unique years and seasons
+index_grid <- pred_grid_list %>%
+  purrr::map(., function (x) {
+    dum_grid <- if (x$season_f == "su") summer_grid else fall_grid
+
+    dum_grid %>%
+      mutate(
+        year = x$year,
+        year_f = x$year_f,
+        survey_f = x$survey_f,
+        season_f = x$season_f,
+        ys_index = x$ys_index,
+        target_depth = 0,
+        day_night = "DAY",
+        scale_depth = (target_depth - mean(dat$target_depth)) /
+          sd(dat$target_depth),
+        scale_dist = (dist_to_coast_km - mean(dat$dist_to_coast_km)) /
+          sd(dat$dist_to_coast_km)
+      )
+  }) %>%
+  bind_rows() %>%
+  mutate(
+    fake_survey = case_when(
+      year > 2016 & survey_f == "hss" & season_f == "su" ~ "1",
+      year < 2017 & survey_f == "ipes" & season_f == "su" ~ "1",
+      TRUE ~ "0")
+  ) %>%
+  select(-c(depth, slope, shore_dist))
+
+
+# predictions for index (set to HSS reference values)
+index_grid_hss <- index_grid %>% filter(survey_f == "hss")
+
+ind_preds <- purrr::map(
+  dat_tbl %>% pull(fit),
+  ~ {
+    predict(.x,
+            newdata = index_grid_hss,
+            se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
+  }
+)
+
+index_list <- purrr::map(
+  ind_preds,
+  get_index,
+  area = sp_scalar,
+  bias_correct = TRUE
+)
+saveRDS(index_list, here::here("data", "fits", "season_index_list.rds"))
 
 
 index_list <- readRDS(

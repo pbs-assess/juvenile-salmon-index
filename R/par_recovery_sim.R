@@ -19,6 +19,10 @@ ncores <- parallel::detectCores()
 future::plan(future::multisession, workers = ncores - 3)
 
 
+# make subdirectories for storage
+dir.create("data/fits", recursive = TRUE, showWarnings = FALSE)
+
+
 # fitted model from all_species_fit.R
 all_fit_tbl <- readRDS(
   here::here("data", "fits", "all_spatial_varying_nb2_final.rds")
@@ -26,40 +30,38 @@ all_fit_tbl <- readRDS(
 
 
 #simulate from Stan output fixing FEs at MLE
-set.seed(456)
-sims_list <- furrr::future_map(
-  all_fit_tbl$fit, function (x) {
-    object <- x
-    samp <- sample_mle_mcmc(object, mcmc_iter = 120, mcmc_warmup = 100)
+# set.seed(456)
+# sims_list <- furrr::future_map(
+#   all_fit_tbl$fit, function (x) {
+#     object <- x
+#     samp <- sample_mle_mcmc(object, mcmc_iter = 120, mcmc_warmup = 100)
+# 
+#     obj <- object$tmb_obj
+#     random <- unique(names(obj$env$par[obj$env$random]))
+#     pl <- as.list(object$sd_report, "Estimate")
+#     fixed <- !(names(pl) %in% random)
+#     map <- lapply(pl[fixed], function(x) factor(rep(NA, length(x))))
+#     obj <- TMB::MakeADFun(obj$env$data, pl, map = map, DLL = "sdmTMB")
+#     obj_mle <- object
+#     obj_mle$tmb_obj <- obj
+#     obj_mle$tmb_map <- map
+#     simulate(obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp), nsim = 20)
+#   }
+# )
+# saveRDS(sims_list,
+#         here::here("data", "fits", "nb_mcmc_draws_nb2_final.rds"))
 
-    obj <- object$tmb_obj
-    random <- unique(names(obj$env$par[obj$env$random]))
-    pl <- as.list(object$sd_report, "Estimate")
-    fixed <- !(names(pl) %in% random)
-    map <- lapply(pl[fixed], function(x) factor(rep(NA, length(x))))
-    obj <- TMB::MakeADFun(obj$env$data, pl, map = map, DLL = "sdmTMB")
-    obj_mle <- object
-    obj_mle$tmb_obj <- obj
-    obj_mle$tmb_map <- map
-    simulate(obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp), nsim = 20)
-  }
-)
-saveRDS(sims_list,
-        here::here("data", "fits", "nb_mcmc_draws_nb2_final.rds"))
-
-# sims_list <- readRDS(here::here("data", "fits", "nb_mcmc_draws_nb2_final.rds"))
+sims_list <- readRDS(here::here("data", "fits", "nb_mcmc_draws_nb2_final.rds"))
 
 all_fit_tbl$sims <- sims_list 
 
-
-# subset to use nbinom1 for pink/chum
-fit_all_sp_trim <- all_fit_tbl #%>% 
-  # filter(model == "nb2")
-  
-
-dharma_list <- purrr::map2(fit_all_sp_trim$sims, fit_all_sp_trim$fit,
+# check residuals
+dharma_list <- purrr::map2(all_fit_tbl$sims, all_fit_tbl$fit,
                            function (x, y) {
-  pred_fixed <- y$family$linkinv(predict(y)$est_non_rf)
+  pred_fixed <- y$family$linkinv(
+    predict(y,
+            newdata = y$data)$est_non_rf
+  )
   r_nb <- DHARMa::createDHARMa(
     simulatedResponse = x,
     observedResponse = y$data$n_juv,
@@ -73,11 +75,11 @@ dharma_list <- purrr::map2(fit_all_sp_trim$sims, fit_all_sp_trim$fit,
 
 # make a tibble for each species simulations
 sim_tbl <- purrr::pmap(
-  list(fit_all_sp_trim$species, fit_all_sp_trim$fit, fit_all_sp_trim$sims),
+  list(all_fit_tbl$species, all_fit_tbl$fit, all_fit_tbl$sims),
   function (sp, fits, x) {
     tibble(
       species = sp,
-      iter = seq(1, 20, by = 1),
+      iter = seq(1, ncol(x), by = 1),
       sim_dat = lapply(seq_len(ncol(x)), function(i) {
         # use fits instead of data in tibble because mismatched from extra_time
         fits$data %>% 
@@ -88,7 +90,7 @@ sim_tbl <- purrr::pmap(
 ) %>% 
   bind_rows() %>% 
   left_join(., 
-            fit_all_sp_trim %>% select(species, fit), 
+            all_fit_tbl %>% select(species, fit), 
             by = c("species"))
 
 sp_vec <- unique(sim_tbl$species)
@@ -96,8 +98,8 @@ sp_vec <- unique(sim_tbl$species)
 
 ## DISPERSION ------------------------------------------------------------------
 
-fit_all_sp_trim$true_sd <- purrr::map(
-  fit_all_sp_trim$data, ~ sd(.x$n_juv)
+all_fit_tbl$true_sd <- purrr::map(
+  all_fit_tbl$data, ~ sd(.x$n_juv)
 )
 
 sim_tbl$sim_sd <- purrr::map(
@@ -106,7 +108,7 @@ sim_tbl$sim_sd <- purrr::map(
 
 sim_tbl %>% 
   select(species, sim_sd) %>% 
-  left_join(., fit_all_sp_trim %>% select(species, true_sd), by = "species") %>% 
+  left_join(., all_fit_tbl %>% select(species, true_sd), by = "species") %>% 
   unnest(cols = c(sim_sd, true_sd)) %>% 
   ggplot(.) +
   geom_boxplot(aes(x = as.factor(species), y = sim_sd)) +
@@ -116,7 +118,7 @@ sim_tbl %>%
 ## PROPORTION OF ZEROS ---------------------------------------------------------
 
 # proportion zeros
-purrr::map2(fit_all_sp_trim$data, fit_all_sp_trim$sims, function(x, y) {
+purrr::map2(all_fit_tbl$data, all_fit_tbl$sims, function(x, y) {
   (sum(x$n_juv == 0) / length(x$n_juv)) / (sum(y == 0) / length(y))
 })
 
@@ -203,8 +205,6 @@ sim_fit_list <- purrr::map(
     here::here("data", "fits", "sim_fit", paste(.x, "_nb2_final.rds", sep = ""))
   )
 )
-
-purrr::map(sim_fit_list[[4]], ~ sanity(.x))
 
 sim_tbl$sim_fit <- do.call(c, sim_fit_list)
 
