@@ -64,7 +64,7 @@ names(col_pal) <- c('chinook','pink','chum','coho','sockeye')
 
 # prep multisession
 ncores <- parallel::detectCores() 
-future::plan(future::multisession, workers = ncores - 3)
+future::plan(future::multisession, workers = max(ncores - 3, 20))
 
 
 ## mesh shared among species
@@ -74,16 +74,20 @@ dat_coords <- dat %>%
   as.matrix()
 inla_mesh_raw <- INLA::inla.mesh.2d(
   loc = dat_coords,
-  max.edge = c(1, 5) * 500,
+  max.edge = c(2, 10) * 500,
   cutoff = 20,
-  offset = c(20, 200)
+  offset = c(10, 50)
 ) 
+plot(inla_mesh_raw)
 spde <- make_mesh(
   dat %>% 
     filter(species == "chinook"),
   c("utm_x_1000", "utm_y_1000"),
   mesh = inla_mesh_raw
 ) 
+plot(spde)
+
+spde$mesh$n
 
 # specify missing season-year levels
 missing_surveys <- year_season_key$ys_index[!(year_season_key$ys_index %in% 
@@ -97,6 +101,89 @@ dat_tbl <- dat %>%
   mutate(
     anisotropy = ifelse(species == "pink", FALSE, TRUE)
   )
+
+# experiments --------------------------
+
+# fit <- sdmTMB(
+#   n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+#     scale_depth
+#   ,
+#   offset = dat_in$effort,
+#   data = dat_tbl$data[[1]],
+#   mesh = spde,
+#   family = sdmTMB::nbinom2(),
+#   spatial = "off",
+#   spatial_varying = ~ 0 + season_f + year_f,
+#   time_varying = ~ 1,
+#   time_varying_type = "rw0",
+#   time = "ys_index",
+#   spatiotemporal = "off",
+#   anisotropy = FALSE,
+#   extra_time = missing_surveys,
+#   control = sdmTMBcontrol(
+#     newton_loops = 1,
+#     map = list(
+#       # 1 per season, fix all years to same value
+#       ln_tau_Z = factor(
+#         c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
+#       )
+#     )
+#   ),
+#   silent = FALSE
+# )
+# fit
+
+fit3 <- sdmTMB(
+  n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+    scale_depth + s(year, by = season_f)
+  ,
+  offset = dat_in$effort,
+  data = dat_tbl$data[[1]],
+  mesh = spde,
+  family = sdmTMB::nbinom2(),
+  spatial = "off",
+  spatial_varying = ~ 0 + season_f,
+  time = "year",
+  spatiotemporal = "iid",
+  anisotropy = FALSE,
+  control = sdmTMBcontrol(
+    map = list(
+      ln_smooth_sigma = factor(c(1L, 1L, 1L))
+    )
+  ),
+  silent = FALSE
+)
+fit3
+
+# fit2 <- sdmTMB(
+#   n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+#     scale_depth
+#   ,
+#   offset = dat_in$effort,
+#   data = dat_tbl$data[[1]],
+#   mesh = spde,
+#   family = sdmTMB::nbinom2(),
+#   spatial = "off",
+#   spatial_varying = ~ 0 + season_f,
+#   # time_varying = ~ 1,
+#   # time_varying_type = "rw0",
+#   time = "ys_index",
+#   spatiotemporal = "rw",
+#   anisotropy = FALSE,
+#   extra_time = missing_surveys,
+#   # control = sdmTMBcontrol(
+#     # newton_loops = 1,
+#     # map = list(
+#     #   # 1 per season, fix all years to same value
+#     #   ln_tau_Z = factor(
+#     #     c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
+#     #   )
+#     # )
+#   # ),
+#   silent = FALSE
+# )
+
+# --------------------------
 
 fits_list_nb2 <- furrr::future_map2(
   dat_tbl$data, dat_tbl$anisotropy,
