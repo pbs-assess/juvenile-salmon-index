@@ -11,7 +11,7 @@ library(sdmTMBextra)
 
 # downscale data and predictive grid
 dat_in <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>% 
-  filter(species == "pink")
+  filter(species == "chinook")
 
 
 # make key so that missing year-season combinations can be indexed
@@ -51,10 +51,10 @@ dat_coords <- dat %>%
   as.matrix()
 inla_mesh_raw <- INLA::inla.mesh.2d(
   loc = dat_coords,
-  max.edge = c(1, 5) * 500,
-  cutoff = 20,
-  offset = c(20, 200)
-) 
+  max.edge = c(2, 10) * 500,
+  cutoff = 30,
+  offset = c(10, 50)
+)  
 spde <- make_mesh(
   dat,
   c("utm_x_1000", "utm_y_1000"),
@@ -76,14 +76,53 @@ dat_tbl <- dat %>%
 
 
 # use N(0, 1) prior for survey effect
-beta_mu_priors <- rep(NA, times = 7)
-beta_mu_priors[5] <- 0
-beta_sd_priors <- rep(NA, times = 7)
-beta_sd_priors[5] <- 1
+# beta_mu_priors <- rep(NA, times = 7)
+# beta_mu_priors[5] <- 0
+# beta_sd_priors <- rep(NA, times = 7)
+# beta_sd_priors[5] <- 1
 
-fit <- sdmTMB(
+fit_smooth <- sdmTMB(
   n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
-    scale_depth
+    scale_depth + s(year, by = season_f)
+  ,
+  offset = dat$effort,
+  data = dat,
+  mesh = spde,
+  family = sdmTMB::nbinom2(),
+  spatial = "off",
+  spatial_varying = ~ 0 + season_f + year_f,
+  # time_varying = ~ 1,
+  # time_varying_type = "rw0",
+  # time = "ys_index",
+  spatiotemporal = "off",
+  anisotropy = FALSE,
+  extra_time = missing_surveys,
+  control = sdmTMBcontrol(
+    newton_loops = 1,
+    map = list(
+      # 1 per season, fix all years to same value
+      ln_tau_Z = factor(
+        c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
+      )
+    )
+  ),
+  # priors = sdmTMBpriors(
+  #   # location = vector of means; scale = vector of standard deviations:
+  #   b = normal(location = beta_mu_priors, scale = beta_sd_priors),
+  # ),
+  silent = FALSE
+)
+
+
+# use N(0, 1) prior for survey effect
+# beta_mu_priors <- rep(NA, times = 7)
+# beta_mu_priors[5] <- 0
+# beta_sd_priors <- rep(NA, times = 7)
+# beta_sd_priors[5] <- 1
+
+fit_prior <- sdmTMB(
+  n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+    scale_depth 
   ,
   offset = dat$effort,
   data = dat,
