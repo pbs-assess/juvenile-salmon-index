@@ -11,7 +11,7 @@ library(sdmTMBextra)
 
 # downscale data and predictive grid
 dat_in <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>% 
-  filter(species == "chinook")
+  filter(species == "pink")
 
 
 # make key so that missing year-season combinations can be indexed
@@ -43,8 +43,6 @@ dat <- dat_in %>%
   ) %>% 
   left_join(., year_season_key %>% select(ys_index, year_season_f)) %>% 
   droplevels()
-
-
 
 
 ## mesh shared among species
@@ -97,7 +95,7 @@ fit <- sdmTMB(
   time_varying_type = "rw0",
   time = "ys_index",
   spatiotemporal = "off",
-  anisotropy = TRUE,
+  anisotropy = FALSE,
   extra_time = missing_surveys,
   control = sdmTMBcontrol(
     newton_loops = 1,
@@ -130,7 +128,7 @@ fit_ar1 <- sdmTMB(
   time_varying_type = "ar1",
   time = "ys_index",
   spatiotemporal = "off",
-  anisotropy = TRUE,
+  anisotropy = FALSE,
   extra_time = missing_surveys,
   control = sdmTMBcontrol(
     newton_loops = 1,
@@ -160,7 +158,7 @@ fit_fix_tauV <- sdmTMB(
   time_varying_type = "rw0",
   time = "ys_index",
   spatiotemporal = "off",
-  anisotropy = TRUE,
+  anisotropy = FALSE,
   extra_time = missing_surveys,
   control = sdmTMBcontrol(
     newton_loops = 1,
@@ -180,10 +178,10 @@ fit_fix_tauV <- sdmTMB(
 
 
 # original fit
-dat_tbl <- readRDS(
+dat_tbl_original <- readRDS(
   here::here("data", "fits", "all_spatial_varying_nb2_final.rds")
 )
-fit_orig <- dat_tbl$fit[[1]]
+fit_orig <- dat_tbl_original$fit[[4]]
 
 # par ests
 fit_list <- list(fit, fit_orig, fit_ar1, fit_fix_tauV)
