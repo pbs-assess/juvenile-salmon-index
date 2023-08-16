@@ -16,7 +16,7 @@ library(ggplot2)
 library(sdmTMBextra)
 
 ncores <- parallel::detectCores() 
-future::plan(future::multisession, workers = ncores - 3)
+future::plan(future::multisession, workers = 50L)
 
 
 # make subdirectories for storage
@@ -50,27 +50,54 @@ all_fit_tbl <- readRDS(
 # )
 # saveRDS(sims_list,
 #         here::here("data", "fits", "nb_mcmc_draws_nb2_final.rds"))
+set.seed(456)
+if (FALSE) {
+# sims_list <- furrr::future_map(
+sims_list <- purrr::map(
+  all_fit_tbl$fit, function (x) {
+    object <- x
+    samp <- sample_mle_mcmc(object, mcmc_iter = 220L, mcmc_warmup = 200L, mcmc_chains = 50L, 
+                            stan_args = list(thin = 5L, cores = 50L))
+    obj <- object$tmb_obj
+    random <- unique(names(obj$env$par[obj$env$random]))
+    pl <- as.list(object$sd_report, "Estimate")
+    fixed <- !(names(pl) %in% random)
+    map <- lapply(pl[fixed], function(x) factor(rep(NA, length(x))))
+    obj <- TMB::MakeADFun(obj$env$data, pl, map = map, DLL = "sdmTMB")
+    obj_mle <- object
+    obj_mle$tmb_obj <- obj
+    obj_mle$tmb_map <- map
+    simulate(obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp), nsim = 200L)
+  }
+)
+saveRDS(sims_list,
+        here::here("data", "fits", "nb_mcmc_draws_nb2_final.rds"))
+}
 
 sims_list <- readRDS(here::here("data", "fits", "nb_mcmc_draws_nb2_final.rds"))
 
 all_fit_tbl$sims <- sims_list 
 
 # check residuals
-dharma_list <- purrr::map2(all_fit_tbl$sims, all_fit_tbl$fit,
-                           function (x, y) {
-  pred_fixed <- y$family$linkinv(
-    predict(y,
-            newdata = y$data)$est_non_rf
-  )
-  r_nb <- DHARMa::createDHARMa(
-    simulatedResponse = x,
-    observedResponse = y$data$n_juv,
-    fittedPredictedResponse = pred_fixed
-  )
-  DHARMa::testResiduals(r_nb)
-}
-)
+# dharma_list <- purrr::map2(all_fit_tbl$sims, all_fit_tbl$fit,
+#                            function (x, y) {
+#   pred_fixed <- y$family$linkinv(
+#     predict(y,
+#             newdata = y$data)$est_non_rf
+#   )
+#   r_nb <- DHARMa::createDHARMa(
+#     simulatedResponse = x,
+#     observedResponse = y$data$n_juv,
+#     fittedPredictedResponse = pred_fixed
+#   )
+#   DHARMa::testResiduals(r_nb)
+# }
+# )
 
+# subset to use nbinom1 for pink/chum
+fit_all_sp_trim <- all_fit_tbl #%>% 
+  # filter(model == "nb2")
+  
 ## for each simulated dataset, refit model, recover pars and store
 
 # make a tibble for each species simulations
@@ -124,11 +151,15 @@ purrr::map2(all_fit_tbl$data, all_fit_tbl$sims, function(x, y) {
 
 
 ## FIT SIMS  -------------------------------------------------------------------
-
+gc()
+dir.create(here::here("data", "fits", "sim_fit"), showWarnings = FALSE)
 # fit model to species 
+
+if (FALSE) {
 for (i in seq_along(sp_vec)) {
   sim_tbl_sub <- sim_tbl %>% filter(species == sp_vec[i])
-  fit <- purrr::map2(
+  #fit <- purrr::map2(
+  fit <- furrr::future_map2(
     sim_tbl_sub$sim_dat, sim_tbl_sub$fit, 
     function (x, fit) {
       if (sp_vec[i] %in% c("pink")) {
@@ -197,7 +228,7 @@ for (i in seq_along(sp_vec)) {
   )
   }
 
-
+}
 # import saved sim fits 
 sim_fit_list <- purrr::map(
   sp_vec,
@@ -245,6 +276,7 @@ sim_pars <- sim_tbl %>%
       "survey_design" = "survey_fipes"
     )
   ) 
+dir.create(here::here("data", "preds"), showWarnings = FALSE)
 saveRDS(sim_pars, here::here("data", "preds", "sim_pars.rds"))
 
 
@@ -284,6 +316,8 @@ sim_box <- ggplot() +
   labs(y = "Parameter Estimate", x =  "Species") +
   ggsidekick::theme_sleek() 
 
+dir.create(here::here("figs"), showWarnings = FALSE)
+dir.create(here::here("figs", "ms_figs_season"), showWarnings = FALSE)
 png(here::here("figs", "ms_figs_season", "par_recovery_sim_box_mcmc.png"), 
     height = 8, width = 8, units = "in", res = 200)
 sim_box
@@ -321,10 +355,12 @@ index_grid_hss <- readRDS(here::here("data", "index_hss_grid.rds")) %>%
 sp_scalar <- 1 * (13 / 1000)
 
 
+future::plan(future::multisession, workers = 10L)
 # estimate index for each simulation draw
 for (i in seq_along(sp_vec)) {
   sim_tbl_sub <- sim_tbl %>% filter(species == sp_vec[i])
-  sim_ind_list <- purrr::map(
+  #sim_ind_list <- purrr::map(
+  sim_ind_list <- furrr::future_map(
     sim_tbl_sub$sim_fit,
     function (x) {
       pp <- predict(x, newdata = index_grid_hss,
