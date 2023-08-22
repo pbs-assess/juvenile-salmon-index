@@ -386,6 +386,7 @@ png(here::here("figs", "ms_figs_season", "dn_tows.png"), height = 3.5, width = 7
 stacked_daynight
 dev.off()
 
+
 dat_trim$season_f2 <- fct_recode(
   dat_trim$season_f, "spring" = "sp", "summer" = "su", "fall" = "wi"
 )
@@ -405,7 +406,12 @@ bubble_temp_coverage <- dat_trim %>%
   scale_size_area(name = "Number\nof\nTows") +
   scale_fill_discrete(name = "Survey") +
   scale_shape_manual(values = shape_pal, name = "Season") +
-  labs(x = "Year", y = "Week")
+  labs(x = "Year", y = "Week") +
+  guides(
+    fill = guide_legend(
+      override.aes = list(shape = 21)
+      )
+  )
 
 png(here::here("figs", "ms_figs_season", "temp_cov.png"), height = 5.5, 
     width = 5.5, units = "in", res = 250)
