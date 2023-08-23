@@ -1,4 +1,4 @@
-## Fit models w/ mvrw across different seasosn instead of RW RIs
+## Fit models w/ mvrfrw across different seasons instead of RW RIs
 
 library(tidyverse)
 library(sdmTMB)
@@ -66,122 +66,162 @@ missing_surveys <- year_season_key$ys_index[!(year_season_key$ys_index %in%
 
 # RI and RW
 fit_ri <- sdmTMB(
-  n_juv ~ 1,
+  n_juv ~ 0 + season_f,
   offset = dat$effort,
   data = dat,
   mesh = spde,
   family = sdmTMB::nbinom2(),
   spatial = "off",
   # spatial_varying = ~ 0 + season_f + year_f,
-  time_varying = ~ 1,
-  time_varying_type = "rw0",
-  time = "ys_index",
-  spatiotemporal = "off",
+  # time_varying = ~ 1,
+  # time_varying_type = "rw0",
+  # time = "ys_index",
+  # spatiotemporal = "off",
   anisotropy = FALSE,
-  mvrw_category = NULL,
   extra_time = missing_surveys,
-  control = sdmTMBcontrol(
-    # map = list(
-    #   # 1 per season, fix all years to same value
-    #   ln_tau_Z = factor(
-    #     c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
-    #   )
-    # )
-  ),
+  # control = sdmTMBcontrol(
+  #   map = list(
+  #     # 1 per season, fix all years to same value
+  #     ln_tau_Z = factor(
+  #       c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
+  #     )
+  #   )
+  # ),
   silent = FALSE
 )
 
-fit_mvrw <- sdmTMB(
-  n_juv ~ 1,
+fit_mvrfrw <- sdmTMB(
+  n_juv ~ 0 + season_f,
   offset = dat$effort,
   data = dat,
   mesh = spde,
   family = sdmTMB::nbinom2(),
   spatial = "off",
+  spatial_varying = ~ 0 + season_f,
   time = "year",
-  spatiotemporal = "off",
+  spatiotemporal = "rw",
   anisotropy = FALSE,
   mvrw_category = "season_f",
   silent = FALSE
 )
 
-fit_mvrw_sd <- sdmTMB(
-  n_juv ~ 1,
+fit_mvrfrw2 <- sdmTMB(
+  n_juv ~ 0 + season_f,
   offset = dat$effort,
   data = dat,
   mesh = spde,
   family = sdmTMB::nbinom2(),
   spatial = "off",
+  spatial_varying = ~ 0 + season_f,
+  time_varying =  ~ 1,
+  time_varying_type = "rw",
   time = "year",
-  spatiotemporal = "off",
+  spatiotemporal = "rw",
   anisotropy = FALSE,
   mvrw_category = "season_f",
-  control = sdmTMBcontrol(
-    map = list(
-      mvrw_logsds = factor(rep(1, times = length(unique(dat$season_f))))
-    )
-  ),
   silent = FALSE
 )
 
-fit_mvrw_fix_sumsd <- sdmTMB(
-  n_juv ~ 1,
-  offset = dat$effort,
-  data = dat,
-  mesh = spde,
-  family = sdmTMB::nbinom2(),
-  spatial = "off",
-  time = "year",
-  spatiotemporal = "off",
-  anisotropy = FALSE,
-  mvrw_category = "season_f",
-  control = sdmTMBcontrol(
-    start = list(
-      mvrw_logsds = matrix(log(0.5), length(unique(dat$season_f)), 1)
-    ),
-    map = list(
-      mvrw_logsds = factor(c(1, NA, 2))
-    )
-  ),
-  silent = FALSE
-)
 
 
 # check pars
-r <- fit_mvrw$tmb_obj$report(fit_mvrw$tmb_obj$env$last.par.best)
-r_sd <- fit_mvrw_sd$tmb_obj$report(fit_mvrw_sd$tmb_obj$env$last.par.best)
-r_fix <- fit_mvrw_fix_sumsd$tmb_obj$report(fit_mvrw_fix_sumsd$tmb_obj$env$last.par.best)
-r$mvrw_Sigma
-r_sd$mvrw_Sigma
-r_fix$mvrw_Sigma
+pars <- fit_mvrfrw$tmb_obj$env$parList()
 
-pars <- fit_mvrw$tmb_obj$env$parList()
-
-pars$mvrw_rho
-pars$mvrw_logsds
+pars$upsilon_stc
+pars$mvrw_u
 pars$mvrw_u
 
 matplot(t(pars$mvrw_u), type = "p", pch = 21)
 
-# make preds
-nd <- year_season_key
-preds_ri <- predict(fit_ri, newdata = nd) %>% 
-  mutate(model = "rw")
-preds_mvrw <- predict(
-  fit_mvrw, 
-  newdata = nd
+
+
+
+# compare indices
+sp_scalar <- 1 * (13 / 1000)
+
+grid_list <- readRDS(here::here("data", "spatial", "pred_ipes_grid.RDS")) %>% 
+  purrr::map(
+    .,
+    ~ {.x %>% 
+        mutate(utm_x_1000 = X / 1000,
+               utm_y_1000 = Y / 1000,
+               dist_to_coast_km = shore_dist / 1000)}
+  )
+
+summer_grid <- grid_list$ipes_grid
+fall_grid <- grid_list$wcvi_grid
+
+pred_grid_list <- rbind(
+  year_season_key %>% mutate(survey_f = "hss"),
+  year_season_key %>% mutate(survey_f = "ipes")
 ) %>% 
-  mutate(model = "mvrw")
-preds_mvrw_sd <- predict(
-  fit_mvrw_sd, 
-  newdata = nd
-) %>% 
-  mutate(model = "mvrw_single_sd")
-preds_mvrw_sd_fix <- predict(
-  fit_mvrw_fix_sumsd, 
-  newdata = nd
-) %>% 
-  mutate(model = "mvrw_summer_sd_fix")
+  mutate(
+    year_f = as.factor(year),
+    id = row_number(),
+    survey_f = survey_f %>% as.factor()
+  ) %>% 
+  split(., .$id)
+#add unique years and seasons
+index_grid <- pred_grid_list %>%
+  purrr::map(., function (x) {
+    dum_grid <- if (x$season_f == "su") summer_grid else fall_grid
+    
+    dum_grid %>%
+      mutate(
+        year = x$year,
+        year_f = x$year_f,
+        survey_f = x$survey_f,
+        season_f = x$season_f,
+        ys_index = x$ys_index,
+        target_depth = 0,
+        day_night = "DAY",
+        scale_depth = (target_depth - mean(dat$target_depth)) /
+          sd(dat$target_depth),
+        scale_dist = (dist_to_coast_km - mean(dat$dist_to_coast_km)) /
+          sd(dat$dist_to_coast_km)
+      )
+  }) %>%
+  bind_rows() %>%
+  mutate(
+    fake_survey = case_when(
+      year > 2016 & survey_f == "hss" & season_f == "su" ~ "1",
+      year < 2017 & survey_f == "ipes" & season_f == "su" ~ "1",
+      TRUE ~ "0")
+  ) %>%
+  select(-c(depth, slope, shore_dist))
+
+
+# predictions for index (set to HSS reference values)
+index_grid_hss <- index_grid %>% filter(survey_f == "hss")
+
+ind_preds <- purrr::map(
+  list(fit_mvrfrw, fit_mvrfrw2),
+  ~ {
+    predict(.x,
+            newdata = index_grid_hss,
+            se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
+  }
+)
+
+index_list <- purrr::map(
+  ind_preds,
+  get_index,
+  area = sp_scalar,
+  bias_correct = TRUE
+)
+
+rbind(
+  index_list[[1]] %>% mutate(model = "1"),
+  index_list[[2]] %>% mutate(model = "2")) %>% 
+  ggplot() +
+  geom_pointrange(
+    aes(x = year, y =  est, ymin = lwr, ymax = upr, fill = model),
+    shape = 21, position = "jitter"
+  ) +
+  ggsidekick::theme_sleek()
+
+
+
 
 
 preds <- list(preds_ri, preds_mvrw, preds_mvrw_sd, preds_mvrw_sd_fix) %>% 
@@ -284,15 +324,6 @@ fit2 <- sdmTMB(
     )
   ),
   silent = FALSE
-)
-
-beta_mu_priors <- rep(NA, times = 7)
-beta_mu_priors[5] <- 0
-beta_sd_priors <- rep(NA, times = 7)
-beta_sd_priors[5] <- 1
-priors = sdmTMBpriors(
-  # location = vector of means; scale = vector of standard deviations:
-  b = normal(location = beta_mu_priors, scale = beta_sd_priors),
 )
 
 
