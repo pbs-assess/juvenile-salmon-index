@@ -85,24 +85,21 @@ fits_list_nb2 <- furrr::future_map2(
   function(dat_in, aniso) {
     sdmTMB(
       n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
-        scale_depth
-      ,
+        scale_depth + year_f,
       offset = dat_in$effort,
       data = dat_in,
       mesh = spde,
       family = sdmTMB::nbinom2(),
       spatial = "off",
-      spatial_varying = ~ 0 + season_f + year_f,
+      spatial_varying = ~ 0 + season_f,
       time = "year",
-      spatiotemporal = "off",
-      anisotropy = aniso,
+      spatiotemporal = "rw",
+      anisotropy = TRUE, #ansio
       mvrw_category = "season_f",
       control = sdmTMBcontrol(
         map = list(
-          mvrw_logsds = factor(rep(1, times = length(unique(dat$season_f)))),
-          # 1 per season, fix all years to same value
           ln_tau_Z = factor(
-            c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
+            rep(1, times = length(unique(dat$season_f)))
           )
         )
       ),

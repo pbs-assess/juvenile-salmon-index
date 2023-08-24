@@ -64,34 +64,38 @@ missing_surveys <- year_season_key$ys_index[!(year_season_key$ys_index %in%
                                                 dat$ys_index)]
 
 
-# RI and RW
-fit_ri <- sdmTMB(
-  n_juv ~ 0 + season_f,
+# original model
+fit_rw <- sdmTMB(
+  n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+    scale_depth,
   offset = dat$effort,
   data = dat,
   mesh = spde,
   family = sdmTMB::nbinom2(),
   spatial = "off",
-  # spatial_varying = ~ 0 + season_f + year_f,
-  # time_varying = ~ 1,
-  # time_varying_type = "rw0",
-  # time = "ys_index",
-  # spatiotemporal = "off",
+  spatial_varying = ~ 0 + season_f + year_f,
+  time_varying = ~ 1,
+  time_varying_type = "rw0",
+  time = "ys_index",
+  spatiotemporal = "off",
   anisotropy = FALSE,
   extra_time = missing_surveys,
-  # control = sdmTMBcontrol(
-  #   map = list(
-  #     # 1 per season, fix all years to same value
-  #     ln_tau_Z = factor(
-  #       c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
-  #     )
-  #   )
-  # ),
+  control = sdmTMBcontrol(
+    newton_loops = 1,
+    map = list(
+      # 1 per season, fix all years to same value
+      ln_tau_Z = factor(
+        c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
+      )
+    )
+  ),
   silent = FALSE
 )
 
+# year variability entirely driven by upsilon
 fit_mvrfrw <- sdmTMB(
-  n_juv ~ 0 + season_f,
+  n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+    scale_depth,
   offset = dat$effort,
   data = dat,
   mesh = spde,
@@ -102,38 +106,85 @@ fit_mvrfrw <- sdmTMB(
   spatiotemporal = "rw",
   anisotropy = FALSE,
   mvrw_category = "season_f",
+  control = sdmTMBcontrol(
+    map = list(
+      ln_tau_Z = factor(
+        rep(1, times = length(unique(dat$season_f)))
+      )
+    )
+  ),
   silent = FALSE
 )
 
-fit_mvrfrw2 <- sdmTMB(
-  n_juv ~ 0 + season_f,
+# year RW intercepts (convergence issues)
+# fit_mvrfrw2 <- sdmTMB(
+#   n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+#     scale_depth,
+#   offset = dat$effort,
+#   data = dat,
+#   mesh = spde,
+#   family = sdmTMB::nbinom2(),
+#   spatial = "off",
+#   spatial_varying = ~ 0 + season_f,
+#   time_varying =  ~ 1,
+#   time_varying_type = "rw",
+#   time = "year",
+#   spatiotemporal = "rw",
+#   anisotropy = FALSE,
+#   mvrw_category = "season_f",
+#   control = sdmTMBcontrol(
+#     map = list(
+#       ln_tau_Z = factor(
+#         rep(1, times = length(unique(dat$season_f)))
+#       )
+#     )
+#   ),
+#   silent = FALSE
+# )
+
+# year FEs 
+fit_mvrfrw3 <- sdmTMB(
+  n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+    scale_depth + year_f,
   offset = dat$effort,
   data = dat,
   mesh = spde,
   family = sdmTMB::nbinom2(),
   spatial = "off",
   spatial_varying = ~ 0 + season_f,
-  time_varying =  ~ 1,
-  time_varying_type = "rw",
+  # time_varying =  ~ 1,
+  # time_varying_type = "rw",
   time = "year",
   spatiotemporal = "rw",
   anisotropy = FALSE,
   mvrw_category = "season_f",
+  control = sdmTMBcontrol(
+    map = list(
+      ln_tau_Z = factor(
+        rep(1, times = length(unique(dat$season_f)))
+      )
+    )
+  ),
   silent = FALSE
 )
 
+# add anisotropy
+fit_mvrfrw4 <- update(fit_mvrfrw3, anisotropy = TRUE)
+
+# save mod fits
+saveRDS(list(fit_rw, fit_mvrfrw, fit_mvrfrw3), 
+        here::here("data", "fits", "chum_fit_mvrfrw_list.rds"))
+fit_list <- readRDS(here::here("data", "fits", "chum_fit_mvrfrw_list.rds"))
 
 
 # check pars
-pars <- fit_mvrfrw$tmb_obj$env$parList()
+pars <- fit_mvrfrw2$tmb_obj$env$parList()
 
 pars$upsilon_stc
 pars$mvrw_u
 pars$mvrw_u
 
 matplot(t(pars$mvrw_u), type = "p", pch = 21)
-
-
 
 
 # compare indices
@@ -195,7 +246,7 @@ index_grid <- pred_grid_list %>%
 index_grid_hss <- index_grid %>% filter(survey_f == "hss")
 
 ind_preds <- purrr::map(
-  list(fit_mvrfrw, fit_mvrfrw2),
+  fit_list[2:3],
   ~ {
     predict(.x,
             newdata = index_grid_hss,
@@ -210,126 +261,34 @@ index_list <- purrr::map(
   bias_correct = TRUE
 )
 
+# original index 
+ind_orig <- readRDS(here::here("data", "fits", "season_index_list.rds"))
+ind_rw <- ind_orig[[2]] %>% 
+  left_join(., year_season_key, by = "ys_index") %>% 
+  mutate(model = "original_rw") %>% 
+  filter(season_f == "su") %>% 
+  select(year, est, lwr, upr, log_est, se, model)
 rbind(
-  index_list[[1]] %>% mutate(model = "1"),
-  index_list[[2]] %>% mutate(model = "2")) %>% 
+  ind_rw,
+  index_list[[1]] %>% mutate(model = "mvrfrw_only"),
+  index_list[[2]] %>% mutate(model = "mvrfrw_year_fe")) %>% 
   ggplot() +
-  geom_pointrange(
-    aes(x = year, y =  est, ymin = lwr, ymax = upr, fill = model),
-    shape = 21, position = "jitter"
+  geom_point(
+    aes(x = year, y =  log_est, fill = model),
+    shape = 21, position = position_dodge(0.6)
   ) +
   ggsidekick::theme_sleek()
 
+sd(ind_rw$log_est)
+sd(index_list[[1]]$log_est)
+sd(index_list[[2]]$log_est)
 
 
-
-
-preds <- list(preds_ri, preds_mvrw, preds_mvrw_sd, preds_mvrw_sd_fix) %>% 
-  bind_rows() %>% 
-  mutate(survey_missing = ifelse(ys_index %in% missing_surveys, "yes", "no"))
-shape_pal <- c(1, 21)
-names(shape_pal) <- c("yes", "no")
-
-ggplot(preds) +
-  geom_point(aes(x = year, y = est, colour = model, fill = model, shape = survey_missing)) +
-  scale_shape_manual(values = shape_pal) +
-  facet_wrap(~season_f) +
-  ggsidekick::theme_sleek() +
-  guides(
-    shape = guide_legend(
-      override.aes = list(fill = "grey")
-    )
-  )
-
-
-## fit full model 
-fit1 <- sdmTMB(
-  n_juv ~ 0 + season_f + day_night + #survey_f + 
-    scale_dist +
-    scale_depth,
-  offset = dat$effort,
-  data = dat,
-  mesh = spde,
-  family = sdmTMB::nbinom2(),
-  spatial = "off",
-  spatial_varying = ~ 0 + season_f + year_f,
-  time = "year",
-  spatiotemporal = "off",
-  anisotropy = TRUE,
-  mvrw_category = "season_f",
-  control = sdmTMBcontrol(
-    map = list(
-      # mvrw_logsds = factor(rep(1, times = length(unique(dat$season_f)))),
-      # 1 per season, fix all years to same value
-      ln_tau_Z = factor(
-        c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
-      )
-    )
-  ),
-  silent = FALSE
-)
-
-mvrw_mu_priors <- rep(0, length = length(unique(dat$season_f)))
-mvrw_sd_priors <- rep(3, length = length(unique(dat$season_f)))
-
-fit1 <- sdmTMB(
-  n_juv ~ 1,
-  offset = dat$effort,
-  data = dat,
-  mesh = spde,
-  family = sdmTMB::nbinom2(),
-  spatial = "off",
-  spatial_varying = ~ 0 + season_f + year_f,
-  time = "year",
-  spatiotemporal = "off",
-  # anisotropy = TRUE,
-  mvrw_category = "season_f",
-  # priors = sdmTMBpriors(
-  #   # location = vector of means; scale = vector of standard deviations:
-  #   mvrw_rho = normal(location = mvrw_mu_priors, scale = mvrw_sd_priors),
-  # ),
-  control = sdmTMBcontrol(
-    map = list(
-      # mvrw_logsds = factor(rep(1, times = length(unique(dat$season_f)))),
-      # 1 per season, fix all years to same value
-      ln_tau_Z = factor(
-        c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
-      )
-    )
-  ),
-  silent = FALSE
-)
-
-fit2 <- sdmTMB(
-  n_juv ~ 0 + season_f + day_night + #survey_f + 
-    scale_dist +
-    scale_depth,
-  offset = dat$effort,
-  data = dat,
-  mesh = spde,
-  family = sdmTMB::nbinom2(),
-  spatial = "off",
-  spatial_varying = ~ 0 + season_f + year_f,
-  time = "year",
-  spatiotemporal = "off",
-  anisotropy = TRUE,
-  mvrw_category = "season_f",
-  control = sdmTMBcontrol(
-    map = list(
-      mvrw_logsds = factor(rep(1, times = length(unique(dat$season_f)))),
-      # 1 per season, fix all years to same value
-      ln_tau_Z = factor(
-        c(1, 2, 3, rep(4, times = length(unique(dat$year)) - 1))
-      )
-    )
-  ),
-  silent = FALSE
-)
-
-
-sims <- simulate(fit_mvrw_full, nsim = 50, newdata = dat)
-pred_fixed <- fit_mvrw_full$family$linkinv(
-  predict(fit_mvrw_full, newdata = dat)$est_non_rf
+# check diagnostics 
+fit_mvrfrw3 <- fit_list[[3]]
+sims <- simulate(fit_mvrfrw3, nsim = 50, newdata = dat)
+pred_fixed <- fit_mvrfrw3$family$linkinv(
+  predict(fit_mvrfrw3, newdata = dat)$est_non_rf
 )
 r_nb <- DHARMa::createDHARMa(
   simulatedResponse = sims,
@@ -340,12 +299,3 @@ plot(r_nb)
 
 (sum(dat$n_juv == 0) / length(dat$n_juv)) / (sum(sims == 0) / length(sims))
 
-
-r_full <- fit_mvrw_full$tmb_obj$report(fit_mvrw_full$tmb_obj$env$last.par.best)
-r_full$mvrw_Sigma
-
-pars <- fit1$tmb_obj$env$parList()
-
-pars$mvrw_rho
-pars$mvrw_logsds
-pars$mvrw_u
