@@ -6,6 +6,10 @@ library(ggplot2)
 library(sdmTMBextra)
 
 
+ncores <- parallel::detectCores() 
+future::plan(future::multisession, workers = 50L)
+
+
 # downscale data and predictive grid
 dat_in <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>% 
   filter(species == "chum")
@@ -171,10 +175,129 @@ fit_mvrfrw3 <- sdmTMB(
 # add anisotropy
 fit_mvrfrw4 <- update(fit_mvrfrw3, anisotropy = TRUE)
 
+fit_mvrfrw5 <- sdmTMB(
+  n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+    scale_depth + s(year),
+  offset = dat$effort,
+  data = dat,
+  mesh = spde,
+  family = sdmTMB::nbinom2(),
+  spatial = "off",
+  spatial_varying = ~ 0 + season_f,
+  # time_varying =  ~ 1,
+  # time_varying_type = "rw",
+  time = "year",
+  spatiotemporal = "rw",
+  anisotropy = FALSE,
+  mvrw_category = "season_f",
+  control = sdmTMBcontrol(
+    map = list(
+      ln_tau_Z = factor(
+        rep(1, times = length(unique(dat$season_f)))
+      )
+    )
+  ),
+  silent = FALSE
+)
+
+
+names(fit_list) <- c("original_rw", "mvrfrw_only", "mvrfrw_year_fe",
+                     "mfrfrw_year_smooth")
+
+
 # save mod fits
-saveRDS(list(fit_rw, fit_mvrfrw, fit_mvrfrw3), 
-        here::here("data", "fits", "chum_fit_mvrfrw_list.rds"))
+# saveRDS(fit_list, 
+#         here::here("data", "fits", "chum_fit_mvrfrw_list.rds"))
+
 fit_list <- readRDS(here::here("data", "fits", "chum_fit_mvrfrw_list.rds"))
+
+
+## MODEL COMPARISON ------------------------------------------------------------
+
+fit_mvrfrw <- sdmTMB_cv(
+  n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+    scale_depth,
+  offset = "effort",
+  data = dat,
+  mesh = spde,
+  family = sdmTMB::nbinom2(),
+  spatial = "off",
+  spatial_varying = ~ 0 + season_f,
+  time = "year",
+  spatiotemporal = "rw",
+  anisotropy = FALSE,
+  mvrw_category = "season_f",
+  control = sdmTMBcontrol(
+    map = list(
+      ln_tau_Z = factor(
+        rep(1, times = length(unique(dat$season_f)))
+      )
+    )
+  ),
+  silent = FALSE,
+  use_initial_fit = TRUE,
+  k_folds = 5
+)
+
+fit_yr_fe <- sdmTMB_cv(
+  n_juv ~ 0 + season_f + day_night + survey_f + scale_dist + scale_depth +
+    year_f,
+  offset = "effort",
+  data = dat,
+  mesh = spde,
+  family = sdmTMB::nbinom2(),
+  spatial = "off",
+  spatial_varying = ~ 0 + season_f,
+  time = "year",
+  spatiotemporal = "rw",
+  anisotropy = FALSE,
+  mvrw_category = "season_f",
+  control = sdmTMBcontrol(
+    map = list(
+      ln_tau_Z = factor(
+        rep(1, times = length(unique(dat$season_f)))
+      )
+    )
+  ),
+  silent = FALSE,
+  use_initial_fit = TRUE,
+  k_folds = 5
+)
+
+fit_yr_s <- sdmTMB_cv(
+  n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+    scale_depth + s(year),
+  offset = "effort",
+  data = dat,
+  mesh = spde,
+  family = sdmTMB::nbinom2(),
+  spatial = "off",
+  spatial_varying = ~ 0 + season_f,
+  time = "year",
+  spatiotemporal = "rw",
+  anisotropy = FALSE,
+  mvrw_category = "season_f",
+  control = sdmTMBcontrol(
+    map = list(
+      ln_tau_Z = factor(
+        rep(1, times = length(unique(dat$season_f)))
+      )
+    )
+  ),
+  silent = FALSE,
+  use_initial_fit = TRUE,
+  k_folds = 5
+)
+
+cv_list <- list(fit_mvrfrw,
+                fit_yr_fe,
+                fit_yr_s)
+saveRDS(cv_list, here::here("data", "fits", "chum_cv_mvrfrw_list.rds"))
+
+purrr::map(
+  cv_list,
+  ~ .x$sum_loglik
+)
 
 
 # check pars
@@ -245,8 +368,9 @@ index_grid <- pred_grid_list %>%
 # predictions for index (set to HSS reference values)
 index_grid_hss <- index_grid %>% filter(survey_f == "hss")
 
-ind_preds <- purrr::map(
-  fit_list[2:3],
+
+ind_preds <- furrr::future_map(
+  fit_list[2:4],
   ~ {
     predict(.x,
             newdata = index_grid_hss,
@@ -254,7 +378,7 @@ ind_preds <- purrr::map(
   }
 )
 
-index_list <- purrr::map(
+index_list <- furrr::future_map(
   ind_preds,
   get_index,
   area = sp_scalar,
@@ -268,10 +392,12 @@ ind_rw <- ind_orig[[2]] %>%
   mutate(model = "original_rw") %>% 
   filter(season_f == "su") %>% 
   select(year, est, lwr, upr, log_est, se, model)
+
 rbind(
   ind_rw,
   index_list[[1]] %>% mutate(model = "mvrfrw_only"),
-  index_list[[2]] %>% mutate(model = "mvrfrw_year_fe")) %>% 
+  index_list[[2]] %>% mutate(model = "mvrfrw_year_fe"),
+  index_list[[3]] %>% mutate(model = "mvrfrw_year_smooth")) %>% 
   ggplot() +
   geom_point(
     aes(x = year, y =  log_est, fill = model),
@@ -282,6 +408,8 @@ rbind(
 sd(ind_rw$log_est)
 sd(index_list[[1]]$log_est)
 sd(index_list[[2]]$log_est)
+sd(index_list[[3]]$log_est)
+
 
 
 # check diagnostics 
