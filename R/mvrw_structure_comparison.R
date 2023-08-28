@@ -12,7 +12,7 @@ future::plan(future::multisession, workers = 50L)
 
 # downscale data and predictive grid
 dat_in <- readRDS(here::here("data", "catch_survey_sbc.rds")) %>% 
-  filter(species == "chum")
+  filter(species == "pink")
 
 
 # make key so that missing year-season combinations can be indexed 
@@ -109,7 +109,7 @@ fit_mvrfrw <- sdmTMB(
   time = "year",
   spatiotemporal = "rw",
   anisotropy = FALSE,
-  mvrw_category = "season_f",
+  groups = "season_f",
   control = sdmTMBcontrol(
     map = list(
       ln_tau_Z = factor(
@@ -135,7 +135,7 @@ fit_mvrfrw <- sdmTMB(
 #   time = "year",
 #   spatiotemporal = "rw",
 #   anisotropy = FALSE,
-#   mvrw_category = "season_f",
+#   groups = "season_f",
 #   control = sdmTMBcontrol(
 #     map = list(
 #       ln_tau_Z = factor(
@@ -161,14 +161,14 @@ fit_mvrfrw3 <- sdmTMB(
   time = "year",
   spatiotemporal = "rw",
   anisotropy = FALSE,
-  mvrw_category = "season_f",
-  control = sdmTMBcontrol(
-    map = list(
-      ln_tau_Z = factor(
-        rep(1, times = length(unique(dat$season_f)))
-      )
-    )
-  ),
+  groups = "season_f",
+  # control = sdmTMBcontrol(
+  #   map = list(
+    #   ln_tau_Z = factor(
+    #     rep(1, times = length(unique(dat$season_f)))
+    #   )
+    # )
+  # ),
   silent = FALSE
 )
 
@@ -189,7 +189,7 @@ fit_mvrfrw5 <- sdmTMB(
   time = "year",
   spatiotemporal = "rw",
   anisotropy = FALSE,
-  mvrw_category = "season_f",
+  groups = "season_f",
   control = sdmTMBcontrol(
     map = list(
       ln_tau_Z = factor(
@@ -226,7 +226,7 @@ fit_mvrfrw <- sdmTMB_cv(
   time = "year",
   spatiotemporal = "rw",
   anisotropy = FALSE,
-  mvrw_category = "season_f",
+  groups = "season_f",
   control = sdmTMBcontrol(
     map = list(
       ln_tau_Z = factor(
@@ -251,7 +251,7 @@ fit_yr_fe <- sdmTMB_cv(
   time = "year",
   spatiotemporal = "rw",
   anisotropy = FALSE,
-  mvrw_category = "season_f",
+  groups = "season_f",
   control = sdmTMBcontrol(
     map = list(
       ln_tau_Z = factor(
@@ -276,7 +276,7 @@ fit_yr_s <- sdmTMB_cv(
   time = "year",
   spatiotemporal = "rw",
   anisotropy = FALSE,
-  mvrw_category = "season_f",
+  groups = "season_f",
   control = sdmTMBcontrol(
     map = list(
       ln_tau_Z = factor(
