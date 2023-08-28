@@ -80,14 +80,14 @@ year_season_key <- expand.grid(
   arrange(year, season_f) 
 
 
-dat_tbl <- dat %>%
-  group_by(species) %>%
-  group_nest()
-
-
-# fits_list_nb2 <- furrr::future_map2(
-#   dat_tbl$data, dat_tbl$anisotropy,
-#   function(dat_in, aniso) {
+# dat_tbl <- dat %>%
+#   group_by(species) %>%
+#   group_nest()
+# 
+# 
+# fits_list_nb2 <- furrr::future_map(
+#   dat_tbl$data,
+#   function(dat_in) {
 #     sdmTMB(
 #       n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
 #         scale_depth,
@@ -99,15 +99,15 @@ dat_tbl <- dat %>%
 #       spatial_varying = ~ 0 + season_f,
 #       time = "year",
 #       spatiotemporal = "rw",
-#       anisotropy = TRUE, #ansio
+#       anisotropy = TRUE, 
 #       groups = "season_f",
-#       control = sdmTMBcontrol(
-#         map = list(
-#           ln_tau_Z = factor(
-#             rep(1, times = length(unique(dat$season_f)))
-#           )
-#         )
-#       ),
+#       # control = sdmTMBcontrol(
+#       #   map = list(
+#       #     ln_tau_Z = factor(
+#       #       rep(1, times = length(unique(dat$season_f)))
+#       #     )
+#       #   )
+#       # ),
 #       silent = FALSE
 #     )
 #   }
@@ -198,6 +198,43 @@ purrr::map2(dat_tbl$data, dat_tbl$sims, function(x, y) {
   (sum(x$n_juv == 0) / length(x$n_juv)) / (sum(y == 0) / length(y))
 })
 
+# residual spatial dist
+resid_list_sum <- purrr::pmap(
+  list(dat_tbl$data, dat_tbl$fit, dat_tbl$species),
+  function (x, y, z) {
+    x$resid <- resid(y)
+    ggplot(x %>% filter(season_f == "su")) +
+      geom_point(aes(x = utm_x, y = utm_y, color = resid)) +
+      facet_wrap(~year) +
+      scale_colour_gradient2() +
+      ggsidekick::theme_sleek() +
+      labs(title = paste(z, unique(x$season_f), sep = "_")) +
+      theme(axis.title = element_blank(),
+            axis.text = element_blank(),
+            legend.position = "top")
+  }
+)
+resid_list_fall <- purrr::pmap(
+  list(dat_tbl$data, dat_tbl$fit, dat_tbl$species),
+  function (x, y, z) {
+    x$resid <- resid(y)
+    ggplot(x %>% filter(season_f == "wi")) +
+      geom_point(aes(x = utm_x, y = utm_y, color = resid)) +
+      facet_wrap(~year) +
+      scale_colour_gradient2() +
+      ggsidekick::theme_sleek() +
+      labs(title = paste(z, unique(x$season_f), sep = "_")) +
+      theme(axis.title = element_blank(),
+            axis.text = element_blank(),
+            legend.position = "top")
+  }
+)
+
+pdf(here::here("figs", "diagnostics", "spatial_resids.pdf"))
+resid_list_sum
+resid_list_fall
+dev.off()
+
 
 ## PARAMETER ESTIMATES ---------------------------------------------------------
 
@@ -275,12 +312,14 @@ ran_pars <- purrr::pmap(
       group_by(term) %>% 
       mutate(
         par_id = row_number(),
-        term = ifelse(par_id > 1, paste(term, par_id, sep = "_"), term)
+        term = ifelse(par_id > 1, paste(term, par_id, sep = "_"), term) %>% 
+          as.factor()
       ) %>% 
       ungroup() 
   }
 ) %>% 
   bind_rows()
+ran_pars$term <- fct_recode(ran_pars$term, "sigma_omega" = "sigma_Z")
 
 png(here::here("figs", "ms_figs_season_mvrw", "ran_pars.png"), height = 4, width = 8,
     units = "in", res = 200)
@@ -926,21 +965,29 @@ coast <- rbind(rnaturalearth::ne_states( "United States of America",
 #   ) %>%
 #   select(-c(depth, slope))
 # 
-# spatial_preds_list <- furrr::future_map2(
-#   dat_tbl$fit,
-#   dat_tbl$species,
-#   ~ {
-#     predict(.x,
-#             newdata = spatial_grid,
-#             se_fit = FALSE, re_form = NULL) %>%
-#       mutate(species = .y)
-#   }
-# )
+spatial_preds_list <- furrr::future_map2(
+  dat_tbl$fit,
+  dat_tbl$species,
+  ~ {
+    # separate predictions to generate upsilon estimates
+    pp <- predict(.x,
+                  newdata = spatial_grid,
+                  return_tmb_report = TRUE)
+    p_out <- predict(.x,
+                     newdata = spatial_grid,
+                     se_fit = FALSE, re_form = NULL)
+    
+    p_out %>%
+      mutate(species = .y, 
+             upsilon_stc = as.numeric(pp$proj_upsilon_st_A_vec))
+  }
+)
+
 # spatial_preds <- spatial_preds_list %>%
 #   bind_rows() %>%
 #   filter(!season_f == "sp")
-# saveRDS(spatial_preds,
-#         here::here("data", "fits", "sp_preds_mvrfrw.rds"))
+saveRDS(spatial_preds,
+        here::here("data", "fits", "sp_preds_mvrfrw.rds"))
 
 spatial_preds <- readRDS(here::here("data", "fits", "sp_preds_mvrfrw.rds"))
 
@@ -1024,9 +1071,11 @@ dev.off()
 summer_list <- purrr::map(
   unique(dat$species) %>% sort(),
   ~ ggplot() +
-      geom_raster(data = sub_spatial %>%
-                    filter(season_f == "su", species == .x),
-                  aes(X, Y, fill = scale_est2)) +
+      geom_raster(
+        data = sub_spatial %>%
+          filter(season_f == "su", species == .x),
+        aes(X, Y, fill = scale_est2)
+      ) +
       coord_fixed() +
       geom_sf(data = coast, color = "black", fill = "white") +
       ggsidekick::theme_sleek() +
@@ -1041,7 +1090,8 @@ summer_list <- purrr::map(
             legend.key.size = unit(1.1, 'cm')) +
     labs(title = .x)
 )
-pdf(here::here("figs", "ms_figs_season_mvrw", "all_year_preds", "summer_year_rf.pdf"))
+pdf(here::here("figs", "ms_figs_season_mvrw", "all_year_preds",
+               "summer_year_rf.pdf"))
 summer_list
 dev.off()
 
@@ -1065,25 +1115,42 @@ fall_list <- purrr::map(
           legend.key.size = unit(1.1, 'cm')) +
     labs(title = .x)
 )
-pdf(here::here("figs", "ms_figs_season_mvrw", "all_year_preds", "fall_year_rf.pdf"))
+pdf(here::here("figs", "ms_figs_season_mvrw", "all_year_preds",
+               "fall_year_rf.pdf"))
 fall_list
 dev.off()
 
 
 
-year_field_seq <- paste("zeta_s_year_f", year_seq, sep = "")
-omega_yr <- sub_spatial %>% 
-  # values will be duplicated across years, seasons and surveys; select one
-  filter(year_f == year_seq[1], season_f == "su") %>% 
-  select(X, Y, species, all_of(year_field_seq)) %>% 
-  pivot_longer(cols = starts_with("zeta"), values_to = "omega_est", 
-             names_to = "year", names_prefix = "zeta_s_year_f") 
-
-png(here::here("figs", "ms_figs_season_mvrw", "year_rf.png"), 
+png(here::here("figs", "ms_figs_season_mvrw", "su_year_rf.png"), 
     height = 8.5, width = 8.5, units = "in", res = 200)
 ggplot() +
-  geom_raster(data = omega_yr,
-              aes(X, Y, fill = omega_est)) +
+  geom_raster(data = sub_spatial %>% 
+                filter(season_f == "su",
+                       year %in% year_seq),
+              aes(X, Y, fill = upsilon_stc)) +
+  geom_sf(data = coast, color = "black", fill = "white") +
+  ggsidekick::theme_sleek() +
+  scale_fill_gradient2(name = "Spatial\nField") +
+  facet_grid(year~species) +
+  theme(
+    axis.title = element_blank(),
+    legend.position = "top",
+    axis.text = element_blank(),
+    legend.key.size = unit(1.1, 'cm')
+  ) +
+  scale_x_continuous(limits = c(462700, 814800), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(5350050, 5681850), expand = c(0, 0))
+dev.off()
+
+
+png(here::here("figs", "ms_figs_season_mvrw", "fa_year_rf.png"), 
+    height = 8.5, width = 8.5, units = "in", res = 200)
+ggplot() +
+  geom_raster(data = sub_spatial %>% 
+                filter(season_f == "wi",
+                       year %in% year_seq),
+              aes(X, Y, fill = upsilon_stc)) +
   geom_sf(data = coast, color = "black", fill = "white") +
   ggsidekick::theme_sleek() +
   scale_fill_gradient2(name = "Spatial\nField") +
