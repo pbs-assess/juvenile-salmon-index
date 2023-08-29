@@ -84,62 +84,62 @@ year_season_key <- expand.grid(
 #   group_by(species) %>%
 #   group_nest()
 # 
-# # mvrfrw only
-# fits_list_nb2 <- furrr::future_map(
-#   dat_tbl$data,
-#   function(dat_in) {
-#     sdmTMB(
-#       n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
-#         scale_depth,
-#       offset = dat_in$effort,
-#       data = dat_in,
-#       mesh = spde,
-#       family = sdmTMB::nbinom2(),
-#       spatial = "off",
-#       spatial_varying = ~ 0 + season_f,
-#       time = "year",
-#       spatiotemporal = "rw",
-#       anisotropy = TRUE,
-#       groups = "season_f",
-#       control = sdmTMBcontrol(
-#         map = list(
-#           ln_tau_Z = factor(
-#             rep(1, times = length(unique(dat$season_f)))
-#           )
-#         )
-#       ),
-#       silent = FALSE
-#     )
-#   }
-# )
-# # mvrfrw only + year FE
-# fits_list_nb2_fe <- furrr::future_map(
-#   dat_tbl$data,
-#   function(dat_in) {
-#     sdmTMB(
-#       n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
-#         scale_depth + year_f,
-#       offset = dat_in$effort,
-#       data = dat_in,
-#       mesh = spde,
-#       family = sdmTMB::nbinom2(),
-#       spatial = "off",
-#       spatial_varying = ~ 0 + season_f,
-#       time = "year",
-#       spatiotemporal = "rw",
-#       anisotropy = TRUE,
-#       groups = "season_f",
-#       control = sdmTMBcontrol(
-#         map = list(
-#           ln_tau_Z = factor(
-#             rep(1, times = length(unique(dat$season_f)))
-#           )
-#         )
-#       ),
-#       silent = FALSE
-#     )
-#   }
-# )
+# mvrfrw only
+fits_list_nb2 <- furrr::future_map(
+  dat_tbl$data,
+  function(dat_in) {
+    sdmTMB(
+      n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+        scale_depth,
+      offset = dat_in$effort,
+      data = dat_in,
+      mesh = spde,
+      family = sdmTMB::nbinom2(),
+      spatial = "off",
+      spatial_varying = ~ 0 + season_f,
+      time = "year",
+      spatiotemporal = "rw",
+      anisotropy = TRUE,
+      groups = "season_f",
+      control = sdmTMBcontrol(
+        map = list(
+          ln_tau_Z = factor(
+            rep(1, times = length(unique(dat$season_f)))
+          )
+        )
+      ),
+      silent = FALSE
+    )
+  }
+)
+# mvrfrw only + year FE
+fits_list_nb2_fe <- furrr::future_map(
+  dat_tbl$data,
+  function(dat_in) {
+    sdmTMB(
+      n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+        scale_depth + year_f,
+      offset = dat_in$effort,
+      data = dat_in,
+      mesh = spde,
+      family = sdmTMB::nbinom2(),
+      spatial = "off",
+      spatial_varying = ~ 0 + season_f,
+      time = "year",
+      spatiotemporal = "rw",
+      anisotropy = TRUE,
+      groups = "season_f",
+      control = sdmTMBcontrol(
+        map = list(
+          ln_tau_Z = factor(
+            rep(1, times = length(unique(dat$season_f)))
+          )
+        )
+      ),
+      silent = FALSE
+    )
+  }
+)
 # 
 # dat_tbl_mvrfrw <- dat_tbl %>% 
 #   mutate(fit = fits_list_nb2)
@@ -194,7 +194,10 @@ dat_tbl %>%
 dat_tbl <- dat_tbl %>% 
   filter((species %in% c("chinook", "coho", "chum") & model == "mvrfrw") |
            (species %in% c("pink", "sockeye") & model == "mvrfrw_year_fe"))
-
+saveRDS(
+  dat_tbl, 
+  here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_final.rds")
+)
 
 # scalar for spatial predictions; since preds are in m3, multiply by
 # (1 * 1 * 13) because effort in m but using 1x1 km grid cells and 

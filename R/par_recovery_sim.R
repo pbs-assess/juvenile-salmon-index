@@ -25,39 +25,17 @@ dir.create("data/fits", recursive = TRUE, showWarnings = FALSE)
 
 # fitted model from all_species_fit.R
 all_fit_tbl <- readRDS(
-  here::here("data", "fits", "all_spatial_varying_nb2_final.rds")
-  )
+  here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_final.rds")
+)
 
 
 #simulate from Stan output fixing FEs at MLE
-# set.seed(456)
-# sims_list <- furrr::future_map(
-#   all_fit_tbl$fit, function (x) {
-#     object <- x
-#     samp <- sample_mle_mcmc(object, mcmc_iter = 120, mcmc_warmup = 100)
-# 
-#     obj <- object$tmb_obj
-#     random <- unique(names(obj$env$par[obj$env$random]))
-#     pl <- as.list(object$sd_report, "Estimate")
-#     fixed <- !(names(pl) %in% random)
-#     map <- lapply(pl[fixed], function(x) factor(rep(NA, length(x))))
-#     obj <- TMB::MakeADFun(obj$env$data, pl, map = map, DLL = "sdmTMB")
-#     obj_mle <- object
-#     obj_mle$tmb_obj <- obj
-#     obj_mle$tmb_map <- map
-#     simulate(obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp), nsim = 20)
-#   }
-# )
-# saveRDS(sims_list,
-#         here::here("data", "fits", "nb_mcmc_draws_nb2_final.rds"))
 set.seed(456)
-if (FALSE) {
-# sims_list <- furrr::future_map(
-sims_list <- purrr::map(
+sims_list <- furrr::future_map(
   all_fit_tbl$fit, function (x) {
     object <- x
-    samp <- sample_mle_mcmc(object, mcmc_iter = 220L, mcmc_warmup = 200L, mcmc_chains = 50L, 
-                            stan_args = list(thin = 5L, cores = 50L))
+    samp <- sample_mle_mcmc(object, mcmc_iter = 120, mcmc_warmup = 100)
+
     obj <- object$tmb_obj
     random <- unique(names(obj$env$par[obj$env$random]))
     pl <- as.list(object$sd_report, "Estimate")
@@ -67,14 +45,36 @@ sims_list <- purrr::map(
     obj_mle <- object
     obj_mle$tmb_obj <- obj
     obj_mle$tmb_map <- map
-    simulate(obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp), nsim = 200L)
+    simulate(obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp), nsim = 20)
   }
 )
 saveRDS(sims_list,
-        here::here("data", "fits", "nb_mcmc_draws_nb2_final.rds"))
-}
+        here::here("data", "fits", "nb_mcmc_draws_nb2_mvrfrw.rds"))
 
-sims_list <- readRDS(here::here("data", "fits", "nb_mcmc_draws_nb2_final.rds"))
+# set.seed(456)
+# if (FALSE) {
+# sims_list <- furrr::future_map(
+#   all_fit_tbl$fit, function (x) {
+#     object <- x
+#     samp <- sample_mle_mcmc(object, mcmc_iter = 220L, mcmc_warmup = 200L, mcmc_chains = 50L, 
+#                             stan_args = list(thin = 5L, cores = 50L))
+#     obj <- object$tmb_obj
+#     random <- unique(names(obj$env$par[obj$env$random]))
+#     pl <- as.list(object$sd_report, "Estimate")
+#     fixed <- !(names(pl) %in% random)
+#     map <- lapply(pl[fixed], function(x) factor(rep(NA, length(x))))
+#     obj <- TMB::MakeADFun(obj$env$data, pl, map = map, DLL = "sdmTMB")
+#     obj_mle <- object
+#     obj_mle$tmb_obj <- obj
+#     obj_mle$tmb_map <- map
+#     simulate(obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp), nsim = 200L)
+#   }
+# )
+# saveRDS(sims_list,
+#         here::here("data", "fits", "nb_mcmc_draws_nb2_final.rds"))
+# }
+
+sims_list <- readRDS(here::here("data", "fits", "nb_mcmc_draws_nb2_mvrfrw.rds"))
 
 all_fit_tbl$sims <- sims_list 
 
@@ -94,10 +94,7 @@ all_fit_tbl$sims <- sims_list
 # }
 # )
 
-# subset to use nbinom1 for pink/chum
-fit_all_sp_trim <- all_fit_tbl #%>% 
-  # filter(model == "nb2")
-  
+
 ## for each simulated dataset, refit model, recover pars and store
 
 # make a tibble for each species simulations
@@ -151,6 +148,7 @@ purrr::map2(all_fit_tbl$data, all_fit_tbl$sims, function(x, y) {
 
 
 ## FIT SIMS  -------------------------------------------------------------------
+
 gc()
 dir.create(here::here("data", "fits", "sim_fit"), showWarnings = FALSE)
 # fit model to species 
@@ -158,33 +156,27 @@ dir.create(here::here("data", "fits", "sim_fit"), showWarnings = FALSE)
 if (FALSE) {
 for (i in seq_along(sp_vec)) {
   sim_tbl_sub <- sim_tbl %>% filter(species == sp_vec[i])
-  #fit <- purrr::map2(
   fit <- furrr::future_map2(
     sim_tbl_sub$sim_dat, sim_tbl_sub$fit, 
     function (x, fit) {
-      if (sp_vec[i] %in% c("pink")) {
+      if (sp_vec[i] %in% c("chinook", "coho", "chum")) {
         sdmTMB(
-          sim_catch ~ 0 + season_f + day_night + survey_f + 
-            scale_depth + scale_dist
-          ,
+          sim_catch ~ 0 + season_f + day_night + survey_f + scale_dist +
+            scale_depth,
           offset = x$effort,
           data = x,
           mesh =  fit$spde,
           family = sdmTMB::nbinom2(),
           spatial = "off",
-          spatiotemporal = "off",
-          spatial_varying = ~ 0 + season_f + year_f,
-          time_varying = ~ 1,
-          time_varying_type = "rw0",
-          time = "ys_index",
-          extra_time = fit$extra_time,
-          anisotropy = FALSE,
+          spatial_varying = ~ 0 + season_f,
+          time = "year",
+          spatiotemporal = "rw",
+          anisotropy = TRUE,
+          groups = "season_f",
           control = sdmTMBcontrol(
-            newton_loops = 1,
             map = list(
-              # 1 per season, fix all years to same value
               ln_tau_Z = factor(
-                c(1, 2, 3, rep(4, times = length(unique(x$year)) - 1))
+                rep(1, times = length(unique(x$season_f)))
               )
             )
           ),
@@ -192,27 +184,22 @@ for (i in seq_along(sp_vec)) {
         )
       } else {
         sdmTMB(
-          sim_catch ~ 0 + season_f + day_night + survey_f + 
-            scale_depth + scale_dist
-          ,
+          sim_catch ~ 0 + season_f + day_night + survey_f + scale_dist +
+            scale_depth + year_f,
           offset = x$effort,
           data = x,
           mesh =  fit$spde,
           family = sdmTMB::nbinom2(),
           spatial = "off",
-          spatiotemporal = "off",
-          spatial_varying = ~ 0 + season_f + year_f,
-          time_varying = ~ 1,
-          time_varying_type = "rw0",
-          time = "ys_index",
-          extra_time = fit$extra_time,
+          spatial_varying = ~ 0 + season_f,
+          time = "year",
+          spatiotemporal = "rw",
           anisotropy = TRUE,
+          groups = "season_f",
           control = sdmTMBcontrol(
-            newton_loops = 1,
             map = list(
-              # 1 per season, fix all years to same value
               ln_tau_Z = factor(
-                c(1, 2, 3, rep(4, times = length(unique(x$year)) - 1))
+                rep(1, times = length(unique(x$season_f)))
               )
             )
           ),
@@ -224,7 +211,7 @@ for (i in seq_along(sp_vec)) {
   saveRDS(
     fit,
     here::here("data", "fits", "sim_fit", 
-               paste(sp_vec[i], "_nb2_final.rds", sep = ""))
+               paste(sp_vec[i], "_nb2_mvrfrw.rds", sep = ""))
   )
   }
 
@@ -233,7 +220,7 @@ for (i in seq_along(sp_vec)) {
 sim_fit_list <- purrr::map(
   sp_vec,
   ~ readRDS(
-    here::here("data", "fits", "sim_fit", paste(.x, "_nb2_final.rds", sep = ""))
+    here::here("data", "fits", "sim_fit", paste(.x, "_nb2_mvrfrw.rds", sep = ""))
   )
 )
 
@@ -246,9 +233,24 @@ sim_tbl$sim_fit <- do.call(c, sim_fit_list)
 # extract fixed and ran effects pars from simulations
 sim_tbl$pars <- purrr::map(
   sim_tbl$sim_fit, function (x) {
-    fix <- tidy(x, effects = "fixed")
-    ran <- tidy(x, effects = "ran_pars")
-    rbind(fix, ran) %>% 
+    fix <- tidy(x, effects = "fixed") 
+    ran <- tidy(x, effects = "ran_pars") 
+    
+    # pull upsilon estimate separately (not currently generated by predict)
+    est <- as.list(x$sd_report, "Estimate", report = TRUE)
+    se <- as.list(x$sd_report, "Std. Error", report = TRUE)
+    upsilon <- data.frame(
+      term = "sigma_U",
+      log_est = est$log_sigma_U,
+      log_se = se$log_sigma_U
+    ) %>% 
+      mutate(
+        estimate = exp(log_est),
+        std.error = exp(log_se) 
+      ) %>% 
+      select(term, estimate, std.error)
+    
+    rbind(fix, ran, upsilon) %>% 
       # add unique identifier for second range term
       group_by(term) %>% 
       mutate(
@@ -271,13 +273,13 @@ sim_pars <- sim_tbl %>%
       "dist" = "scale_dist",
       "spring_int" = "season_fsp", 
       "summer_int" = "season_fsu", "fall_int" = "season_fwi", 
-      "spring_omega" = "sigma_Z", "summer_omega" = "sigma_Z_2",
-      "fall_omega" = "sigma_Z_3", "year_omega" = "sigma_Z_4", 
+      # "spring_omega" = "sigma_Z", "summer_omega" = "sigma_Z_2",
+      # "fall_omega" = "sigma_Z_3", "year_omega" = "sigma_Z_4", 
       "survey_design" = "survey_fipes"
     )
   ) 
 dir.create(here::here("data", "preds"), showWarnings = FALSE)
-saveRDS(sim_pars, here::here("data", "preds", "sim_pars.rds"))
+saveRDS(sim_pars, here::here("data", "preds", "sim_pars_mvrfrw.rds"))
 
 
 # as above but for fitted models
@@ -285,7 +287,22 @@ fit_effs <- purrr::map2(
   sim_tbl$fit, sim_tbl$species, function (x, sp) {
     fix <- tidy(x, effects = "fixed")
     ran <- tidy(x, effects = "ran_pars")
-    rbind(fix, ran) %>% 
+    
+    # pull upsilon estimate separately (not currently generated by predict)
+    est <- as.list(x$sd_report, "Estimate", report = TRUE)
+    se <- as.list(x$sd_report, "Std. Error", report = TRUE)
+    upsilon <- data.frame(
+      term = "sigma_U",
+      log_est = est$log_sigma_U,
+      log_se = se$log_sigma_U
+    ) %>% 
+      mutate(
+        estimate = exp(log_est),
+        std.error = exp(log_se) 
+      ) %>% 
+      select(term, estimate, std.error)
+    
+    rbind(fix, ran, upsilon) %>% 
       mutate(species = abbreviate(sp, minlength = 3)) %>% 
       # add unique identifier for second range term
       group_by(term) %>% 
@@ -303,22 +320,26 @@ fit_effs <- purrr::map2(
       "dist" = "scale_dist",
       "spring_int" = "season_fsp", 
       "summer_int" = "season_fsu", "fall_int" = "season_fwi", 
-      "spring_omega" = "sigma_Z", "summer_omega" = "sigma_Z_2",
-      "fall_omega" = "sigma_Z_3", "year_omega" = "sigma_Z_4", 
+      # "spring_omega" = "sigma_Z", "summer_omega" = "sigma_Z_2",
+      # "fall_omega" = "sigma_Z_3", "year_omega" = "sigma_Z_4", 
       "survey_design" = "survey_fipes"
     )
   )
 
 sim_box <- ggplot() +
-  geom_boxplot(data = sim_pars, aes(x = species, y = estimate)) +
-  geom_point(data = fit_effs, aes(x = species, y = estimate), colour = "red") +
+  geom_boxplot(data = sim_pars %>%
+                 filter(!grepl("year", term)),
+               aes(x = species, y = estimate)) +
+  geom_point(data = fit_effs %>% 
+               filter(!grepl("year", term)),
+             aes(x = species, y = estimate), colour = "red") +
   facet_wrap(~term, scales = "free", ncol = 3) +
   labs(y = "Parameter Estimate", x =  "Species") +
   ggsidekick::theme_sleek() 
 
 dir.create(here::here("figs"), showWarnings = FALSE)
-dir.create(here::here("figs", "ms_figs_season"), showWarnings = FALSE)
-png(here::here("figs", "ms_figs_season", "par_recovery_sim_box_mcmc.png"), 
+dir.create(here::here("figs", "ms_figs_season_mvrw"), showWarnings = FALSE)
+png(here::here("figs", "ms_figs_season_mvrw", "par_recovery_sim_box_mcmc.png"), 
     height = 8, width = 8, units = "in", res = 200)
 sim_box
 dev.off()
