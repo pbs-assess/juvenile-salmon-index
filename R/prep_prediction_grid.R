@@ -93,6 +93,10 @@ bc_raster_utm <- projectRaster(bc_raster,
                                crs = sp::CRS("+proj=utm +zone=9 +units=m"),
                                # convert to 1000 m resolution
                                res = 1000)
+# bc_raster_utm2 <- projectRaster(bc_raster,
+#                                crs = sp::CRS("+proj=utm +zone=9 +units=m"),
+#                                # convert to 1000 m resolution
+#                                res = 500)
 
 
 # save RDS for manuscript figs

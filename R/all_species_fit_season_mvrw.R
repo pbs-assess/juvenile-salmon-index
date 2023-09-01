@@ -85,33 +85,33 @@ dat_tbl <- dat %>%
   group_nest()
 
 # mvrfrw only
-fits_list_nb2 <- furrr::future_map(
-  dat_tbl$data,
-  function(dat_in) {
-    sdmTMB(
-      n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
-        scale_depth,
-      offset = dat_in$effort,
-      data = dat_in,
-      mesh = spde,
-      family = sdmTMB::nbinom2(),
-      spatial = "off",
-      spatial_varying = ~ 0 + season_f,
-      time = "year",
-      spatiotemporal = "rw",
-      anisotropy = TRUE,
-      groups = "season_f",
-      control = sdmTMBcontrol(
-        map = list(
-          ln_tau_Z = factor(
-            rep(1, times = length(unique(dat$season_f)))
-          )
-        )
-      ),
-      silent = FALSE
-    )
-  }
-)
+# fits_list_nb2 <- furrr::future_map(
+#   dat_tbl$data,
+#   function(dat_in) {
+#     sdmTMB(
+#       n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+#         scale_depth,
+#       offset = dat_in$effort,
+#       data = dat_in,
+#       mesh = spde,
+#       family = sdmTMB::nbinom2(),
+#       spatial = "off",
+#       spatial_varying = ~ 0 + season_f,
+#       time = "year",
+#       spatiotemporal = "rw",
+#       anisotropy = TRUE,
+#       groups = "season_f",
+#       control = sdmTMBcontrol(
+#         map = list(
+#           ln_tau_Z = factor(
+#             rep(1, times = length(unique(dat$season_f)))
+#           )
+#         )
+#       ),
+#       silent = FALSE
+#     )
+#   }
+# )
 # # mvrfrw only + year FE
 # fits_list_nb2_fe <- furrr::future_map(
 #   dat_tbl$data,
@@ -1263,46 +1263,83 @@ dev.off()
 
 
 # alternative formulations - average abundance
-# spatiotemporal and total preds random fields for subset of years
 mean_spatial <- spatial_preds %>% 
   mutate(location = paste(X, Y, sep = "_"),
          grid_est = sp_scalar * exp(est)) %>% 
   group_by(X, Y, species, season_f, location) %>% 
   summarize(
-    mean_grid_est = mean(grid_est)
+    mean_grid_est = mean(grid_est),
+    median_grid_est = median(grid_est)
   ) %>% 
   group_by(species) %>% 
   mutate(
-    scale_mean_grid_est = mean_grid_est / max(mean_grid_est)
+    scale_mean_grid_est = mean_grid_est / max(mean_grid_est),
+    scale_median_grid_est = median_grid_est / max(median_grid_est)
   ) %>% 
   ungroup() 
 
-scale_max <- quantile(mean_spatial$scale_mean_grid_est, 0.99)
-mean_spatial$scale_est2 <- ifelse(
-  mean_spatial$scale_est > scale_max, 
-  scale_max, 
-  mean_spatial$scale_est
+inset_rect <- data.frame(
+  x1 = 645000, x2 = 720000, y1 = 5465000, y2 = 5545000
 )
 
-ggplot() + 
-  geom_raster(
-    data = mean_spatial,
-    aes(X, Y, fill = scale_mean_grid_est)
-  ) +
-  coord_fixed() +
+plot_mean_foo <- function (x) {
+  ggplot() + 
+    geom_raster(
+      data = x,
+      aes(X, Y, fill = scale_median_grid_est)
+    ) +
+    coord_fixed() +
+    ggsidekick::theme_sleek() +
+    scale_fill_viridis_c(
+      trans = "sqrt",
+      name = "Scaled\nAbundance"
+    )  +
+    facet_wrap(~species, ncol = 1) +
+    theme(axis.title = element_blank(),
+          axis.text = element_blank(),
+          legend.position = "none",
+          strip.background = element_blank(),
+          strip.text.x = element_blank(),
+          axis.ticks = element_blank()
+    ) 
+} 
+
+summer_main <- mean_spatial %>% 
+  filter(season_f == "su") %>% 
+  plot_mean_foo(x = .) +
   geom_sf(data = coast, color = "black", fill = "white") +
-  ggsidekick::theme_sleek() +
-  scale_fill_viridis_c(
-    trans = "sqrt",
-    name = "Scaled\nAbundance"
-  ) +
-  facet_grid(season_f~species) +
-  theme(axis.title = element_blank(),
-        axis.text = element_blank(),
-        legend.position = "top",
-        legend.key.size = unit(1.1, 'cm')) +
+  geom_rect(data = inset_rect,
+            aes(xmin = x1, xmax = x2, ymin = y1, ymax = y2),
+            fill = NA, lty = 2, col = "red", linewidth = 0.7) +
   scale_x_continuous(limits = c(462700, 814800), expand = c(0, 0)) +
-  scale_y_continuous(limits = c(5350050, 5681850), expand = c(0, 0))
+  scale_y_continuous(limits = c(5350050, 5681850), expand = c(0, 0)) 
+summer_inset <-  mean_spatial %>% 
+  filter(season_f == "su") %>% 
+  plot_mean_foo(x = .) +
+  scale_y_continuous(limits = c(5465000, 5535500), expand = c(0, 0)) +
+  scale_x_continuous(limits = c(645000, 720000), expand = c(0, 0))
+fall_main <- mean_spatial %>% 
+  filter(season_f == "wi") %>% 
+  plot_mean_foo(x = .) +
+  geom_sf(data = coast, color = "black", fill = "white") +
+  geom_rect(data = inset_rect,
+            aes(xmin = x1, xmax = x2, ymin = y1, ymax = y2),
+            fill = NA, lty = 2, col = "red", linewidth = 0.7) +
+  scale_x_continuous(limits = c(462700, 814800), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(5350050, 5681850), expand = c(0, 0)) 
+fall_inset <-  mean_spatial %>% 
+  filter(season_f == "wi") %>% 
+  plot_mean_foo(x = .) +
+  scale_y_continuous(limits = c(5465000, 5535500), expand = c(0, 0)) +
+  scale_x_continuous(limits = c(645000, 720000), expand = c(0, 0))
+
+png(here::here("figs", "ms_figs_season_mvrw", "mean_spatial_preds.png"), 
+    height = 7, width = 6, units = "in", res = 200)
+cowplot::plot_grid(
+  summer_main, summer_inset, fall_main, fall_inset,
+  nrow = 1
+)
+dev.off()
 
 
 ## SUMMARY TABLE INFO ----------------------------------------------------------
