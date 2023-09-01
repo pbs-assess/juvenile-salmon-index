@@ -1277,6 +1277,12 @@ mean_spatial <- spatial_preds %>%
     scale_median_grid_est = median_grid_est / max(median_grid_est)
   ) %>% 
   ungroup() 
+scale_max <- quantile(mean_spatial$scale_median_grid_est, 0.99)
+mean_spatial$scale_est2 <- ifelse(
+  mean_spatial$scale_median_grid_est > scale_max, 
+  scale_max, 
+  mean_spatial$scale_median_grid_est
+)
 
 inset_rect <- data.frame(
   x1 = 645000, x2 = 720000, y1 = 5465000, y2 = 5545000
@@ -1286,7 +1292,7 @@ plot_mean_foo <- function (x) {
   ggplot() + 
     geom_raster(
       data = x,
-      aes(X, Y, fill = scale_median_grid_est)
+      aes(X, Y, fill = scale_est2)
     ) +
     coord_fixed() +
     ggsidekick::theme_sleek() +
@@ -1297,10 +1303,11 @@ plot_mean_foo <- function (x) {
     facet_wrap(~species, ncol = 1) +
     theme(axis.title = element_blank(),
           axis.text = element_blank(),
-          legend.position = "none",
           strip.background = element_blank(),
           strip.text.x = element_blank(),
-          axis.ticks = element_blank()
+          axis.ticks = element_blank(),
+          legend.position = "top",
+          legend.key.size = unit(1.1, 'cm')
     ) 
 } 
 
@@ -1333,11 +1340,19 @@ fall_inset <-  mean_spatial %>%
   scale_y_continuous(limits = c(5465000, 5535500), expand = c(0, 0)) +
   scale_x_continuous(limits = c(645000, 720000), expand = c(0, 0))
 
+plot_legend <- cowplot::get_legend(summer_main)
+p_cols <- cowplot::plot_grid(
+  summer_main + theme(legend.position = "none"),
+  summer_inset + theme(legend.position = "none"),
+  fall_main + theme(legend.position = "none"),
+  fall_inset + theme(legend.position = "none"),
+  nrow = 1
+)
+
 png(here::here("figs", "ms_figs_season_mvrw", "mean_spatial_preds.png"), 
     height = 7, width = 6, units = "in", res = 200)
 cowplot::plot_grid(
-  summer_main, summer_inset, fall_main, fall_inset,
-  nrow = 1
+  plot_legend, p_cols, nrow = 2, rel_heights = c(0.1, 1)
 )
 dev.off()
 
