@@ -29,8 +29,8 @@ all_fit_tbl <- readRDS(
 )
 
 
-#simulate from Stan output fixing FEs at MLE
-# set.seed(456)
+# simulate from Stan output fixing FEs at MLE
+set.seed(456)
 # sims_list <- furrr::future_map(
 #   all_fit_tbl$fit, function (x) {
 #     object <- x
@@ -51,28 +51,28 @@ all_fit_tbl <- readRDS(
 # saveRDS(sims_list,
 #         here::here("data", "fits", "nb_mcmc_draws_nb2_mvrfrw.rds"))
 
-# set.seed(456)
-# if (FALSE) {
-# sims_list <- furrr::future_map(
-#   all_fit_tbl$fit, function (x) {
-#     object <- x
-#     samp <- sample_mle_mcmc(object, mcmc_iter = 220L, mcmc_warmup = 200L, mcmc_chains = 50L, 
-#                             stan_args = list(thin = 5L, cores = 50L))
-#     obj <- object$tmb_obj
-#     random <- unique(names(obj$env$par[obj$env$random]))
-#     pl <- as.list(object$sd_report, "Estimate")
-#     fixed <- !(names(pl) %in% random)
-#     map <- lapply(pl[fixed], function(x) factor(rep(NA, length(x))))
-#     obj <- TMB::MakeADFun(obj$env$data, pl, map = map, DLL = "sdmTMB")
-#     obj_mle <- object
-#     obj_mle$tmb_obj <- obj
-#     obj_mle$tmb_map <- map
-#     simulate(obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp), nsim = 200L)
-#   }
-# )
-# saveRDS(sims_list,
-#         here::here("data", "fits", "nb_mcmc_draws_nb2_final.rds"))
-# }
+set.seed(456)
+if (FALSE) {
+sims_list <- furrr::future_map(
+  all_fit_tbl$fit, function (x) {
+    object <- x
+    samp <- sample_mle_mcmc(object, mcmc_iter = 220L, mcmc_warmup = 200L, mcmc_chains = 50L,
+                            stan_args = list(thin = 5L, cores = 50L))
+    obj <- object$tmb_obj
+    random <- unique(names(obj$env$par[obj$env$random]))
+    pl <- as.list(object$sd_report, "Estimate")
+    fixed <- !(names(pl) %in% random)
+    map <- lapply(pl[fixed], function(x) factor(rep(NA, length(x))))
+    obj <- TMB::MakeADFun(obj$env$data, pl, map = map, DLL = "sdmTMB")
+    obj_mle <- object
+    obj_mle$tmb_obj <- obj
+    obj_mle$tmb_map <- map
+    simulate(obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp), nsim = 200L)
+  }
+)
+saveRDS(sims_list,
+        here::here("data", "fits", "nb_mcmc_draws_nb2_mvrfrw.rds"))
+}
 
 sims_list <- readRDS(here::here("data", "fits", "nb_mcmc_draws_nb2_mvrfrw.rds"))
 
@@ -376,10 +376,10 @@ sp_scalar <- 1 * (13 / 1000)
 
 future::plan(future::multisession, workers = 10L)
 # estimate index for each simulation draw
-for (i in 4:5) { #seq_along(sp_vec)) {
+for (i in seq_along(sp_vec)) {
   sim_tbl_sub <- sim_tbl %>% filter(species == sp_vec[i])
-  # sim_ind_list <- furrr::future_map(
-  sim_ind_list <- purrr::map(
+  sim_ind_list <- furrr::future_map(
+  # sim_ind_list <- purrr::map(
     sim_tbl_sub$sim_fit,
     function (x) {
       pp <- predict(x, newdata = index_grid_hss,

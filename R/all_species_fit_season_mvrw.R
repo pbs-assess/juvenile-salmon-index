@@ -85,119 +85,119 @@ dat_tbl <- dat %>%
   group_nest()
 
 # mvrfrw only
-# fits_list_nb2 <- furrr::future_map(
-#   dat_tbl$data,
-#   function(dat_in) {
-#     sdmTMB(
-#       n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
-#         scale_depth,
-#       offset = dat_in$effort,
-#       data = dat_in,
-#       mesh = spde,
-#       family = sdmTMB::nbinom2(),
-#       spatial = "off",
-#       spatial_varying = ~ 0 + season_f,
-#       time = "year",
-#       spatiotemporal = "rw",
-#       anisotropy = TRUE,
-#       groups = "season_f",
-#       control = sdmTMBcontrol(
-#         map = list(
-#           ln_tau_Z = factor(
-#             rep(1, times = length(unique(dat$season_f)))
-#           )
-#         )
-#       ),
-#       silent = FALSE
-#     )
-#   }
-# )
-# # mvrfrw only + year FE
-# fits_list_nb2_fe <- furrr::future_map(
-#   dat_tbl$data,
-#   function(dat_in) {
-#     sdmTMB(
-#       n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
-#         scale_depth + year_f,
-#       offset = dat_in$effort,
-#       data = dat_in,
-#       mesh = spde,
-#       family = sdmTMB::nbinom2(),
-#       spatial = "off",
-#       spatial_varying = ~ 0 + season_f,
-#       time = "year",
-#       spatiotemporal = "rw",
-#       anisotropy = TRUE,
-#       groups = "season_f",
-#       control = sdmTMBcontrol(
-#         map = list(
-#           ln_tau_Z = factor(
-#             rep(1, times = length(unique(dat$season_f)))
-#           )
-#         )
-#       ),
-#       silent = FALSE
-#     )
-#   }
-# )
-# 
-# dat_tbl_mvrfrw <- dat_tbl %>%
-#   mutate(fit = fits_list_nb2)
-# saveRDS(
-#   dat_tbl_mvrfrw, here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_only.rds")
-# )
+fits_list_nb2 <- furrr::future_map(
+  dat_tbl$data,
+  function(dat_in) {
+    sdmTMB(
+      n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+        scale_depth,
+      offset = dat_in$effort,
+      data = dat_in,
+      mesh = spde,
+      family = sdmTMB::nbinom2(),
+      spatial = "off",
+      spatial_varying = ~ 0 + season_f,
+      time = "year",
+      spatiotemporal = "rw",
+      anisotropy = TRUE,
+      groups = "season_f",
+      control = sdmTMBcontrol(
+        map = list(
+          ln_tau_Z = factor(
+            rep(1, times = length(unique(dat$season_f)))
+          )
+        )
+      ),
+      silent = FALSE
+    )
+  }
+)
+# mvrfrw only + year FE
+fits_list_nb2_fe <- furrr::future_map(
+  dat_tbl$data,
+  function(dat_in) {
+    sdmTMB(
+      n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+        scale_depth + year_f,
+      offset = dat_in$effort,
+      data = dat_in,
+      mesh = spde,
+      family = sdmTMB::nbinom2(),
+      spatial = "off",
+      spatial_varying = ~ 0 + season_f,
+      time = "year",
+      spatiotemporal = "rw",
+      anisotropy = TRUE,
+      groups = "season_f",
+      control = sdmTMBcontrol(
+        map = list(
+          ln_tau_Z = factor(
+            rep(1, times = length(unique(dat$season_f)))
+          )
+        )
+      ),
+      silent = FALSE
+    )
+  }
+)
 
-# dat_tbl_fe <- dat_tbl %>% 
-#   mutate(fit = fits_list_nb2_fe)
-# saveRDS(
-#   dat_tbl_fe, here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw.rds")
-# )
+dat_tbl_mvrfrw <- dat_tbl %>%
+  mutate(fit = fits_list_nb2)
+saveRDS(
+  dat_tbl_mvrfrw, here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_only.rds")
+)
+
+dat_tbl_fe <- dat_tbl %>%
+  mutate(fit = fits_list_nb2_fe)
+saveRDS(
+  dat_tbl_fe, here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw.rds")
+)
 
 
-# dat_tbl_mvrfrw <- readRDS(
-#   here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_only.rds")
-# )
-# dat_tbl_fe <- readRDS(
-#   here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw.rds")
-# )
-# 
-# 
-# # make AIC table 
-# dat_tbl <- rbind(
-#   dat_tbl_mvrfrw %>% mutate(model = "mvrfrw"),
-#   dat_tbl_fe %>% mutate(model = "mvrfrw_year_fe")
-# ) %>% 
-#   mutate(
-#     AIC = purrr::map(.$fit, AIC) %>% 
-#       unlist(),
-#     log_likelihood = purrr::map(
-#       .$fit, 
-#       ~ logLik(.x) %>% 
-#         # attr(., "df") %>% 
-#         as.numeric()
-#     ) %>% 
-#       unlist(),
-#     n_FE = purrr::map(
-#       .$fit, 
-#       ~ tidy(.x, effects = "fixed", conf.int = T) %>% 
-#         nrow()
-#     ) %>% 
-#       unlist()
-#   )
-# 
-# dat_tbl %>% 
-#   select(species, model, AIC, log_likelihood, n_FE) %>% 
-#   arrange(species, AIC)
-# 
-# 
-# # FEs favored for sockeye and pink, finalize accordingly
-# dat_tbl <- dat_tbl %>% 
-#   filter((species %in% c("chinook", "coho", "chum") & model == "mvrfrw") |
-#            (species %in% c("pink", "sockeye") & model == "mvrfrw_year_fe"))
-# saveRDS(
-#   dat_tbl, 
-#   here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_final.rds")
-# )
+dat_tbl_mvrfrw <- readRDS(
+  here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_only.rds")
+)
+dat_tbl_fe <- readRDS(
+  here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw.rds")
+)
+
+
+# make AIC table
+dat_tbl <- rbind(
+  dat_tbl_mvrfrw %>% mutate(model = "mvrfrw"),
+  dat_tbl_fe %>% mutate(model = "mvrfrw_year_fe")
+) %>%
+  mutate(
+    AIC = purrr::map(.$fit, AIC) %>%
+      unlist(),
+    log_likelihood = purrr::map(
+      .$fit,
+      ~ logLik(.x) %>%
+        # attr(., "df") %>%
+        as.numeric()
+    ) %>%
+      unlist(),
+    n_FE = purrr::map(
+      .$fit,
+      ~ tidy(.x, effects = "fixed", conf.int = T) %>%
+        nrow()
+    ) %>%
+      unlist()
+  )
+
+dat_tbl %>%
+  select(species, model, AIC, log_likelihood, n_FE) %>%
+  arrange(species, AIC)
+
+
+# FEs favored for sockeye and pink, finalize accordingly
+dat_tbl <- dat_tbl %>%
+  filter((species %in% c("chinook", "coho", "chum") & model == "mvrfrw") |
+           (species %in% c("pink", "sockeye") & model == "mvrfrw_year_fe"))
+saveRDS(
+  dat_tbl,
+  here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_final.rds")
+)
 
 dat_tbl <- readRDS(
   here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_final.rds")
