@@ -1271,7 +1271,7 @@ mean_spatial <- spatial_preds %>%
     mean_grid_est = mean(grid_est),
     median_grid_est = median(grid_est)
   ) %>% 
-  group_by(species) %>% 
+  group_by(species, season_f) %>% 
   mutate(
     scale_mean_grid_est = mean_grid_est / max(mean_grid_est),
     scale_median_grid_est = median_grid_est / max(median_grid_est)
@@ -1306,7 +1306,7 @@ plot_mean_foo <- function (x) {
           strip.background = element_blank(),
           strip.text.x = element_blank(),
           axis.ticks = element_blank(),
-          legend.position = "top",
+          legend.position = "right",
           legend.key.size = unit(1.1, 'cm')
     ) 
 } 
@@ -1349,10 +1349,11 @@ p_cols <- cowplot::plot_grid(
   nrow = 1
 )
 
-png(here::here("figs", "ms_figs_season_mvrw", "mean_spatial_preds.png"), 
-    height = 7, width = 6, units = "in", res = 200)
+png(here::here("figs", "ms_figs_season_mvrw", "mean_spatial_preds_season_scaled.png"), 
+    height = 7, width = 7, units = "in", res = 200)
 cowplot::plot_grid(
-  plot_legend, p_cols, nrow = 2, rel_heights = c(0.1, 1)
+  p_cols, plot_legend, ncol = 2, rel_widths = c(1, 0.125)
+  # plot_legend, p_cols, nrow = 2, rel_heights = c(0.1, 1)
 )
 dev.off()
 

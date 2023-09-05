@@ -30,26 +30,26 @@ all_fit_tbl <- readRDS(
 
 
 #simulate from Stan output fixing FEs at MLE
-set.seed(456)
-sims_list <- furrr::future_map(
-  all_fit_tbl$fit, function (x) {
-    object <- x
-    samp <- sample_mle_mcmc(object, mcmc_iter = 120, mcmc_warmup = 100)
-
-    obj <- object$tmb_obj
-    random <- unique(names(obj$env$par[obj$env$random]))
-    pl <- as.list(object$sd_report, "Estimate")
-    fixed <- !(names(pl) %in% random)
-    map <- lapply(pl[fixed], function(x) factor(rep(NA, length(x))))
-    obj <- TMB::MakeADFun(obj$env$data, pl, map = map, DLL = "sdmTMB")
-    obj_mle <- object
-    obj_mle$tmb_obj <- obj
-    obj_mle$tmb_map <- map
-    simulate(obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp), nsim = 20)
-  }
-)
-saveRDS(sims_list,
-        here::here("data", "fits", "nb_mcmc_draws_nb2_mvrfrw.rds"))
+# set.seed(456)
+# sims_list <- furrr::future_map(
+#   all_fit_tbl$fit, function (x) {
+#     object <- x
+#     samp <- sample_mle_mcmc(object, mcmc_iter = 120, mcmc_warmup = 100)
+# 
+#     obj <- object$tmb_obj
+#     random <- unique(names(obj$env$par[obj$env$random]))
+#     pl <- as.list(object$sd_report, "Estimate")
+#     fixed <- !(names(pl) %in% random)
+#     map <- lapply(pl[fixed], function(x) factor(rep(NA, length(x))))
+#     obj <- TMB::MakeADFun(obj$env$data, pl, map = map, DLL = "sdmTMB")
+#     obj_mle <- object
+#     obj_mle$tmb_obj <- obj
+#     obj_mle$tmb_map <- map
+#     simulate(obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp), nsim = 20)
+#   }
+# )
+# saveRDS(sims_list,
+#         here::here("data", "fits", "nb_mcmc_draws_nb2_mvrfrw.rds"))
 
 # set.seed(456)
 # if (FALSE) {
@@ -362,8 +362,6 @@ fall_years <- sim_tbl$fit[[1]]$data %>%
          !year_f == "2020") %>%
   pull(year) %>% 
   unique()
-year_season_key <- readRDS(here::here("data", "year_season_key.rds"))
-
 
 index_grid_hss <- readRDS(here::here("data", "index_hss_grid.rds")) %>% 
   mutate(
@@ -378,29 +376,28 @@ sp_scalar <- 1 * (13 / 1000)
 
 future::plan(future::multisession, workers = 10L)
 # estimate index for each simulation draw
-for (i in seq_along(sp_vec)) {
+for (i in 4:5) { #seq_along(sp_vec)) {
   sim_tbl_sub <- sim_tbl %>% filter(species == sp_vec[i])
-  #sim_ind_list <- purrr::map(
-  sim_ind_list <- furrr::future_map(
+  # sim_ind_list <- furrr::future_map(
+  sim_ind_list <- purrr::map(
     sim_tbl_sub$sim_fit,
     function (x) {
       pp <- predict(x, newdata = index_grid_hss,
                     se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
-      get_index(pp, area = sp_scalar, bias_correct = TRUE) %>% 
-        left_join(., year_season_key, by = "ys_index")
+      get_index(pp, area = sp_scalar, bias_correct = TRUE) 
     }
   )  
   saveRDS(
     sim_ind_list,
     here::here("data", "fits", "sim_fit",
-               paste(sp_vec[i], "_sim_index_final.rds", sep = ""))
+               paste(sp_vec[i], "_sim_index_final_mvrfrw.rds", sep = ""))
   )
 }
 
 
 # import saved indices from all_species_fit_season.R
 true_index_list <- readRDS(
-  here::here("data", "fits", "season_index_list.rds")
+  here::here("data", "fits", "season_index_list_mvrfrw.rds")
 )
 
 true_ind_dat <- tibble(
@@ -424,10 +421,10 @@ true_ind_dat <- tibble(
 
 
 sim_index_list <- purrr::map(
-  sp_vec,
+  sp_vec[1:3],
   ~ readRDS(
     here::here("data", "fits", "sim_fit",
-               paste(.x, "_sim_index_final.rds", sep = ""))
+               paste(.x, "_sim_index_final_mvrfrw.rds", sep = ""))
   )
 )
 
