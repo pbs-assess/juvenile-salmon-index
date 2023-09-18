@@ -12,6 +12,7 @@ prediction-grids/*
 !data/preds/*.rds
 data/fits/*.rds
 figs/sopo_figs/
+figs/mesh_comparison/
 .DS_Store
 R/hidden/
 *.dll

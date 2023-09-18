@@ -288,7 +288,8 @@ inset_map <- ggplot() +
         axis.text = element_blank()) 
 
 
-png(here::here("figs", "ms_figs_season", "set_map.png"), height = 4.5, width = 6, 
+png(here::here("figs", "ms_figs_season_mvrw", "set_map.png"),
+    height = 4.5, width = 6, 
     units = "in", res = 250)
 cowplot::ggdraw(set_map) +
   cowplot::draw_plot(inset_map, x = 0.03, y = 0.085, #vjust = -0.2,
@@ -319,7 +320,6 @@ pdf(here::here("figs", "diagnostics",  "set_coverage.pdf"), height = 4, width = 
 set_map_month
 seasonal_effort
 dev.off()
-
 
 
 # set locations by year
@@ -361,8 +361,8 @@ stacked_headrope_depth <- dat_trim %>%
   scale_x_discrete(breaks = seq(1998, 2020, by = 5))
 
 
-png(here::here("figs", "ms_figs_season", "headrope.png"), height = 3.5, width = 7, 
-    units = "in", res = 250)
+png(here::here("figs", "ms_figs_season_mvrw", "headrope.png"),
+    height = 3.5, width = 7, units = "in", res = 250)
 stacked_headrope_depth
 dev.off()
 
@@ -381,8 +381,8 @@ stacked_daynight <- dat_trim %>%
   ) +
   scale_x_discrete(breaks = seq(1995, 2020, by = 5))
 
-png(here::here("figs", "ms_figs_season", "dn_tows.png"), height = 3.5, width = 7, 
-    units = "in", res = 250)
+png(here::here("figs", "ms_figs_season_mvrw", "dn_tows.png"),
+    height = 3.5, width = 7, units = "in", res = 250)
 stacked_daynight
 dev.off()
 
@@ -413,7 +413,7 @@ bubble_temp_coverage <- dat_trim %>%
       )
   )
 
-png(here::here("figs", "ms_figs_season", "temp_cov.png"), height = 5.5, 
+png(here::here("figs", "ms_figs_season_mvrw", "temp_cov.png"), height = 5.5, 
     width = 5.5, units = "in", res = 250)
 bubble_temp_coverage
 dev.off()
@@ -425,8 +425,8 @@ hist_vol_swept <- ggplot(dat_trim) +
   ggsidekick::theme_sleek() +
   labs(x = "Volume Swept (m^3)", y = "Number of Sets")
 
-png(here::here("figs", "ms_figs", "vol_swept.png"), height = 3.5, width = 5.5, 
-    units = "in", res = 250)
+png(here::here("figs", "ms_figs_season_mvrw", "vol_swept.png"),
+    height = 3.5, width = 5.5, units = "in", res = 250)
 hist_vol_swept
 dev.off()
 
