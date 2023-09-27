@@ -46,7 +46,7 @@ names(col_pal) <- c('chinook','pink','chum','coho','sockeye')
 
 # prep multisession
 ncores <- parallel::detectCores() 
-future::plan(future::multisession, workers = 50L)
+future::plan(future::multisession, workers = 5)
 
 
 ## mesh shared among species
@@ -600,7 +600,8 @@ index_grid <- pred_grid_list %>%
 
 
 # predictions for index (set to HSS reference values)
-# index_grid_hss <- index_grid %>% filter(survey_f == "hss")
+index_grid_hss <- index_grid %>% filter(survey_f == "hss")
+saveRDS(index_grid_hss, here::here("data", "index_hss_grid.rds"))
 # 
 # ind_preds_summer <- purrr::map(
 #   dat_tbl %>% pull(fit),
