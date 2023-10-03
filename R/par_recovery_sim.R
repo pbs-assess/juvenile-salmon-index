@@ -10,7 +10,7 @@ library(ggplot2)
 library(sdmTMBextra)
 
 ncores <- parallel::detectCores() 
-future::plan(future::multisession, workers = 50L)
+future::plan(future::multisession, workers = 5L)
 
 
 # make subdirectories for storage
@@ -419,42 +419,44 @@ true_ind_dat <- true_index_list %>%
     ),
     log_lwr = log_est - (1.96 * se),
     log_upr = log_est + (1.96 * se),
-    year = as.factor(year)
+    year_f = as.factor(year)
   )
 
+sp_vec <- c("chinook", "chum", "coho")
 
 sim_index_list_summer <- purrr::map(
   sp_vec,
   ~ readRDS(
     here::here("data", "fits", "sim_fit",
-               paste(.x, "summer_sim_index_final_mvrfrw.rds", sep = ""))
+               paste(.x, "_summer_sim_index_final_mvrfrw.rds", sep = ""))
   )
 )
 sim_index_list_fall <- purrr::map(
   sp_vec,
   ~ readRDS(
     here::here("data", "fits", "sim_fit",
-               paste(.x, "fall_sim_index_final_mvrfrw.rds", sep = ""))
+               paste(.x, "_fall_sim_index_final_mvrfrw.rds", sep = ""))
   )
 )
 
-n_iter <- length(sim_index_list[[1]]) #how many sims per species?
+n_iter <- length(sim_index_list_summer[[1]]) #how many sims per species?
 
-# TODO: correct for new index list structure after SA runs
 sim_ind_dat <- tibble(
-  species = rep(sp_vec, each = n_iter),
-  iter = seq(1, n_iter * length(sp_vec), by = 1),
-  sim_index = do.call(c, sim_index_list)
-) %>% 
+  # species = c(rep(sp_vec, each = n_iter), rep(sp_vec, each = n_iter)),
+  iter = rep(seq(1, n_iter, by = 1), times = length(sp_vec) * 2),
+  sim_index = c(do.call(c, sim_index_list_summer), 
+                do.call(c, sim_index_list_fall))
+) %>%
   unnest(cols = "sim_index") %>%
   left_join(
     ., 
-    true_ind_dat %>% select(species, ys_index, true_log_est = log_est),
-    by = c("species", "ys_index")) %>% 
+    true_ind_dat %>% 
+      select(species, year, year_f, season_f, true_log_est = log_est),
+    by = c("species", "year", "season_f")) %>% 
   mutate(
     season = fct_recode(season_f, "summer" = "su", "fall" = "wi"),
-    year = as.factor(year),
-    resid_est = true_log_est - log_est
+    # resid_est = true_log_est - log_est
+    resid_est = est - exp(true_log_est)
   )
 
 
@@ -462,9 +464,9 @@ png(here::here("figs", "ms_figs_season", "sim_index.png"),
     height = 8, width = 8, units = "in", res = 200)
 ggplot() +
   geom_boxplot(data = sim_ind_dat,
-               aes(x = year, y = log_est)) +
-  geom_point(data = true_ind_dat,
-             aes(x = year, y = log_est, colour = survey)) +
+               aes(x = year_f, y = log_est)) +
+  geom_point(data = true_ind_dat %>% filter(species %in% sp_vec),
+             aes(x = year_f, y = log_est, colour = survey)) +
   facet_grid(species~season, scales = "free_y") +
   ggsidekick::theme_sleek() +
   theme(legend.position = "top") +
@@ -477,7 +479,7 @@ png(here::here("figs", "ms_figs_season", "resid_index.png"),
     height = 8, width = 8, units = "in", res = 200)
 ggplot() +
   geom_boxplot(data = sim_ind_dat,
-               aes(x = year, y = resid_est)) +
+               aes(x = year_f, y = resid_est)) +
   geom_hline(yintercept = 0, lty = 2, colour = "red") +
   facet_grid(species~season, scales = "free_y") +
   ggsidekick::theme_sleek() +
@@ -486,3 +488,66 @@ ggplot() +
   labs(y = "Index Residuals") +
   theme(axis.title.x = element_blank())
 dev.off()
+
+
+
+## tweak for coho only
+
+coho_tbl <- sim_tbl %>% 
+  filter(species == "coho")
+
+
+
+
+
+index_grid_hss <- readRDS(here::here("data", "index_hss_grid.rds"))
+
+sp_scalar <- 1 * (13 / 1000)
+
+sim_coho_list_fall <- furrr::future_map(
+  coho_tbl$sim_fit,
+  function (x) {
+    pp <- predict(x, 
+                  newdata = index_grid_hss %>%
+                    filter(season_f == "wi"),
+                  se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
+    get_index(pp, area = sp_scalar, bias_correct = TRUE)
+  }
+)
+
+coho_tbl <- tibble(
+  # species = c(rep(sp_vec, each = n_iter), rep(sp_vec, each = n_iter)),
+  iter = seq(1, 20, by = 1),
+  sim_index = sim_coho_list_fall
+) %>%
+  unnest(cols = "sim_index")  %>% 
+  
+  mutate(
+    # season = fct_recode(season_f, "summer" = "su", "fall" = "wi"),
+    resid_est = true_log_est - log_est
+    # resid_est = est - exp(true_log_est)
+  )
+
+
+# sim_coho_index_fall <- get_index(
+#   sim_coho_pred_fall, area = sp_scalar, bias_correct = TRUE
+# ) 
+# sim_coho_index_fall$data <- "sim"
+
+true_coho_index_fall <- true_ind_dat %>% 
+  filter(species == "coho",
+         season_f == "wi") %>% 
+  mutate(data = "original")
+
+rbind(
+  sim_coho_index_fall, 
+  true_coho_index_fall %>%
+    select(colnames(sim_coho_index_fall))
+) %>% 
+  ggplot(.) +
+  geom_point(aes(x = year, y = log_est, fill = data), shape = 21)
+
+ggplot() +
+  geom_boxplot(data = coho_tbl, aes(x = as.factor(year), y = log_est)) +
+  geom_point(data = true_coho_index_fall, aes(x = as.factor(year), y = log_est),
+             colour = "red")
