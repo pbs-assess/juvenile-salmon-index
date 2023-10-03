@@ -422,7 +422,6 @@ true_ind_dat <- true_index_list %>%
     year_f = as.factor(year)
   )
 
-sp_vec <- c("chinook", "chum", "coho")
 
 sim_index_list_summer <- purrr::map(
   sp_vec,
@@ -432,18 +431,18 @@ sim_index_list_summer <- purrr::map(
   )
 )
 sim_index_list_fall <- purrr::map(
-  sp_vec,
+  sp_vec[1:4],
   ~ readRDS(
     here::here("data", "fits", "sim_fit",
                paste(.x, "_fall_sim_index_final_mvrfrw.rds", sep = ""))
-  )
+  ) 
 )
 
 n_iter <- length(sim_index_list_summer[[1]]) #how many sims per species?
 
 sim_ind_dat <- tibble(
   # species = c(rep(sp_vec, each = n_iter), rep(sp_vec, each = n_iter)),
-  iter = rep(seq(1, n_iter, by = 1), times = length(sp_vec) * 2),
+  iter = rep(seq(1, n_iter, by = 1), times = (length(sp_vec) * 2) - 1),
   sim_index = c(do.call(c, sim_index_list_summer), 
                 do.call(c, sim_index_list_fall))
 ) %>%
@@ -455,8 +454,8 @@ sim_ind_dat <- tibble(
     by = c("species", "year", "season_f")) %>% 
   mutate(
     season = fct_recode(season_f, "summer" = "su", "fall" = "wi"),
-    # resid_est = true_log_est - log_est
-    resid_est = est - exp(true_log_est)
+    resid_est = true_log_est - log_est
+    # resid_est = est - exp(true_log_est)
   )
 
 
