@@ -1,5 +1,7 @@
 ## Focus on recovering parameters for coho only
 
+devtools::install_github("https://github.com/pbs-assess/sdmTMB",
+                         ref = "mvrfrw")
 
 library(tidyverse)
 library(sdmTMB)
@@ -23,7 +25,9 @@ dat <- dat_in %>%
     scale_yday = scale(as.numeric(yday))[ , 1],
     year_season_f = paste(year_f, season_f, sep = "_") %>% as.factor(),
     day_night = as.factor(day_night)) %>% 
-  filter(species == "coho") %>% 
+  filter(species == "coho",
+         # remove spring samples
+         !season_f == "sp") %>% 
   droplevels()
 
 
@@ -46,14 +50,8 @@ spde <- make_mesh(
 plot(spde)
 
 # mvrfrw only
-dat_tbl_mvrfrw <- readRDS(
-  here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_only.rds")
-)
-fit_nb2 <- dat_tbl_mvrfrw$fit[[3]]
-
-fit_nb2_poly <- sdmTMB(
-  n_juv ~ 0 + survey_f + day_night + poly(scale_yday, 2) + scale_dist +
-    scale_depth,
+fit_nb2 <- sdmTMB(
+  n_juv ~ 0 + survey_f + day_night + season_f + scale_dist + scale_depth,
   offset = dat$effort,
   data = dat,
   mesh = spde,
@@ -73,30 +71,23 @@ fit_nb2_poly <- sdmTMB(
   ),
   silent = FALSE
 )
-
-fit_nb2_poly <- sdmTMB(
-  n_juv ~ 0 + survey_f + day_night + poly(scale_yday, 2) + scale_dist +
-    scale_depth,
+fit_nb2b <- update(fit_nb2, share_range = FALSE)
+fit_nb2c <- update(fit_nb2, anisotropy = FALSE)
+fit_nb2d <- sdmTMB(
+  n_juv ~ 0 + survey_f + day_night + season_f + scale_dist + scale_depth,
   offset = dat$effort,
   data = dat,
   mesh = spde,
   family = sdmTMB::nbinom2(),
-  spatial = "off",
-  spatial_varying = ~ 0 + season_f,
+  spatial = "on",
   time = "year",
   spatiotemporal = "rw",
   anisotropy = TRUE,
   groups = "season_f",
-  share_range = FALSE,
-  # control = sdmTMBcontrol(
-  #   map = list(
-  #     ln_tau_Z = factor(
-  #       rep(1, times = length(unique(dat$season_f)))
-  #     )
-  #   )
-  # ),
   silent = FALSE
 )
+saveRDS(fit_nb2d, here::here("data", "fits", "coho_mvrfrw_nospring.rds"))
+
 
 dat2 <- dat %>% 
   group_by(season_f) %>% 
@@ -111,19 +102,11 @@ fit_nb2_yday <- sdmTMB(
   data = dat2,
   mesh = spde,
   family = sdmTMB::nbinom2(),
-  spatial = "off",
-  spatial_varying = ~ 0 + season_f,
+  spatial = "on",
   time = "year",
   spatiotemporal = "rw",
   anisotropy = TRUE,
   groups = "season_f",
-  control = sdmTMBcontrol(
-    map = list(
-      ln_tau_Z = factor(
-        rep(1, times = length(unique(dat2$season_f)))
-      )
-    )
-  ),
   silent = FALSE
 )
 saveRDS(fit_nb2_yday, here::here("data", "fits", "coho_mvrfrw_yday_int.rds"))
