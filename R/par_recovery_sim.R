@@ -362,12 +362,12 @@ index_grid_hss <- readRDS(here::here("data", "index_hss_grid.rds"))
 sp_scalar <- 1 * (13 / 1000)
 
 
-future::plan(future::multisession, workers = 10L)
+future::plan(future::multisession, workers = 2L)
 # estimate season-specific index for each simulation draw 
 for (i in seq_along(sp_vec)) {
   sim_tbl_sub <- sim_tbl %>% filter(species == sp_vec[i])
   sim_ind_list_summer <- furrr::future_map(
-    sim_tbl_sub$sim_fit,
+    sim_tbl_sub$sim_fit[1:100],
     function (x) {
       pp <- predict(x, 
                     newdata = index_grid_hss %>%
@@ -384,7 +384,7 @@ for (i in seq_along(sp_vec)) {
                paste(sp_vec[i], "summer_sim_index_final_mvrfrw.rds", sep = ""))
   )
   sim_ind_list_fall <- furrr::future_map(
-    sim_tbl_sub$sim_fit,
+    sim_tbl_sub$sim_fit[1:100],
     function (x) {
       pp <- predict(x, 
                     newdata = index_grid_hss %>%
