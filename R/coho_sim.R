@@ -170,7 +170,7 @@ pars <- purrr::map(
 
 # export (see equivalent snippet in par_recovery_sim.R)
 dir.create(here::here("data", "preds"), showWarnings = FALSE)
-saveRDS(sim_pars, here::here("data", "preds", "sim_pars_mvrfrw.rds"))
+saveRDS(pars, here::here("data", "preds", "sim_pars_mvrfrw.rds"))
 
 
 # as above but for fitted model
