@@ -219,7 +219,7 @@ index_grid_hss <- readRDS(here::here("data", "index_hss_grid.rds"))
 sp_scalar <- 1 * (13 / 1000)
 
 
-future::plan(future::multisession, workers = 10L)
+future::plan(future::multisession, workers = 2L)
 # estimate season-specific index for each simulation draw 
 sim_ind_list_summer <- furrr::future_map(
   fit_sims_list,
