@@ -104,35 +104,36 @@ dir.create(here::here("data", "fits", "sim_fit"), showWarnings = FALSE)
 
 # spread to list then fit 
 sims_list <- apply(sim_out, 2, as.list)
-fit_sims_list <- furrr::future_map(
-  sims_list,
-  function(x) {
-    dum_in <- dat %>% 
-      mutate(
-        sim_catch = as.numeric(x)
+
+f <- here::here("data", "fits", "sim_fit", "coho_nb2_mvrfrw.rds")
+if (!file.exists(f)) {
+  fit_sims_list <- furrr::future_map(
+    sims_list,
+    function(x) {
+      dum_in <- dat %>% 
+        mutate(
+          sim_catch = as.numeric(x)
+        )
+      sdmTMB(
+        sim_catch ~ 0 + survey_f + day_night + season_f + scale_dist +
+          scale_depth,
+        offset = dum_in$effort,
+        data = dum_in,
+        mesh = spde,
+        family = sdmTMB::nbinom2(),
+        spatial = "on",
+        time = "year",
+        spatiotemporal = "rw",
+        anisotropy = TRUE,
+        groups = "season_f",
+        silent = TRUE
       )
-    sdmTMB(
-      sim_catch ~ 0 + survey_f + day_night + season_f + scale_dist +
-        scale_depth,
-      offset = dum_in$effort,
-      data = dum_in,
-      mesh = spde,
-      family = sdmTMB::nbinom2(),
-      spatial = "on",
-      time = "year",
-      spatiotemporal = "rw",
-      anisotropy = TRUE,
-      groups = "season_f",
-      silent = TRUE
-    )
-  }
-)
-
-saveRDS(
-  fit_sims_list,
-  here::here("data", "fits", "sim_fit", "coho_nb2_mvrfrw.rds")
-)
-
+    }
+  )
+  saveRDS(fit_sims_list, f)
+} else {
+  fit_sims_list <- readRDS(f)
+}
 
 ### NOTE!!! Below will only be for coho. Might be easiest for you to generate
 ## the dataframe of simulated parameter estimates for this model and the
@@ -221,7 +222,7 @@ index_grid_hss <- readRDS(here::here("data", "index_hss_grid.rds"))
 sp_scalar <- 1 * (13 / 1000)
 
 
-future::plan(future::multisession, workers = 2L)
+future::plan(future::multisession, workers = 3L)
 # estimate season-specific index for each simulation draw 
 sim_ind_list_summer <- furrr::future_map(
   fit_sims_list,
