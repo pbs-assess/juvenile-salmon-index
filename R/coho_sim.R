@@ -73,27 +73,29 @@ fit <- sdmTMB(
 # simulate from year FE
 set.seed(456)
 
-# hard coded with large values for cluster
-object <- fit
-samp <- sample_mle_mcmc(
-  object, mcmc_iter = 220L, mcmc_warmup = 200L, mcmc_chains = 50L,
-  stan_args = list(thin = 5L, cores = 50L)
-)
-obj <- object$tmb_obj
-random <- unique(names(obj$env$par[obj$env$random]))
-pl <- as.list(object$sd_report, "Estimate")
-fixed <- !(names(pl) %in% random)
-map <- lapply(pl[fixed], function(x) factor(rep(NA, length(x))))
-obj <- TMB::MakeADFun(obj$env$data, pl, map = map, DLL = "sdmTMB")
-obj_mle <- object
-obj_mle$tmb_obj <- obj
-obj_mle$tmb_map <- map
-sim_out <- simulate(obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp), 
-                    nsim = 200L)
-
-saveRDS(sim_out,
-        here::here("data", "fits", "nb_mcmc_draws_nb2_mvrfrw_coho.rds"))
-
+f <- here::here("data", "fits", "nb_mcmc_draws_nb2_mvrfrw_coho.rds")
+if (!file.exists(f)) {
+  # hard coded with large values for cluster
+  object <- fit
+  samp <- sample_mle_mcmc(
+    object, mcmc_iter = 220L, mcmc_warmup = 200L, mcmc_chains = 50L,
+    stan_args = list(thin = 5L, cores = 50L)
+  )
+  obj <- object$tmb_obj
+  random <- unique(names(obj$env$par[obj$env$random]))
+  pl <- as.list(object$sd_report, "Estimate")
+  fixed <- !(names(pl) %in% random)
+  map <- lapply(pl[fixed], function(x) factor(rep(NA, length(x))))
+  obj <- TMB::MakeADFun(obj$env$data, pl, map = map, DLL = "sdmTMB")
+  obj_mle <- object
+  obj_mle$tmb_obj <- obj
+  obj_mle$tmb_map <- map
+  sim_out <- simulate(obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp), 
+    nsim = 200L)
+  saveRDS(sim_out, f)
+} else {
+  sim_out <- readRDS(f)
+}
 
 # fit model to sims
 gc()
