@@ -57,7 +57,8 @@ spde <- make_mesh(
 
 # fit model without season-specific spatial RFs and no spring data
 fit <- sdmTMB(
-  n_juv ~ 0 + season_f + survey_f + day_night  + scale_dist + scale_depth,
+  n_juv ~ 0 + survey_f + day_night + season_f + scale_dist +
+    scale_depth,
   offset = dat$effort,
   data = dat,
   mesh = spde,
@@ -229,7 +230,8 @@ sim_ind_list_summer <- furrr::future_map(
   function (x) {
     pp <- predict(x, 
                   newdata = index_grid_hss %>%
-                    filter(season_f == "su"),
+                    filter(season_f == "su") %>% 
+                    droplevels(),
                   se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
     get_index(pp, area = sp_scalar, bias_correct = TRUE) %>%
       mutate(season_f = "su",
@@ -245,7 +247,8 @@ sim_ind_list_fall <- furrr::future_map(
   function (x) {
     pp <- predict(x, 
                   newdata = index_grid_hss %>%
-                    filter(season_f == "wi"),
+                    filter(season_f == "wi") %>% 
+                    droplevels(),
                   se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
     get_index(pp, area = sp_scalar, bias_correct = TRUE) %>%
       mutate(season_f = "wi",
