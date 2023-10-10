@@ -35,8 +35,7 @@ dat <- dat_in %>%
     day_night = as.factor(day_night)) %>% 
   filter(species == "coho",
          # remove spring samples
-         !season_f == "sp") %>% 
-  droplevels()
+         !season_f == "sp")
 
 
 # same specs as normal
@@ -57,7 +56,7 @@ spde <- make_mesh(
 
 # fit model without season-specific spatial RFs and no spring data
 fit <- sdmTMB(
-  n_juv ~ 0 + survey_f + day_night + season_f + scale_dist +
+  n_juv ~ 0 + season_f + survey_f + day_night + scale_dist +
     scale_depth,
   offset = dat$effort,
   data = dat,
@@ -82,6 +81,8 @@ if (!file.exists(f)) {
     object, mcmc_iter = 220L, mcmc_warmup = 200L, mcmc_chains = 50L,
     stan_args = list(thin = 5L, cores = 50L)
   )
+  # samp <- sample_mle_mcmc(object, mcmc_iter = 105, mcmc_warmup = 100)
+
   obj <- object$tmb_obj
   random <- unique(names(obj$env$par[obj$env$random]))
   pl <- as.list(object$sd_report, "Estimate")
@@ -92,7 +93,8 @@ if (!file.exists(f)) {
   obj_mle$tmb_obj <- obj
   obj_mle$tmb_map <- map
   sim_out <- simulate(obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp), 
-    nsim = 200L)
+                      nsim = 200)
+
   saveRDS(sim_out, f)
 } else {
   sim_out <- readRDS(f)
@@ -116,7 +118,7 @@ if (!file.exists(f)) {
           sim_catch = as.numeric(x)
         )
       sdmTMB(
-        sim_catch ~ 0 + survey_f + day_night + season_f + scale_dist +
+        sim_catch ~ 0 + season_f + survey_f + day_night + scale_dist +
           scale_depth,
         offset = dum_in$effort,
         data = dum_in,
@@ -218,7 +220,8 @@ ggplot() +
 
 ## generate indices
 
-index_grid_hss <- readRDS(here::here("data", "index_hss_grid.rds"))
+index_grid_hss <- readRDS(here::here("data", "index_hss_grid.rds")) %>% 
+  filter(!season_f == "sp") 
 
 sp_scalar <- 1 * (13 / 1000)
 
@@ -228,10 +231,9 @@ future::plan(future::multisession, workers = 3L)
 sim_ind_list_summer <- furrr::future_map(
   fit_sims_list,
   function (x) {
-    pp <- predict(x, 
+    pp_sum <- predict(x, 
                   newdata = index_grid_hss %>%
-                    filter(season_f == "su") %>% 
-                    droplevels(),
+                    filter(season_f == "su") ,
                   se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
     get_index(pp, area = sp_scalar, bias_correct = TRUE) %>%
       mutate(season_f = "su",
@@ -247,8 +249,7 @@ sim_ind_list_fall <- furrr::future_map(
   function (x) {
     pp <- predict(x, 
                   newdata = index_grid_hss %>%
-                    filter(season_f == "wi") %>% 
-                    droplevels(),
+                    filter(season_f == "wi"),
                   se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
     get_index(pp, area = sp_scalar, bias_correct = TRUE) %>%
       mutate(season_f = "wi",
