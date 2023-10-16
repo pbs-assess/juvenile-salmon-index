@@ -230,10 +230,10 @@ levels(dat$season_f)
 index_grid_hss$season_f <- factor(index_grid_hss$season_f, levels = c("su", "wi"))
 stopifnot(identical(levels(dat$season_f), levels(index_grid_hss$season_f)))
 
-future::plan(future::multisession, workers = 3L)
+future::plan(future::multisession, workers = 4L)
 # estimate season-specific index for each simulation draw 
 sim_ind_list_summer <- furrr::future_map(
-  fit_sims_list,
+  fit_sims_list[1:100],
   function (x) {
     pp <- predict(x, 
                   newdata = index_grid_hss %>%
@@ -249,7 +249,7 @@ saveRDS(
   here::here("data", "fits", "sim_fit", "coho_summer_sim_index_final_mvrfrw.rds")
 )
 sim_ind_list_fall <- furrr::future_map(
-  fit_sims_list,
+  fit_sims_list[1:100],
   function (x) {
     pp <- predict(x, 
                   newdata = index_grid_hss %>%
