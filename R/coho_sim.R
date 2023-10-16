@@ -235,7 +235,7 @@ future::plan(future::multisession, workers = 3L)
 sim_ind_list_summer <- furrr::future_map(
   fit_sims_list,
   function (x) {
-    pp_sum <- predict(x, 
+    pp <- predict(x, 
                   newdata = index_grid_hss %>%
                     filter(season_f == "su") ,
                   se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
