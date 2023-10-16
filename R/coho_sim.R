@@ -35,7 +35,8 @@ dat <- dat_in %>%
     day_night = as.factor(day_night)) %>% 
   filter(species == "coho",
          # remove spring samples
-         !season_f == "sp")
+         !season_f == "sp") %>%
+  droplevels()
 
 
 # same specs as normal
@@ -225,6 +226,9 @@ index_grid_hss <- readRDS(here::here("data", "index_hss_grid.rds")) %>%
 
 sp_scalar <- 1 * (13 / 1000)
 
+levels(dat$season_f)
+index_grid_hss$season_f <- factor(index_grid_hss$season_f, levels = c("su", "wi"))
+stopifnot(identical(levels(dat$season_f), levels(index_grid_hss$season_f)))
 
 future::plan(future::multisession, workers = 3L)
 # estimate season-specific index for each simulation draw 
