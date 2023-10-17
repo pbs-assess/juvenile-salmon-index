@@ -70,36 +70,57 @@ fit <- sdmTMB(
   groups = "season_f",
   silent = FALSE
 )
+saveRDS(fit, here::here("data", "fits", "coho_spatial_varying_nb2_mvrfrw_only.rds"))
+
 
 # simulate from year FE
 set.seed(456)
 
 f <- here::here("data", "fits", "nb_mcmc_draws_nb2_mvrfrw_coho.rds")
-if (!file.exists(f)) {
-  # hard coded with large values for cluster
-  object <- fit
-  samp <- sample_mle_mcmc(
-    object, mcmc_iter = 220L, mcmc_warmup = 200L, mcmc_chains = 50L,
-    stan_args = list(thin = 5L, cores = 50L)
-  )
-  # samp <- sample_mle_mcmc(object, mcmc_iter = 105, mcmc_warmup = 100)
+# if (!file.exists(f)) {
+#   # hard coded with large values for cluster
+#   object <- fit
+#   samp <- sample_mle_mcmc(
+#     object, mcmc_iter = 220L, mcmc_warmup = 200L, mcmc_chains = 50L,
+#     stan_args = list(thin = 5L, cores = 50L)
+#   )
+#   # samp <- sample_mle_mcmc(object, mcmc_iter = 105, mcmc_warmup = 100)
+# 
+#   obj <- object$tmb_obj
+#   random <- unique(names(obj$env$par[obj$env$random]))
+#   pl <- as.list(object$sd_report, "Estimate")
+#   fixed <- !(names(pl) %in% random)
+#   map <- lapply(pl[fixed], function(x) factor(rep(NA, length(x))))
+#   obj <- TMB::MakeADFun(obj$env$data, pl, map = map, DLL = "sdmTMB")
+#   obj_mle <- object
+#   obj_mle$tmb_obj <- obj
+#   obj_mle$tmb_map <- map
+#   sim_out <- simulate(obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp), 
+#                       nsim = 200)
+# 
+#   saveRDS(sim_out, f)
+# } else {
+#   sim_out <- readRDS(f)
+# }
 
-  obj <- object$tmb_obj
-  random <- unique(names(obj$env$par[obj$env$random]))
-  pl <- as.list(object$sd_report, "Estimate")
-  fixed <- !(names(pl) %in% random)
-  map <- lapply(pl[fixed], function(x) factor(rep(NA, length(x))))
-  obj <- TMB::MakeADFun(obj$env$data, pl, map = map, DLL = "sdmTMB")
-  obj_mle <- object
-  obj_mle$tmb_obj <- obj
-  obj_mle$tmb_map <- map
-  sim_out <- simulate(obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp), 
-                      nsim = 200)
+# hard coded with large values for cluster
+object <- fit
+samp <- sample_mle_mcmc(object, mcmc_iter = 110, mcmc_warmup = 100)
 
-  saveRDS(sim_out, f)
-} else {
-  sim_out <- readRDS(f)
-}
+obj <- object$tmb_obj
+random <- unique(names(obj$env$par[obj$env$random]))
+pl <- as.list(object$sd_report, "Estimate")
+fixed <- !(names(pl) %in% random)
+map <- lapply(pl[fixed], function(x) factor(rep(NA, length(x))))
+obj <- TMB::MakeADFun(obj$env$data, pl, map = map, DLL = "sdmTMB")
+obj_mle <- object
+obj_mle$tmb_obj <- obj
+obj_mle$tmb_map <- map
+sim_out <- simulate(obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp), 
+                    nsim = 10)
+saveRDS(sim_out, here::here("data", "nb_mcmc_draws_nb2_mvrfrw_coho_small.rds"))
+
+
 
 # fit model to sims
 gc()
@@ -264,4 +285,90 @@ saveRDS(
   sim_ind_list_fall ,
   here::here("data", "fits", "sim_fit", "coho_fall_sim_index_final_mvrfrw.rds")
 )
+
+
+sim_ind_list_summer <- readRDS(
+  here::here("data", "fits", "sim_fit", "coho_summer_sim_index_final_mvrfrw.rds")
+)
+sim_ind_list_fall <- readRDS(
+  here::here("data", "fits", "sim_fit", "coho_fall_sim_index_final_mvrfrw.rds")
+)
+
+
+# true indices 
+summer_pred <- predict(
+  fit, 
+  newdata = index_grid_hss %>%
+    filter(season_f == "su") ,
+  se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE
+)
+true_index_summer <- get_index(
+  summer_pred, area = sp_scalar, bias_correct = TRUE
+) %>%
+  mutate(season_f = "su",
+         species = "coho")
+fall_pred <- predict(
+  fit, 
+  newdata = index_grid_hss %>%
+    filter(season_f == "wi") ,
+  se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE
+)
+true_index_fall <- get_index(
+  fall_pred, area = sp_scalar, bias_correct = TRUE
+) %>%
+  mutate(season_f = "wi",
+         species = "coho")
+
+true_ind_dat <- rbind(true_index_summer, true_index_fall) %>% 
+  mutate(
+    season = fct_recode(season_f, "summer" = "su", "fall" = "wi"),
+    year_f = as.factor(year)
+  )
+
+
+
+# combine sims and join
+n_iter <- length(sim_ind_list_summer)
+sim_ind_dat <- tibble(
+  iter = rep(seq(1, n_iter, by = 1), times = 2),
+  sim_index = c(sim_ind_list_summer, sim_ind_list_fall)
+) %>%
+  unnest(cols = "sim_index") %>%
+  left_join(
+    ., 
+    true_ind_dat %>% 
+      select(species, year, year_f, season_f, true_log_est = log_est),
+    by = c("species", "year", "season_f")) %>% 
+  mutate(
+    season = fct_recode(season_f, "summer" = "su", "fall" = "wi"),
+    resid_est = true_log_est - log_est
+  )
+
+ggplot() +
+  geom_boxplot(data = sim_ind_dat,
+               aes(x = year_f, y = log_est)) +
+  geom_point(data = true_ind_dat,
+             aes(x = year_f, y = log_est),
+             colour = "red") +
+  facet_wrap(~season, scales = "free_y") +
+  ggsidekick::theme_sleek() +
+  theme(legend.position = "top") +
+  scale_x_discrete(breaks = seq(2000, 2020, by = 5)) +
+  labs(y = "Log Estimated Abundance") +
+  theme(axis.title.x = element_blank())
+
+
+ggplot() +
+  geom_boxplot(data = sim_ind_dat,
+               aes(x = year_f, y = resid_est)) +
+  geom_hline(yintercept = 0, lty = 2, colour = "red") +
+  facet_wrap(~season, scales = "free_y") +
+  ggsidekick::theme_sleek() +
+  theme(legend.position = "top") +
+  scale_x_discrete(breaks = seq(2000, 2020, by = 5)) +
+  labs(y = "Index Residuals") +
+  theme(axis.title.x = element_blank())
+
+
+pars <- readRDS(here::here("data", "preds", "sim_pars_mvrfrw.rds"))
 

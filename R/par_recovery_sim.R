@@ -410,6 +410,9 @@ true_index_list <- readRDS(
 
 true_ind_dat <- true_index_list %>%
   bind_rows() %>% 
+  filter(!species == "coho") %>% 
+  rbind(., true_index_fall) %>% 
+  rbind(., true_index_summer) %>% 
   mutate(
     season = fct_recode(season_f, "summer" = "su", "fall" = "wi"),
     survey = case_when(
@@ -424,7 +427,7 @@ true_ind_dat <- true_index_list %>%
 
 
 sim_index_list_summer <- purrr::map(
-  sp_vec,
+  sp_vec[1:4],
   ~ readRDS(
     here::here("data", "fits", "sim_fit",
                paste(.x, "_summer_sim_index_final_mvrfrw.rds", sep = ""))
@@ -442,7 +445,7 @@ n_iter <- length(sim_index_list_summer[[1]]) #how many sims per species?
 
 sim_ind_dat <- tibble(
   # species = c(rep(sp_vec, each = n_iter), rep(sp_vec, each = n_iter)),
-  iter = rep(seq(1, n_iter, by = 1), times = (length(sp_vec) * 2) - 1),
+  iter = rep(seq(1, n_iter, by = 1), times = (length(sp_vec[1:4]) * 2)),
   sim_index = c(do.call(c, sim_index_list_summer), 
                 do.call(c, sim_index_list_fall))
 ) %>%
