@@ -10,7 +10,7 @@ library(sdmTMBextra)
 
 
 ncores <- parallel::detectCores() 
-future::plan(future::multisession, workers = 5L)
+future::plan(future::multisession, workers = 4L)
 
 
 # make subdirectories for storage
@@ -32,11 +32,14 @@ dat <- dat_in %>%
     scale_depth = scale(as.numeric(target_depth))[ , 1],
     scale_yday = scale(as.numeric(yday))[ , 1],
     year_season_f = paste(year_f, season_f, sep = "_") %>% as.factor(),
-    day_night = as.factor(day_night)) %>% 
-  filter(species == "coho",
+    day_night = as.factor(day_night),
+    bias = ifelse(year > 2015, "yes", "no")) %>% 
+  filter(species == "coho"#,
          # remove spring samples
-         !season_f == "sp") %>%
+         # !season_f == "sp"
+         ) %>%
   droplevels()
+
 
 
 # same specs as normal
@@ -57,20 +60,67 @@ spde <- make_mesh(
 
 # fit model without season-specific spatial RFs and no spring data
 fit <- sdmTMB(
-  n_juv ~ 0 + season_f + survey_f + day_night + scale_dist +
+  n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
     scale_depth,
   offset = dat$effort,
   data = dat,
   mesh = spde,
   family = sdmTMB::nbinom2(),
-  spatial = "on",
+  spatial = "off",
+  spatial_varying = ~ 0 + season_f,
   time = "year",
   spatiotemporal = "rw",
   anisotropy = TRUE,
   groups = "season_f",
+  control = sdmTMBcontrol(
+    map = list(
+      ln_tau_Z = factor(
+        rep(1, times = length(unique(dat$season_f)))
+      )
+    )
+  ),
   silent = FALSE
 )
 saveRDS(fit, here::here("data", "fits", "coho_spatial_varying_nb2_mvrfrw_only.rds"))
+fit <- readRDS(here::here("data", "fits", "coho_spatial_varying_nb2_mvrfrw_only.rds"))
+
+
+fit2 <- sdmTMB(
+  n_juv ~ 0 + season_f,
+  offset = dat$effort,
+  data = dat,
+  mesh = spde,
+  family = sdmTMB::nbinom2(),
+  spatial = "on",
+  silent = FALSE
+)
+pp <- predict(fit2, newdata = dat)
+
+
+fit3 <- sdmTMB(
+  n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+    scale_depth,
+  offset = dat$effort,
+  data = dat,
+  mesh = spde,
+  family = sdmTMB::nbinom2(),
+  spatial = "off",
+  spatial_varying = ~ 0 + season_f,
+  time = "year",
+  spatiotemporal = "ar1",
+  anisotropy = TRUE,
+  # groups = "season_f",
+  control = sdmTMBcontrol(
+    map = list(
+      ln_tau_Z = factor(
+        rep(1, times = length(unique(dat$season_f)))
+      )
+    )
+  ),
+  silent = FALSE
+)
+saveRDS(fit3, here::here("data", "fits", "coho_spatial_varying_nb2_old.rds"))
+fit3 <- readRDS(here::here("data", "fits", "coho_spatial_varying_nb2_old.rds"))
 
 
 # simulate from year FE
@@ -104,7 +154,7 @@ f <- here::here("data", "fits", "nb_mcmc_draws_nb2_mvrfrw_coho.rds")
 # }
 
 # hard coded with large values for cluster
-object <- fit
+object <- fit2
 samp <- sample_mle_mcmc(object, mcmc_iter = 110, mcmc_warmup = 100)
 
 obj <- object$tmb_obj
@@ -118,7 +168,8 @@ obj_mle$tmb_obj <- obj
 obj_mle$tmb_map <- map
 sim_out <- simulate(obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp), 
                     nsim = 10)
-saveRDS(sim_out, here::here("data", "nb_mcmc_draws_nb2_mvrfrw_coho_small.rds"))
+saveRDS(sim_out, here::here("data", "nb_mcmc_draws_nb2_mvrfrw_coho_old.rds"))
+sim_out <- readRDS(here::here("data", "nb_mcmc_draws_nb2_mvrfrw_coho_old.rds"))
 
 
 
@@ -130,7 +181,7 @@ dir.create(here::here("data", "fits", "sim_fit"), showWarnings = FALSE)
 # spread to list then fit 
 sims_list <- apply(sim_out, 2, as.list)
 
-f <- here::here("data", "fits", "sim_fit", "coho_nb2_mvrfrw.rds")
+f <- here::here("data", "fits", "sim_fit", "coho_nb2_mvrfrw_old.rds")
 if (!file.exists(f)) {
   fit_sims_list <- furrr::future_map(
     sims_list,
@@ -139,18 +190,32 @@ if (!file.exists(f)) {
         mutate(
           sim_catch = as.numeric(x)
         )
+      # sdmTMB(
+      #   sim_catch ~ 0 + season_f + survey_f + day_night + scale_dist +
+      #     scale_depth,
+      #   offset = dum_in$effort,
+      #   data = dum_in,
+      #   mesh = spde,
+      #   family = sdmTMB::nbinom2(),
+      #   spatial = "on",
+      #   time = "year",
+      #   spatiotemporal = "rw",
+      #   anisotropy = TRUE,
+      #   groups = "season_f",
+      #   silent = TRUE
+      # )
       sdmTMB(
         sim_catch ~ 0 + season_f + survey_f + day_night + scale_dist +
-          scale_depth,
+          scale_depth + year_f,
         offset = dum_in$effort,
         data = dum_in,
         mesh = spde,
         family = sdmTMB::nbinom2(),
-        spatial = "on",
+        spatial = "off",
+        spatial_varying = ~ 0 + season_f,
         time = "year",
-        spatiotemporal = "rw",
+        spatiotemporal = "ar1",
         anisotropy = TRUE,
-        groups = "season_f",
         silent = TRUE
       )
     }
@@ -202,12 +267,12 @@ saveRDS(pars, here::here("data", "preds", "sim_pars_mvrfrw.rds"))
 
 
 # as above but for fitted model
-fix <- tidy(fit, effects = "fixed")
-ran <- tidy(fit, effects = "ran_pars")
+fix <- tidy(fit2, effects = "fixed")
+ran <- tidy(fit2, effects = "ran_pars")
 
 # pull upsilon estimate separately (not currently generated by predict)
-est <- as.list(fit$sd_report, "Estimate", report = TRUE)
-se <- as.list(fit$sd_report, "Std. Error", report = TRUE)
+est <- as.list(fit2$sd_report, "Estimate", report = TRUE)
+se <- as.list(fit2$sd_report, "Std. Error", report = TRUE)
 upsilon <- data.frame(
   term = "sigma_U",
   log_est = est$log_sigma_U,
@@ -243,22 +308,27 @@ ggplot() +
 ## generate indices
 
 index_grid_hss <- readRDS(here::here("data", "index_hss_grid.rds")) %>% 
-  filter(!season_f == "sp") 
+  mutate(day_night = as.factor(day_night))
+
 
 sp_scalar <- 1 * (13 / 1000)
 
-levels(dat$season_f)
-index_grid_hss$season_f <- factor(index_grid_hss$season_f, levels = c("su", "wi"))
+# levels(dat$season_f)
+index_grid_hss$day_night <- factor(index_grid_hss$day_night, 
+                                   levels = levels(dat$day_night))
 stopifnot(identical(levels(dat$season_f), levels(index_grid_hss$season_f)))
+stopifnot(identical(levels(dat$year_f), levels(index_grid_hss$year_f)))
+stopifnot(identical(levels(dat$day_night), levels(index_grid_hss$day_night)))
+stopifnot(identical(levels(dat$survey_f), levels(index_grid_hss$survey_f)))
+
 
 future::plan(future::multisession, workers = 4L)
 # estimate season-specific index for each simulation draw 
 sim_ind_list_summer <- furrr::future_map(
-  fit_sims_list[1:100],
+  fit_sims_list[1:10],
   function (x) {
     pp <- predict(x, 
-                  newdata = index_grid_hss %>%
-                    filter(season_f == "su") ,
+                  newdata = index_grid_hss,
                   se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
     get_index(pp, area = sp_scalar, bias_correct = TRUE) %>%
       mutate(season_f = "su",
@@ -270,7 +340,7 @@ saveRDS(
   here::here("data", "fits", "sim_fit", "coho_summer_sim_index_final_mvrfrw.rds")
 )
 sim_ind_list_fall <- furrr::future_map(
-  fit_sims_list[1:100],
+  fit_sims_list[1:10],
   function (x) {
     pp <- predict(x, 
                   newdata = index_grid_hss %>%
@@ -285,6 +355,16 @@ saveRDS(
   sim_ind_list_fall ,
   here::here("data", "fits", "sim_fit", "coho_fall_sim_index_final_mvrfrw.rds")
 )
+
+
+
+
+pp <- predict(fit3, 
+              newdata = index_grid_hss,
+              se_fit = FALSE, re_form = NA)
+
+
+
 
 
 sim_ind_list_summer <- readRDS(
@@ -370,5 +450,72 @@ ggplot() +
   theme(axis.title.x = element_blank())
 
 
+full_grid_resid1
+full_grid_resid2
+
+
+
 pars <- readRDS(here::here("data", "preds", "sim_pars_mvrfrw.rds"))
 
+
+p_foo <- function(x, dat_in) {
+  pp <- predict(x,
+                newdata = dat_in,
+                return_tmb_report = TRUE)
+  p_out <- predict(x,
+                   newdata = dat_in,
+                   se_fit = FALSE, re_form = NULL)
+  
+  p_out %>%
+    mutate(upsilon_stc = as.numeric(pp$proj_upsilon_st_A_vec))
+}   
+
+
+## compare spatial predictions
+fall_pred_sim <- p_foo(
+  x = fit_sims_list[[1]], 
+  dat_in = index_grid_hss %>%
+    filter(season_f == "wi",
+           utm_y_1000 > 5500)
+)
+fall_pred_real <- p_foo(
+  x = fit, 
+  dat_in = index_grid_hss %>%
+    filter(season_f == "wi",
+           utm_y_1000 > 5500)
+)
+
+fall_pred <- fall_pred_sim %>% 
+  mutate(sim_minus_real = est - fall_pred_real$est,
+         sim_minus_real_eps = upsilon_stc - fall_pred_real$upsilon_stc,
+         sim_minus_real_fe = est_non_rf - fall_pred_real$est_non_rf)
+
+ggplot(fall_pred %>% filter(year > 2010),
+       aes(x = utm_x_1000, y = utm_y_1000, fill = sim_minus_real_eps)) +
+  geom_raster() +
+  scale_fill_gradient2() +
+  facet_wrap(~ year)
+
+
+summer_pred_sim <- p_foo(
+  x = fit_sims_list[[1]], 
+  dat_in = index_grid_hss %>%
+    filter(season_f == "su",
+           utm_y_1000 > 5550)
+)
+summer_pred_real <- p_foo(
+  x = fit, 
+  dat_in = index_grid_hss %>%
+    filter(season_f == "su",
+           utm_y_1000 > 5500)
+)
+
+summer_pred <- summer_pred_sim %>% 
+  mutate(sim_minus_real = est - summer_pred_real$est,
+         sim_minus_real_eps = upsilon_stc - summer_pred_real$upsilon_stc)
+
+ggplot(summer_pred %>% filter(year > 2010),
+       aes(x = utm_x_1000, y = utm_y_1000, fill = sim_minus_real_eps)) +
+  geom_raster() +
+  scale_fill_gradient2() +
+  facet_wrap(~ year)
