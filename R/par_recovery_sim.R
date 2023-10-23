@@ -72,7 +72,7 @@ saveRDS(sims_list,
 sims_list <- readRDS(here::here("data", "fits", "nb_mcmc_draws_nb2_mvrfrw.rds"))
 
 
-all_fit_tbl$sims <- purrr::map(sims_list, ~ .x[ , 1:10]) 
+all_fit_tbl$sims <- sims_list
 
 # check residuals
 # dharma_list <- purrr::map2(all_fit_tbl$sims, all_fit_tbl$fit,
@@ -363,7 +363,7 @@ index_grid_hss <- readRDS(here::here("data", "index_hss_grid.rds")) %>%
          trim = ifelse(
            season_f == "wi" & utm_y_1000 < 5551, "yes", "no"
          )) %>%
-  #subset to northern domain
+  #subset to northern domain that's well sampled in recent years
   filter(trim == "no")
 
 sp_scalar <- 1 * (13 / 1000)
@@ -371,27 +371,27 @@ sp_scalar <- 1 * (13 / 1000)
 
 future::plan(future::multisession, workers = 2L)
 # estimate season-specific index for each simulation draw 
-for (i in seq_along(sp_vec[3:5])) {
+for (i in seq_along(sp_vec)) {
   sim_tbl_sub <- sim_tbl %>% filter(species == sp_vec[i])
-  # sim_ind_list_summer <- furrr::future_map(
-  #   sim_tbl_sub$sim_fit,#[1:100],
-  #   function (x) {
-  #     pp <- predict(x, 
-  #                   newdata = index_grid_hss %>%
-  #                     filter(season_f == "su"),
-  #                   se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
-  #     get_index(pp, area = sp_scalar, bias_correct = TRUE) %>%
-  #       mutate(season_f = "su",
-  #              species = sp_vec[i])
-  #   }
-  # )  
-  # saveRDS(
-  #   sim_ind_list_summer ,
-  #   here::here("data", "fits", "sim_fit",
-  #              paste(sp_vec[i], "summer_sim_index_final_mvrfrw.rds", sep = ""))
-  # )
+  sim_ind_list_summer <- furrr::future_map(
+    sim_tbl_sub$sim_fit[1:100],
+    function (x) {
+      pp <- predict(x,
+                    newdata = index_grid_hss %>%
+                      filter(season_f == "su"),
+                    se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
+      get_index(pp, area = sp_scalar, bias_correct = TRUE) %>%
+        mutate(season_f = "su",
+               species = sp_vec[i])
+    }
+  )
+  saveRDS(
+    sim_ind_list_summer ,
+    here::here("data", "fits", "sim_fit",
+               paste(sp_vec[i], "_summer_sim_index_final_mvrfrw.rds", sep = ""))
+  )
   sim_ind_list_fall <- furrr::future_map(
-    sim_tbl_sub$sim_fit,#[1:100],
+    sim_tbl_sub$sim_fit[1:100],
     function (x) {
       pp <- predict(x, 
                     newdata = index_grid_hss %>%
@@ -405,7 +405,7 @@ for (i in seq_along(sp_vec[3:5])) {
   saveRDS(
     sim_ind_list_fall ,
     here::here("data", "fits", "sim_fit",
-               paste(sp_vec[i], "fall_sim_index_final_mvrfrw.rds", sep = ""))
+               paste(sp_vec[i], "_fall_sim_index_final_mvrfrw.rds", sep = ""))
   )
 }
 
@@ -442,7 +442,8 @@ true_index_fall <- furrr::future_map2(
 
 true_ind_dat <- #true_index_list %>%
   #bind_rows() %>% 
-  rbind(true_index_summer, true_index_fall) %>% 
+  rbind(true_index_summer %>% bind_rows(), 
+        true_index_fall %>% bind_rows()) %>% 
   mutate(
     season = fct_recode(season_f, "summer" = "su", "fall" = "wi"),
     survey = case_when(
@@ -457,25 +458,25 @@ true_ind_dat <- #true_index_list %>%
 
 
 sim_index_list_summer <- purrr::map(
-  sp_vec[1:4],
+  sp_vec,
   ~ readRDS(
     here::here("data", "fits", "sim_fit",
                paste(.x, "_summer_sim_index_final_mvrfrw.rds", sep = ""))
   )
 )
 sim_index_list_fall <- purrr::map(
-  sp_vec[1:4],
+  sp_vec,
   ~ readRDS(
     here::here("data", "fits", "sim_fit",
                paste(.x, "_fall_sim_index_final_mvrfrw.rds", sep = ""))
   ) 
 )
 
-n_iter <- length(sim_index_list_summer[[1]]) #how many sims per species?
+n_iter <- length(sim_index_list_fall[[1]]) #how many sims per species?
 
 sim_ind_dat <- tibble(
   # species = c(rep(sp_vec, each = n_iter), rep(sp_vec, each = n_iter)),
-  iter = rep(seq(1, n_iter, by = 1), times = (length(sp_vec[1:4]) * 2)),
+  iter = rep(seq(1, n_iter, by = 1), times = (length(sp_vec) * 2)),
   sim_index = c(do.call(c, sim_index_list_summer), 
                 do.call(c, sim_index_list_fall))
 ) %>%
@@ -488,7 +489,6 @@ sim_ind_dat <- tibble(
   mutate(
     season = fct_recode(season_f, "summer" = "su", "fall" = "wi"),
     resid_est = true_log_est - log_est
-    # resid_est = est - exp(true_log_est)
   )
 
 
@@ -521,65 +521,3 @@ ggplot() +
   theme(axis.title.x = element_blank())
 dev.off()
 
-
-
-## tweak for coho only
-
-coho_tbl <- sim_tbl %>% 
-  filter(species == "coho")
-
-
-
-
-
-index_grid_hss <- readRDS(here::here("data", "index_hss_grid.rds"))
-
-sp_scalar <- 1 * (13 / 1000)
-
-sim_coho_list_fall <- furrr::future_map(
-  coho_tbl$sim_fit,
-  function (x) {
-    pp <- predict(x, 
-                  newdata = index_grid_hss %>%
-                    filter(season_f == "wi"),
-                  se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
-    get_index(pp, area = sp_scalar, bias_correct = TRUE)
-  }
-)
-
-coho_tbl <- tibble(
-  # species = c(rep(sp_vec, each = n_iter), rep(sp_vec, each = n_iter)),
-  iter = seq(1, 20, by = 1),
-  sim_index = sim_coho_list_fall
-) %>%
-  unnest(cols = "sim_index")  %>% 
-  
-  mutate(
-    # season = fct_recode(season_f, "summer" = "su", "fall" = "wi"),
-    resid_est = true_log_est - log_est
-    # resid_est = est - exp(true_log_est)
-  )
-
-
-# sim_coho_index_fall <- get_index(
-#   sim_coho_pred_fall, area = sp_scalar, bias_correct = TRUE
-# ) 
-# sim_coho_index_fall$data <- "sim"
-
-true_coho_index_fall <- true_ind_dat %>% 
-  filter(species == "coho",
-         season_f == "wi") %>% 
-  mutate(data = "original")
-
-rbind(
-  sim_coho_index_fall, 
-  true_coho_index_fall %>%
-    select(colnames(sim_coho_index_fall))
-) %>% 
-  ggplot(.) +
-  geom_point(aes(x = year, y = log_est, fill = data), shape = 21)
-
-ggplot() +
-  geom_boxplot(data = coho_tbl, aes(x = as.factor(year), y = log_est)) +
-  geom_point(data = true_coho_index_fall, aes(x = as.factor(year), y = log_est),
-             colour = "red")
