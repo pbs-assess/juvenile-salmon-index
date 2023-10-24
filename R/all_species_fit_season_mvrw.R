@@ -33,7 +33,6 @@ dat <- dat_in %>%
     effort = log(volume_km3),
     scale_dist = scale(as.numeric(dist_to_coast_km))[ , 1],
     scale_depth = scale(as.numeric(target_depth))[ , 1],
-    year_season_f = paste(year_f, season_f, sep = "_") %>% as.factor(),
     day_night = as.factor(day_night)) %>% 
   filter(!species == "steelhead") %>% 
   droplevels()
@@ -72,142 +71,134 @@ plot(spde)
 spde$mesh$n
 
 
-# make key so that missing year-season combinations can be indexed
-year_season_key <- expand.grid(
-  year = unique(dat_in$year) %>% sort(),
-  season_f = unique(dat_in$season_f) %>% sort()
-) %>% 
-  arrange(year, season_f) 
+# shape file for coastline
+coast <- rbind(rnaturalearth::ne_states( "United States of America", 
+                                         returnclass = "sf"), 
+               rnaturalearth::ne_states( "Canada", returnclass = "sf")) %>% 
+  sf::st_crop(., xmin = -129, ymin = 48.25, xmax = -123.25, ymax = 51.3) %>% 
+  sf::st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
 
 
-dat_tbl <- dat %>%
-  group_by(species) %>%
-  group_nest()
+## FIT -------------------------------------------------------------------------
 
+# dat_tbl <- dat %>%
+#   group_by(species) %>%
+#   group_nest()
+# 
 # mvrfrw only
-fits_list_nb2 <- furrr::future_map(
-  dat_tbl$data,
-  function(dat_in) {
-    sdmTMB(
-      n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
-        scale_depth,
-      offset = dat_in$effort,
-      data = dat_in,
-      mesh = spde,
-      family = sdmTMB::nbinom2(),
-      spatial = "off",
-      spatial_varying = ~ 0 + season_f,
-      time = "year",
-      spatiotemporal = "rw",
-      anisotropy = TRUE,
-      groups = "season_f",
-      control = sdmTMBcontrol(
-        map = list(
-          ln_tau_Z = factor(
-            rep(1, times = length(unique(dat$season_f)))
-          )
-        )
-      ),
-      silent = FALSE
-    )
-  }
-)
-# mvrfrw only + year FE
-fits_list_nb2_fe <- furrr::future_map(
-  dat_tbl$data,
-  function(dat_in) {
-    sdmTMB(
-      n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
-        scale_depth + year_f,
-      offset = dat_in$effort,
-      data = dat_in,
-      mesh = spde,
-      family = sdmTMB::nbinom2(),
-      spatial = "off",
-      spatial_varying = ~ 0 + season_f,
-      time = "year",
-      spatiotemporal = "rw",
-      anisotropy = TRUE,
-      groups = "season_f",
-      control = sdmTMBcontrol(
-        map = list(
-          ln_tau_Z = factor(
-            rep(1, times = length(unique(dat$season_f)))
-          )
-        )
-      ),
-      silent = FALSE
-    )
-  }
-)
-
-dat_tbl_mvrfrw <- dat_tbl %>%
-  mutate(fit = fits_list_nb2)
-saveRDS(
-  dat_tbl_mvrfrw, here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_only.rds")
-)
-
-dat_tbl_fe <- dat_tbl %>%
-  mutate(fit = fits_list_nb2_fe)
-saveRDS(
-  dat_tbl_fe, here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw.rds")
-)
-
-
-dat_tbl_mvrfrw <- readRDS(
-  here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_only.rds")
-)
-dat_tbl_fe <- readRDS(
-  here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw.rds")
-)
-
-
-# make AIC table
-dat_tbl <- rbind(
-  dat_tbl_mvrfrw %>% mutate(model = "mvrfrw"),
-  dat_tbl_fe %>% mutate(model = "mvrfrw_year_fe")
-) %>%
-  mutate(
-    AIC = purrr::map(.$fit, AIC) %>%
-      unlist(),
-    log_likelihood = purrr::map(
-      .$fit,
-      ~ logLik(.x) %>%
-        # attr(., "df") %>%
-        as.numeric()
-    ) %>%
-      unlist(),
-    n_FE = purrr::map(
-      .$fit,
-      ~ tidy(.x, effects = "fixed", conf.int = T) %>%
-        nrow()
-    ) %>%
-      unlist()
-  )
-
-dat_tbl %>%
-  select(species, model, AIC, log_likelihood, n_FE) %>%
-  arrange(species, AIC)
-
-
-# FEs favored for sockeye and pink, finalize accordingly
-dat_tbl <- dat_tbl %>%
-  filter((species %in% c("chinook", "coho", "chum") & model == "mvrfrw") |
-           (species %in% c("pink", "sockeye") & model == "mvrfrw_year_fe"))
-saveRDS(
-  dat_tbl,
-  here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_final.rds")
-)
-
-dat_tbl <- readRDS(
-  here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_final.rds")
-)
-
-# scalar for spatial predictions; since preds are in m3, multiply by
-# (1 * 1 * 13) because effort in m but using 1x1 km grid cells and 
-# assuming mean net opening (13 m)
-sp_scalar <- 1 * (13 / 1000)
-
+# fits_list_nb2 <- furrr::future_map(
+#   dat_tbl$data,
+#   function(dat_in) {
+#     sdmTMB(
+#       n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+#         scale_depth,
+#       offset = dat_in$effort,
+#       data = dat_in,
+#       mesh = spde,
+#       family = sdmTMB::nbinom2(),
+#       spatial = "off",
+#       spatial_varying = ~ 0 + season_f,
+#       time = "year",
+#       spatiotemporal = "rw",
+#       anisotropy = TRUE,
+#       groups = "season_f",
+#       control = sdmTMBcontrol(
+#         map = list(
+#           ln_tau_Z = factor(
+#             rep(1, times = length(unique(dat$season_f)))
+#           )
+#         )
+#       ),
+#       silent = FALSE
+#     )
+#   }
+# )
+# # mvrfrw only + year FE
+# fits_list_nb2_fe <- furrr::future_map(
+#   dat_tbl$data,
+#   function(dat_in) {
+#     sdmTMB(
+#       n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+#         scale_depth + year_f,
+#       offset = dat_in$effort,
+#       data = dat_in,
+#       mesh = spde,
+#       family = sdmTMB::nbinom2(),
+#       spatial = "off",
+#       spatial_varying = ~ 0 + season_f,
+#       time = "year",
+#       spatiotemporal = "rw",
+#       anisotropy = TRUE,
+#       groups = "season_f",
+#       control = sdmTMBcontrol(
+#         map = list(
+#           ln_tau_Z = factor(
+#             rep(1, times = length(unique(dat$season_f)))
+#           )
+#         )
+#       ),
+#       silent = FALSE
+#     )
+#   }
+# )
+# 
+# dat_tbl_mvrfrw <- dat_tbl %>%
+#   mutate(fit = fits_list_nb2)
+# saveRDS(
+#   dat_tbl_mvrfrw, here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_only.rds")
+# )
+# 
+# dat_tbl_fe <- dat_tbl %>%
+#   mutate(fit = fits_list_nb2_fe)
+# saveRDS(
+#   dat_tbl_fe, here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw.rds")
+# )
+# 
+# 
+# dat_tbl_mvrfrw <- readRDS(
+#   here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_only.rds")
+# )
+# dat_tbl_fe <- readRDS(
+#   here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw.rds")
+# )
+# 
+# 
+# # make AIC table
+# dat_tbl <- rbind(
+#   dat_tbl_mvrfrw %>% mutate(model = "mvrfrw"),
+#   dat_tbl_fe %>% mutate(model = "mvrfrw_year_fe")
+# ) %>%
+#   mutate(
+#     AIC = purrr::map(.$fit, AIC) %>%
+#       unlist(),
+#     log_likelihood = purrr::map(
+#       .$fit,
+#       ~ logLik(.x) %>%
+#         # attr(., "df") %>%
+#         as.numeric()
+#     ) %>%
+#       unlist(),
+#     n_FE = purrr::map(
+#       .$fit,
+#       ~ tidy(.x, effects = "fixed", conf.int = T) %>%
+#         nrow()
+#     ) %>%
+#       unlist()
+#   )
+# 
+# dat_tbl %>%
+#   select(species, model, AIC, log_likelihood, n_FE) %>%
+#   arrange(species, AIC)
+# 
+# 
+# # FEs favored for sockeye and pink, finalize accordingly
+# dat_tbl <- dat_tbl %>%
+#   filter((species %in% c("chinook", "coho", "chum") & model == "mvrfrw") |
+#            (species %in% c("pink", "sockeye") & model == "mvrfrw_year_fe"))
+# saveRDS(
+#   dat_tbl,
+#   here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_final.rds")
+# )
 
 
 ## CHECKS ----------------------------------------------------------------------
@@ -280,6 +271,10 @@ dev.off()
 
 
 ## PARAMETER ESTIMATES ---------------------------------------------------------
+
+dat_tbl <- readRDS(
+  here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_final.rds")
+)
 
 # fixed parameter estimates
 fix_pars <- purrr::pmap(
@@ -542,6 +537,12 @@ dev.off()
 
 ## SPATIAL GRID  ---------------------------------------------------------------
 
+# scalar for spatial predictions; since preds are in m3, multiply by
+# (1 * 1 * 13) because effort in m but using 1x1 km grid cells and 
+# assuming mean net opening (13 m)
+sp_scalar <- 1 * (13 / 1000)
+
+
 # predictive grid
 grid_list <- readRDS(here::here("data", "spatial", "pred_ipes_grid.RDS")) %>% 
   purrr::map(
@@ -554,6 +555,12 @@ grid_list <- readRDS(here::here("data", "spatial", "pred_ipes_grid.RDS")) %>%
 
 summer_grid <- grid_list$ipes_grid
 fall_grid <- grid_list$wcvi_grid
+
+year_season_key <- expand.grid(
+  year = unique(dat_in$year) %>% sort(),
+  season_f = unique(dat_in$season_f) %>% sort()
+) %>% 
+  arrange(year, season_f) 
 
 pred_grid_list <- rbind(
   year_season_key %>% mutate(survey_f = "hss"),
@@ -599,62 +606,100 @@ index_grid <- pred_grid_list %>%
   select(-c(depth, slope, shore_dist))
 
 
-# predictions for index (set to HSS reference values)
-index_grid_hss <- index_grid %>% filter(survey_f == "hss")
+# predictions for index (set to HSS reference values and constrain in summer)
+index_grid_hss <- index_grid %>% 
+  filter(survey_f == "hss") %>% 
+  mutate(day_night = as.factor(day_night),
+         trim = ifelse(
+           season_f == "wi" & utm_y_1000 < 5551, "yes", "no"
+         )) %>%
+  #subset to northern domain that's well sampled in recent years
+  filter(trim == "no")
+
 saveRDS(index_grid_hss, here::here("data", "index_hss_grid.rds"))
-# 
-# ind_preds_summer <- purrr::map(
-#   dat_tbl %>% pull(fit),
-#   ~ {
-#     predict(.x,
-#             newdata = index_grid_hss %>% 
-#               filter(season_f == "su"),
-#             se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
-#   }
-# )
-# ind_preds_fall <- purrr::map(
-#   dat_tbl %>% pull(fit),
-#   ~ {
-#     predict(.x,
-#             newdata = index_grid_hss %>% 
-#               filter(season_f == "wi"),
-#             se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
-#   }
-# )
-# 
-# index_list_summer <- furrr::future_map(
-#   ind_preds_summer,
-#   get_index,
-#   area = sp_scalar,
-#   bias_correct = TRUE
-# )
-# index_list_summer_out <- purrr::map2(
-#   index_list_summer, dat_tbl$species, 
-#   function (x, y) {
-#     x %>%
-#       mutate(season_f = "su", 
-#              species = y) 
-#   }
-# )
-# 
-# 
-# index_list_fall <- furrr::future_map(
-#   ind_preds_fall,
-#   get_index,
-#   area = sp_scalar,
-#   bias_correct = TRUE
-# )
-# index_list_fall_out <- purrr::map2(
-#   index_list_fall, dat_tbl$species, 
-#   function (x, y) {
-#     x %>%
-#       mutate(season_f = "wi", 
-#              species = y) 
-#   }
-# )
-# 
-# saveRDS(c(index_list_summer_out, index_list_fall_out), 
-#         here::here("data", "fits", "season_index_list_mvrfrw.rds"))
+
+
+# plot grid domains
+index_grid_plot <- index_grid_hss %>% 
+  filter(!season_f == "sp",
+         year == "2020") %>% 
+  mutate(season_f2 = factor(season_f, labels = c("summer", "fall")))
+index_grids <- ggplot() + 
+  geom_raster(
+    data = index_grid_plot,
+    aes(X, Y, fill = season_f2)
+  ) +
+  coord_fixed() +
+  geom_sf(data = coast, color = "black", fill = "white") +
+  ggsidekick::theme_sleek() +
+  scale_fill_brewer(
+    type = "qual", palette = 5
+  ) +
+  facet_wrap(~season_f2) +
+  theme(axis.title = element_blank(),
+        axis.text = element_blank(),
+        legend.position = "none") +
+  scale_x_continuous(limits = c(462700, 814800), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(5350050, 5681850), expand = c(0, 0))
+
+png(here::here("figs", "ms_figs_season_mvrw", "index_grids.png"),
+    height = 4.5, width = 8, units = "in", res = 200)
+index_grids
+dev.off()
+
+ 
+ind_preds_summer <- purrr::map(
+  dat_tbl %>% pull(fit),
+  ~ {
+    predict(.x,
+            newdata = index_grid_hss %>%
+              filter(season_f == "su"),
+            se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
+  }
+)
+ind_preds_fall <- purrr::map(
+  dat_tbl %>% pull(fit),
+  ~ {
+    predict(.x,
+            newdata = index_grid_hss %>%
+              filter(season_f == "wi"),
+            se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
+  }
+)
+
+index_list_summer <- furrr::future_map(
+  ind_preds_summer,
+  get_index,
+  area = sp_scalar,
+  bias_correct = TRUE
+)
+index_list_summer_out <- purrr::map2(
+  index_list_summer, dat_tbl$species,
+  function (x, y) {
+    x %>%
+      mutate(season_f = "su",
+             species = y)
+  }
+)
+
+
+index_list_fall <- furrr::future_map(
+  ind_preds_fall,
+  get_index,
+  area = sp_scalar,
+  bias_correct = TRUE
+)
+index_list_fall_out <- purrr::map2(
+  index_list_fall, dat_tbl$species,
+  function (x, y) {
+    x %>%
+      mutate(season_f = "wi",
+             species = y)
+  }
+)
+
+saveRDS(c(index_list_summer_out, index_list_fall_out),
+        here::here("data", "fits", "season_index_list_mvrfrw.rds"))
 
 
 index_list <- readRDS(
@@ -986,14 +1031,6 @@ dev.off()
 
  
 # SPATIAL PREDS ----------------------------------------------------------------
-
-# shape file for coastline
-coast <- rbind(rnaturalearth::ne_states( "United States of America", 
-                                         returnclass = "sf"), 
-               rnaturalearth::ne_states( "Canada", returnclass = "sf")) %>% 
-  sf::st_crop(., xmin = -129, ymin = 48.25, xmax = -123.25, ymax = 51.3) %>% 
-  sf::st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
-
 
 # similar to index grid except only HSS and fall survey domain to highlight 
 # spatial contrasts
