@@ -21,6 +21,7 @@ dir.create("data/fits", recursive = TRUE, showWarnings = FALSE)
 all_fit_tbl <- readRDS(
   here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_final.rds")
 )
+sp_vec <- unique(all_fit_tbl$species)
 
 
 # simulate from Stan output fixing FEs at MLE
@@ -112,8 +113,6 @@ sim_tbl <- purrr::pmap(
   left_join(., 
             all_fit_tbl %>% select(species, fit), 
             by = c("species"))
-
-sp_vec <- unique(sim_tbl$species)
 
 
 ## DISPERSION ------------------------------------------------------------------
@@ -407,6 +406,7 @@ ys_key <- expand.grid(
 ppn_coverage <- purrr::map(ys_key$year_season_f, function (x) {
   dd <- all_fit_tbl$data[[1]] %>% 
     filter(year_season_f == x)
+  raster_with_border <- if(grepl("su", x)) summer_raster else winter_raster
   if (nrow(dd) == 0) {
     raster_values <- 0
   } else {
@@ -415,7 +415,6 @@ ppn_coverage <- purrr::map(ys_key$year_season_f, function (x) {
     sp_points <- SpatialPointsDataFrame(
       points, proj4string = sp::CRS("+proj=utm +zone=9 +units=m"), dd
     )  
-    raster_with_border <- if(grepl("su", x)) summer_raster else winter_raster
     raster_values <- extract(raster_with_border, sp_points)
   }
   length(na.omit(raster_values)) / ncell(raster_with_border)
@@ -424,7 +423,8 @@ ppn_coverage <- purrr::map(ys_key$year_season_f, function (x) {
 
 ys_key2 <- ys_key %>% 
   mutate(
-    ppn_coverage = ppn_coverage
+    ppn_coverage = ppn_coverage,
+    year_f = as.factor(year)
   ) %>% 
   group_by(season_f) %>% 
   mutate(
@@ -436,76 +436,76 @@ ys_key2 <- ys_key %>%
 sp_scalar <- 1 * (13 / 1000)
 
 
-future::plan(future::multisession, workers = 2L)
-# estimate season-specific index for each simulation draw 
-for (i in seq_along(sp_vec)) {
-  sim_tbl_sub <- sim_tbl %>% filter(species == sp_vec[i])
-  sim_ind_list_summer <- furrr::future_map(
-    sim_tbl_sub$sim_fit[1:100],
-    function (x) {
-      pp <- predict(x,
-                    newdata = index_grid_hss %>%
-                      filter(season_f == "su"),
-                    se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
-      get_index(pp, area = sp_scalar, bias_correct = TRUE) %>%
-        mutate(season_f = "su",
-               species = sp_vec[i])
-    }
-  )
-  saveRDS(
-    sim_ind_list_summer ,
-    here::here("data", "fits", "sim_fit",
-               paste(sp_vec[i], "_summer_sim_index_final_mvrfrw.rds", sep = ""))
-  )
-  sim_ind_list_fall <- furrr::future_map(
-    sim_tbl_sub$sim_fit[1:100],
-    function (x) {
-      pp <- predict(x, 
-                    newdata = index_grid_hss %>%
-                      filter(season_f == "wi"),
-                    se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
-      get_index(pp, area = sp_scalar, bias_correct = TRUE) %>%
-        mutate(season_f = "wi",
-               species = sp_vec[i])
-    }
-  )
-  saveRDS(
-    sim_ind_list_fall ,
-    here::here("data", "fits", "sim_fit",
-               paste(sp_vec[i], "_fall_sim_index_final_mvrfrw.rds", sep = ""))
-  )
-}
+# future::plan(future::multisession, workers = 2L)
+# # estimate season-specific index for each simulation draw 
+# for (i in seq_along(sp_vec)) {
+#   sim_tbl_sub <- sim_tbl %>% filter(species == sp_vec[i])
+#   sim_ind_list_summer <- furrr::future_map(
+#     sim_tbl_sub$sim_fit[1:100],
+#     function (x) {
+#       pp <- predict(x,
+#                     newdata = index_grid_hss %>%
+#                       filter(season_f == "su"),
+#                     se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
+#       get_index(pp, area = sp_scalar, bias_correct = TRUE) %>%
+#         mutate(season_f = "su",
+#                species = sp_vec[i])
+#     }
+#   )
+#   saveRDS(
+#     sim_ind_list_summer ,
+#     here::here("data", "fits", "sim_fit",
+#                paste(sp_vec[i], "_summer_sim_index_final_mvrfrw.rds", sep = ""))
+#   )
+#   sim_ind_list_fall <- furrr::future_map(
+#     sim_tbl_sub$sim_fit[1:100],
+#     function (x) {
+#       pp <- predict(x, 
+#                     newdata = index_grid_hss %>%
+#                       filter(season_f == "wi"),
+#                     se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
+#       get_index(pp, area = sp_scalar, bias_correct = TRUE) %>%
+#         mutate(season_f = "wi",
+#                species = sp_vec[i])
+#     }
+#   )
+#   saveRDS(
+#     sim_ind_list_fall ,
+#     here::here("data", "fits", "sim_fit",
+#                paste(sp_vec[i], "_fall_sim_index_final_mvrfrw.rds", sep = ""))
+#   )
+# }
 
 
 # import saved indices from all_species_fit_season.R
 true_index_list <- readRDS(
-  here::here("data", "fits", "season_index_list_mvrfrw.rds")
+  here::here("data", "season_index_list_mvrfrw.rds")
 )
 
-true_index_summer <- furrr::future_map2(
-  all_fit_tbl$fit, all_fit_tbl$species,
-  function (x, y) {
-    pp <- predict(x,
-                  newdata = index_grid_hss %>%
-                    filter(season_f == "su"),
-                  se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
-    get_index(pp, area = sp_scalar, bias_correct = TRUE) %>%
-      mutate(season_f = "su",
-             species = y)
-  }
-)
-true_index_fall <- furrr::future_map2(
-  all_fit_tbl$fit, all_fit_tbl$species,
-  function (x, y) {
-    pp <- predict(x, 
-                  newdata = index_grid_hss %>%
-                    filter(season_f == "wi"),
-                  se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
-    get_index(pp, area = sp_scalar, bias_correct = TRUE) %>%
-      mutate(season_f = "wi",
-             species = y)
-  }
-) 
+# true_index_summer <- furrr::future_map2(
+#   all_fit_tbl$fit, all_fit_tbl$species,
+#   function (x, y) {
+#     pp <- predict(x,
+#                   newdata = index_grid_hss %>%
+#                     filter(season_f == "su"),
+#                   se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
+#     get_index(pp, area = sp_scalar, bias_correct = TRUE) %>%
+#       mutate(season_f = "su",
+#              species = y)
+#   }
+# )
+# true_index_fall <- furrr::future_map2(
+#   all_fit_tbl$fit, all_fit_tbl$species,
+#   function (x, y) {
+#     pp <- predict(x, 
+#                   newdata = index_grid_hss %>%
+#                     filter(season_f == "wi"),
+#                   se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
+#     get_index(pp, area = sp_scalar, bias_correct = TRUE) %>%
+#       mutate(season_f = "wi",
+#              species = y)
+#   }
+# ) 
 
 true_ind_dat <- true_index_list %>%
   bind_rows() %>%
@@ -546,41 +546,48 @@ sim_ind_dat <- tibble(
   left_join(
     ., 
     true_ind_dat %>% 
-      select(species, year, year_f, season_f, true_log_est = log_est),
+      dplyr::select(species, year, year_f, season_f, true_log_est = log_est),
     by = c("species", "year", "season_f")) %>% 
   mutate(
     season = fct_recode(season_f, "summer" = "su", "fall" = "wi"),
     resid_est = true_log_est - log_est
-  )
+  ) %>% 
+  left_join(
+    ., 
+    ys_key2 %>% dplyr::select(-year),
+    by = c("season_f", "year_f")) %>% 
+  glimpse()
 
 
 png(here::here("figs", "ms_figs_season_mvrw", "sim_index.png"), 
     height = 8, width = 8, units = "in", res = 200)
 ggplot() +
   geom_boxplot(data = sim_ind_dat,
-               aes(x = year_f, y = log_est)) +
+               aes(x = year_f, y = log_est, fill = scale_coverage)) +
   geom_point(data = true_ind_dat %>% filter(species %in% sp_vec),
-             aes(x = year_f, y = log_est, colour = survey)) +
+             aes(x = year_f, y = log_est), colour = "red") +
   facet_grid(species~season, scales = "free_y") +
   ggsidekick::theme_sleek() +
   theme(legend.position = "top") +
   scale_x_discrete(breaks = seq(2000, 2020, by = 5)) +
   labs(y = "Log Estimated Abundance") +
-  theme(axis.title.x = element_blank())
+  theme(axis.title.x = element_blank()) +
+  scale_fill_gradient2(name = "Relative Spatial\nCoverage")
 dev.off()
 
 png(here::here("figs", "ms_figs_season_mvrw", "resid_index.png"), 
     height = 8, width = 8, units = "in", res = 200)
 ggplot() +
   geom_boxplot(data = sim_ind_dat,
-               aes(x = year_f, y = resid_est)) +
+               aes(x = year_f, y = resid_est, fill = scale_coverage)) +
   geom_hline(yintercept = 0, lty = 2, colour = "red") +
   facet_grid(species~season, scales = "free_y") +
   ggsidekick::theme_sleek() +
   theme(legend.position = "top") +
   scale_x_discrete(breaks = seq(2000, 2020, by = 5)) +
   labs(y = "Index Residuals") +
-  theme(axis.title.x = element_blank())
+  theme(axis.title.x = element_blank())  +
+  scale_fill_gradient2(name = "Relative Spatial\nCoverage")
 dev.off()
 
 
