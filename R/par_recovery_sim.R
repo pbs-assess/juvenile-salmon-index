@@ -348,18 +348,18 @@ dev.off()
 
 
 # define years where survey occurred
-summer_years <- sim_tbl$fit[[1]]$data %>% 
-  filter(season_f == "su", 
-         # remove 2021 since only partial survey
-         !year_f == "2021") %>%
-  pull(year) %>% 
-  unique()
-fall_years <- sim_tbl$fit[[1]]$data %>% 
-  filter(season_f == "wi",
-         # remove 2020 since most of survey was outside of grid
-         !year_f == "2020") %>%
-  pull(year) %>% 
-  unique()
+# summer_years <- sim_tbl$fit[[1]]$data %>% 
+#   filter(season_f == "su", 
+#          # remove 2021 since only partial survey
+#          !year_f == "2021") %>%
+#   pull(year) %>% 
+#   unique()
+# fall_years <- sim_tbl$fit[[1]]$data %>%
+#   filter(season_f == "wi",
+#          # remove 2020 since most of survey was outside of grid
+#          !year_f == "2020") %>%
+#   pull(year) %>%
+#   unique()
 
 index_grid_hss <- readRDS(here::here("data", "index_hss_grid.rds")) %>% 
   mutate(day_night = as.factor(day_night),
@@ -370,44 +370,68 @@ index_grid_hss <- readRDS(here::here("data", "index_hss_grid.rds")) %>%
   filter(trim == "no")
 
 
-library(sf)
+library(raster)
+
+## create raster for each season's sampling grid
 winter_grid <- index_grid_hss %>% 
-  filter(year == "1998", season_f == "wi") %>% 
-  mutate(grid = row_number()) %>% 
-  st_as_sf(., coords = c("X", "Y"), 
-               crs = st_crs("+proj=utm +zone=9 +units=m")) 
+  filter(year == "1998", season_f == "wi")  %>% 
+  dplyr::select(X, Y) %>% 
+  SpatialPoints(
+    ., 
+    proj4string = sp::CRS("+proj=utm +zone=9 +units=m")
+  )
+winter_raster <- rasterize(winter_grid, raster(extent(winter_grid), 
+                                               res = c(5000, 5000)))
 
-# make grid from points, add buffer so that points represent centroid, create
-# irregular boundary and crop g
-grid_buffer <- st_buffer(winter_grid, dist = 500)
-hull <- st_convex_hull(grid_buffer)
-grid <- st_make_grid(st_bbox(hull), cellsize = 1000)
-grid_intersect <- st_intersection(grid, hull)
-grid_intersect_crop <- st_make_grid(grid_inter)
+summer_grid <- index_grid_hss %>% 
+  filter(year == "1998", season_f == "su")  %>% 
+  dplyr::select(X, Y) %>% 
+  SpatialPoints(
+    ., 
+    proj4string = sp::CRS("+proj=utm +zone=9 +units=m")
+  )
+summer_raster <- rasterize(summer_grid, raster(extent(summer_grid), 
+                                               res = c(5000, 5000)))
 
+# for each season-year combination identify proportion of cells sampled
+# only need to do one species because set locations are identical
+ys_key <- expand.grid(
+  year = seq(min(all_fit_tbl$data[[1]]$year), max(all_fit_tbl$data[[1]]$year),
+             by = 1),
+  season_f = c("su", "wi")
+) %>% 
+  mutate(
+    year_season_f = paste(year, season_f, sep = "_")
+  )
 
-ggplot() +
-  geom_sf(data = grid_intersect2) +
-  geom_sf(data = winter_grid) +
-  coord_sf(xlim = c(510750, 520750), ylim = c(5669350, 5679350))
+ppn_coverage <- purrr::map(ys_key$year_season_f, function (x) {
+  dd <- all_fit_tbl$data[[1]] %>% 
+    filter(year_season_f == x)
+  if (nrow(dd) == 0) {
+    raster_values <- 0
+  } else {
+    points <- dd %>% 
+      dplyr::select(utm_x, utm_y)
+    sp_points <- SpatialPointsDataFrame(
+      points, proj4string = sp::CRS("+proj=utm +zone=9 +units=m"), dd
+    )  
+    raster_with_border <- if(grepl("su", x)) summer_raster else winter_raster
+    raster_values <- extract(raster_with_border, sp_points)
+  }
+  length(na.omit(raster_values)) / ncell(raster_with_border)
+}) %>% 
+  unlist()
 
-temp_sf <- all_fit_tbl$data[[1]] %>% 
-  filter(year_season_f == "2020_wi") %>% 
-  st_as_sf(., coords = c("utm_x", "utm_y"), 
-               crs = st_crs("+proj=utm +zone=9 +units=m"))
-tab <- st_intersects(grid_intersect, temp_sf)
-
-ggplot() +
-  geom_sf(data = grid_intersect) +
-  geom_sf(data = temp_sf, colour = "red")
-# geom_raster(data = index_grid_hss %>% 
-  #               filter(year == "1998", season_f == "wi"),
-  #             aes(x = X, y = Y)) + 
+ys_key2 <- ys_key %>% 
+  mutate(
+    ppn_coverage = ppn_coverage
+  ) %>% 
+  group_by(season_f) %>% 
+  mutate(
+    scale_coverage = ppn_coverage / max(ppn_coverage)
+  ) %>% 
+  ungroup()
   
-
-grid = st_sf(n = lengths(tab), geometry = st_cast(grid, "MULTIPOLYGON"))
-
-mapview(grid, zcol = "n")
 
 sp_scalar <- 1 * (13 / 1000)
 
@@ -454,9 +478,9 @@ for (i in seq_along(sp_vec)) {
 
 
 # import saved indices from all_species_fit_season.R
-# true_index_list <- readRDS(
-#   here::here("data", "fits", "season_index_list_mvrfrw.rds")
-# )
+true_index_list <- readRDS(
+  here::here("data", "fits", "season_index_list_mvrfrw.rds")
+)
 
 true_index_summer <- furrr::future_map2(
   all_fit_tbl$fit, all_fit_tbl$species,
@@ -483,17 +507,12 @@ true_index_fall <- furrr::future_map2(
   }
 ) 
 
-true_ind_dat <- #true_index_list %>%
-  #bind_rows() %>% 
-  rbind(true_index_summer %>% bind_rows(), 
-        true_index_fall %>% bind_rows()) %>% 
+true_ind_dat <- true_index_list %>%
+  bind_rows() %>%
+  # rbind(true_index_summer %>% bind_rows(), 
+  #       true_index_fall %>% bind_rows()) %>% 
   mutate(
     season = fct_recode(season_f, "summer" = "su", "fall" = "wi"),
-    survey = case_when(
-      season == "fall" & year %in% fall_years ~ "sampled",
-      season == "summer" & year %in% summer_years ~ "sampled",
-      TRUE ~ "no survey"
-    ),
     log_lwr = log_est - (1.96 * se),
     log_upr = log_est + (1.96 * se),
     year_f = as.factor(year)
