@@ -344,6 +344,9 @@ dev.off()
 
 # RECOVER INDEX ----------------------------------------------------------------
 
+# calculate proportion of grid cells without samples and scale colour ramp
+
+
 # define years where survey occurred
 summer_years <- sim_tbl$fit[[1]]$data %>% 
   filter(season_f == "su", 
@@ -365,6 +368,46 @@ index_grid_hss <- readRDS(here::here("data", "index_hss_grid.rds")) %>%
          )) %>%
   #subset to northern domain that's well sampled in recent years
   filter(trim == "no")
+
+
+library(sf)
+winter_grid <- index_grid_hss %>% 
+  filter(year == "1998", season_f == "wi") %>% 
+  mutate(grid = row_number()) %>% 
+  st_as_sf(., coords = c("X", "Y"), 
+               crs = st_crs("+proj=utm +zone=9 +units=m")) 
+
+# make grid from points, add buffer so that points represent centroid, create
+# irregular boundary and crop g
+grid_buffer <- st_buffer(winter_grid, dist = 500)
+hull <- st_convex_hull(grid_buffer)
+grid <- st_make_grid(st_bbox(hull), cellsize = 1000)
+grid_intersect <- st_intersection(grid, hull)
+grid_intersect_crop <- st_make_grid(grid_inter)
+
+
+ggplot() +
+  geom_sf(data = grid_intersect2) +
+  geom_sf(data = winter_grid) +
+  coord_sf(xlim = c(510750, 520750), ylim = c(5669350, 5679350))
+
+temp_sf <- all_fit_tbl$data[[1]] %>% 
+  filter(year_season_f == "2020_wi") %>% 
+  st_as_sf(., coords = c("utm_x", "utm_y"), 
+               crs = st_crs("+proj=utm +zone=9 +units=m"))
+tab <- st_intersects(grid_intersect, temp_sf)
+
+ggplot() +
+  geom_sf(data = grid_intersect) +
+  geom_sf(data = temp_sf, colour = "red")
+# geom_raster(data = index_grid_hss %>% 
+  #               filter(year == "1998", season_f == "wi"),
+  #             aes(x = X, y = Y)) + 
+  
+
+grid = st_sf(n = lengths(tab), geometry = st_cast(grid, "MULTIPOLYGON"))
+
+mapview(grid, zcol = "n")
 
 sp_scalar <- 1 * (13 / 1000)
 
@@ -418,7 +461,7 @@ for (i in seq_along(sp_vec)) {
 true_index_summer <- furrr::future_map2(
   all_fit_tbl$fit, all_fit_tbl$species,
   function (x, y) {
-    pp <- predict(x, 
+    pp <- predict(x,
                   newdata = index_grid_hss %>%
                     filter(season_f == "su"),
                   se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
@@ -492,7 +535,7 @@ sim_ind_dat <- tibble(
   )
 
 
-png(here::here("figs", "ms_figs_season", "sim_index.png"), 
+png(here::here("figs", "ms_figs_season_mvrw", "sim_index.png"), 
     height = 8, width = 8, units = "in", res = 200)
 ggplot() +
   geom_boxplot(data = sim_ind_dat,
@@ -507,7 +550,7 @@ ggplot() +
   theme(axis.title.x = element_blank())
 dev.off()
 
-png(here::here("figs", "ms_figs_season", "resid_index.png"), 
+png(here::here("figs", "ms_figs_season_mvrw", "resid_index.png"), 
     height = 8, width = 8, units = "in", res = 200)
 ggplot() +
   geom_boxplot(data = sim_ind_dat,
@@ -520,4 +563,5 @@ ggplot() +
   labs(y = "Index Residuals") +
   theme(axis.title.x = element_blank())
 dev.off()
+
 
