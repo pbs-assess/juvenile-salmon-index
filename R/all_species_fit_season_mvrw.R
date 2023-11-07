@@ -81,67 +81,98 @@ coast <- rbind(rnaturalearth::ne_states( "United States of America",
 
 ## FIT -------------------------------------------------------------------------
 
-# dat_tbl <- dat %>%
-#   group_by(species) %>%
-#   group_nest()
-# 
+dat_tbl <- dat %>%
+  group_by(species) %>%
+  group_nest()
+
 # mvrfrw only
-# fits_list_nb2 <- furrr::future_map(
-#   dat_tbl$data,
-#   function(dat_in) {
-#     sdmTMB(
-#       n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
-#         scale_depth,
-#       offset = dat_in$effort,
-#       data = dat_in,
-#       mesh = spde,
-#       family = sdmTMB::nbinom2(),
-#       spatial = "off",
-#       spatial_varying = ~ 0 + season_f,
-#       time = "year",
-#       spatiotemporal = "rw",
-#       anisotropy = TRUE,
-#       groups = "season_f",
-#       control = sdmTMBcontrol(
-#         map = list(
-#           ln_tau_Z = factor(
-#             rep(1, times = length(unique(dat$season_f)))
-#           )
-#         )
-#       ),
-#       silent = FALSE
-#     )
-#   }
-# )
-# # mvrfrw only + year FE
-# fits_list_nb2_fe <- furrr::future_map(
-#   dat_tbl$data,
-#   function(dat_in) {
-#     sdmTMB(
-#       n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
-#         scale_depth + year_f,
-#       offset = dat_in$effort,
-#       data = dat_in,
-#       mesh = spde,
-#       family = sdmTMB::nbinom2(),
-#       spatial = "off",
-#       spatial_varying = ~ 0 + season_f,
-#       time = "year",
-#       spatiotemporal = "rw",
-#       anisotropy = TRUE,
-#       groups = "season_f",
-#       control = sdmTMBcontrol(
-#         map = list(
-#           ln_tau_Z = factor(
-#             rep(1, times = length(unique(dat$season_f)))
-#           )
-#         )
-#       ),
-#       silent = FALSE
-#     )
-#   }
-# )
-# 
+fits_list_nb2 <- furrr::future_map(
+  dat_tbl$data,
+  function(dat_in) {
+    sdmTMB(
+      n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+        scale_depth,
+      offset = dat_in$effort,
+      data = dat_in,
+      mesh = spde,
+      family = sdmTMB::nbinom2(),
+      spatial = "off",
+      spatial_varying = ~ 0 + season_f,
+      time = "year",
+      spatiotemporal = "rw",
+      anisotropy = TRUE,
+      groups = "season_f",
+      control = sdmTMBcontrol(
+        map = list(
+          ln_tau_Z = factor(
+            rep(1, times = length(unique(dat$season_f)))
+          )
+        )
+      ),
+      silent = FALSE
+    )
+  }
+)
+# mvrfrw only + year FE
+fits_list_nb2_fe <- furrr::future_map(
+  dat_tbl$data,
+  function(dat_in) {
+    sdmTMB(
+      n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+        scale_depth + year_f,
+      offset = dat_in$effort,
+      data = dat_in,
+      mesh = spde,
+      family = sdmTMB::nbinom2(),
+      spatial = "off",
+      spatial_varying = ~ 0 + season_f,
+      time = "year",
+      spatiotemporal = "rw",
+      anisotropy = TRUE,
+      groups = "season_f",
+      control = sdmTMBcontrol(
+        map = list(
+          ln_tau_Z = factor(
+            rep(1, times = length(unique(dat$season_f)))
+          )
+        )
+      ),
+      silent = FALSE
+    )
+  }
+)
+
+# mvrfrw only + year FE
+fits_list_nb2_rw <- furrr::future_map(
+  dat_tbl$data[4:5],
+  function(dat_in) {
+    sdmTMB(
+      n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+        scale_depth,
+      offset = dat_in$effort,
+      data = dat_in,
+      mesh = spde,
+      family = sdmTMB::nbinom2(),
+      spatial = "off",
+      spatial_varying = ~ 0 + season_f,
+      time_varying = ~ 1,
+      time = "year",
+      spatiotemporal = "rw",
+      time_varying_type = "rw0",
+      anisotropy = TRUE,
+      groups = "season_f",
+      control = sdmTMBcontrol(
+        map = list(
+          ln_tau_Z = factor(
+            rep(1, times = length(unique(dat$season_f)))
+          )
+        )
+      ),
+      silent = FALSE
+    )
+  }
+)
+ 
 # dat_tbl_mvrfrw <- dat_tbl %>%
 #   mutate(fit = fits_list_nb2)
 # saveRDS(
@@ -699,11 +730,11 @@ index_list_fall_out <- purrr::map2(
 )
 
 saveRDS(c(index_list_summer_out, index_list_fall_out),
-        here::here("data", "fits", "season_index_list_mvrfrw.rds"))
+        here::here("data", "season_index_list_mvrfrw.rds"))
 
 
 index_list <- readRDS(
-  here::here("data", "fits", "season_index_list_mvrfrw.rds")
+  here::here("data", "season_index_list_mvrfrw.rds")
 )
 
 # define years where survey occurred
