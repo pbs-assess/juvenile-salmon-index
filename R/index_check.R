@@ -7,15 +7,61 @@ library(ggplot2)
 library(sdmTMBextra)
 
 
-dat_tbl_rw  <- readRDS(
- here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_rw.rds")
-) %>% 
-  filter(species %in% c("sockeye", "pink"))
+# dat_tbl_rw  <- readRDS(
+#  here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_rw.rds")
+# ) %>% 
+#   filter(species %in% c("sockeye", "pink"))
+# 
+# dat_tbl  <- readRDS(
+#   here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_only.rds")
+# ) %>% 
+#   filter(species %in% c("sockeye", "pink"))
 
-dat_tbl  <- readRDS(
-  here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_only.rds")
-) %>% 
-  filter(species %in% c("sockeye", "pink"))
+
+# downscale data and predictive grid
+dat_in <- readRDS(here::here("data", "catch_survey_sbc.rds")) 
+
+
+# downscale data and predictive grid
+dat <- dat_in %>% 
+  mutate(
+    year_f = as.factor(year),
+    yday = lubridate::yday(date),
+    utm_x_1000 = utm_x / 1000,
+    utm_y_1000 = utm_y / 1000,
+    effort = log(volume_km3),
+    scale_dist = scale(as.numeric(dist_to_coast_km))[ , 1],
+    scale_depth = scale(as.numeric(target_depth))[ , 1],
+    day_night = as.factor(day_night)) %>% 
+  filter(species %in% c("pink", "sockeye")) %>% 
+  droplevels()
+
+
+# prep multisession
+ncores <- parallel::detectCores() 
+future::plan(future::multisession, workers = 5)
+
+
+## mesh shared among species
+dat_coords <- dat %>% 
+  filter(species == "pink") %>% 
+  select(utm_x_1000, utm_y_1000) %>% 
+  as.matrix()
+inla_mesh_raw <- INLA::inla.mesh.2d(
+  loc = dat_coords,
+  max.edge = c(2, 10) * 500,
+  cutoff = 30,
+  offset = c(10, 50)
+)  
+spde <- make_mesh(
+  dat %>% 
+    filter(species == "pink"),
+  c("utm_x_1000", "utm_y_1000"),
+  mesh = inla_mesh_raw
+) 
+dat_tbl <- dat %>%
+  group_by(species) %>%
+  group_nest()
 
 # true index
 index_grid_hss <- readRDS(here::here("data", "index_hss_grid.rds")) %>% 
@@ -32,7 +78,7 @@ sp_scalar <- 1 * (13 / 1000)
 
 ## fit cyclic models
 yr_key <- data.frame(
-  year = unique(dat_tbl$data[[2]]$year)
+  year = unique(dat$year)
 ) %>% 
   arrange(year) %>% 
   mutate(
@@ -194,7 +240,6 @@ rbind(rw_index_dat, orig_index_dat) %>%
 ## recover pars
 cyc_fit_list <- list(pink_fit_cycle, sox_fit_cycle)
 dd <- dat_tbl %>% 
-  filter(species %in% c("pink", "sockeye")) %>% 
   mutate(
     cyc_fit = cyc_fit_list
   )
@@ -366,7 +411,7 @@ saveRDS(sim_pars, here::here("data", "preds", "sim_pars_mvrfrw.rds"))
 
 # as above but for fitted models
 fit_effs <- purrr::map2(
-  sim_tbl$fit_cyc, sim_tbl$species, function (x, sp) {
+  sim_tbl$cyc_fit, sim_tbl$species, function (x, sp) {
     fix <- tidy(x, effects = "fixed")
     ran <- tidy(x, effects = "ran_pars")
     
