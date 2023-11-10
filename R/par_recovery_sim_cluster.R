@@ -19,6 +19,7 @@ dir.create("data/fits", recursive = TRUE, showWarnings = FALSE)
 all_fit_tbl1 <- readRDS(
   here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_final.rds")
 )
+spde <- all_fit_tbl1$fit[[1]]$spde
 
 
 ## UPDATE FITS -----------------------------------------------------------------
@@ -27,7 +28,10 @@ all_fit_tbl1 <- readRDS(
 sox_dat1 <- all_fit_tbl1 %>% 
   filter(species == "sockeye") %>% 
   select(data) %>% 
-  unnest(cols = c(data))
+  unnest(cols = c(data)) %>% 
+  select(
+    unique_event:scale_depth
+  )
 
 # add species-specific cycles 
 yr_key <- data.frame(
@@ -47,6 +51,9 @@ pink_dat <- all_fit_tbl1 %>%
   filter(species == "pink") %>% 
   select(data) %>% 
   unnest(cols = c(data)) %>% 
+  select(
+    unique_event:scale_depth
+  ) %>% 
   left_join(., yr_key, by = "year")
 
 sox_fit_cycle <- sdmTMB(
@@ -251,8 +258,7 @@ for (i in seq_along(sp_vec)) {
           ),
           silent = FALSE
         )
-      }
-    } else if (sp_vec[i] == "sockeye") {
+      } else if (sp_vec[i] == "sockeye") {
       sdmTMB(
         sim_catch ~ 0 + season_f + day_night + survey_f + scale_dist +
           scale_depth + sox_cycle,
@@ -275,6 +281,7 @@ for (i in seq_along(sp_vec)) {
         ),
         silent = FALSE
       )
+      }
     }
   )
   saveRDS(
