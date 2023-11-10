@@ -149,12 +149,12 @@ dir.create(here::here("data", "fits", "sim_fit"), showWarnings = FALSE)
 # fit model to species 
 
 if (FALSE) {
-for (i in seq_along(sp_vec)) {
+for (i in 2:5) { #seq_along(sp_vec)) {
   sim_tbl_sub <- sim_tbl %>% filter(species == sp_vec[i])
   fit <- furrr::future_map2(
     sim_tbl_sub$sim_dat, sim_tbl_sub$fit, 
     function (x, fit) {
-      if (sp_vec[i] %in% c("chinook", "coho", "chum")) {
+      if (sp_vec[i] %in% c("coho")) {
         sdmTMB(
           sim_catch ~ 0 + season_f + day_night + survey_f + scale_dist +
             scale_depth,
@@ -180,15 +180,17 @@ for (i in seq_along(sp_vec)) {
       } else {
         sdmTMB(
           sim_catch ~ 0 + season_f + day_night + survey_f + scale_dist +
-            scale_depth + year_f,
+            scale_depth,
           offset = x$effort,
           data = x,
           mesh =  fit$spde,
           family = sdmTMB::nbinom2(),
           spatial = "off",
           spatial_varying = ~ 0 + season_f,
+          time_varying = ~ 1,
           time = "year",
           spatiotemporal = "rw",
+          time_varying_type = "rw0",
           anisotropy = TRUE,
           groups = "season_f",
           control = sdmTMBcontrol(

@@ -144,7 +144,7 @@ fits_list_nb2_fe <- furrr::future_map(
 
 # mvrfrw only + year FE
 fits_list_nb2_rw <- furrr::future_map(
-  dat_tbl$data[4:5],
+  dat_tbl$data,
   function(dat_in) {
     sdmTMB(
       n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
@@ -173,63 +173,65 @@ fits_list_nb2_rw <- furrr::future_map(
   }
 )
  
-# dat_tbl_mvrfrw <- dat_tbl %>%
+# dat_tbl_mvrfrw_rw <- dat_tbl %>%
 #   mutate(fit = fits_list_nb2)
 # saveRDS(
 #   dat_tbl_mvrfrw, here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_only.rds")
 # )
 # 
-# dat_tbl_fe <- dat_tbl %>%
-#   mutate(fit = fits_list_nb2_fe)
+# dat_tbl_rw <- dat_tbl %>%
+#   mutate(fit = dd)
 # saveRDS(
-#   dat_tbl_fe, here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw.rds")
+#   dat_tbl_rw, here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_rw.rds")
 # )
-# 
-# 
-# dat_tbl_mvrfrw <- readRDS(
-#   here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_only.rds")
-# )
+
+dat_tbl_mvrfrw <- readRDS(
+  here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_only.rds")
+)
+dat_tbl_rw <- readRDS(
+  here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_rw.rds")
+)
 # dat_tbl_fe <- readRDS(
 #   here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw.rds")
 # )
 # 
 # 
 # # make AIC table
-# dat_tbl <- rbind(
-#   dat_tbl_mvrfrw %>% mutate(model = "mvrfrw"),
-#   dat_tbl_fe %>% mutate(model = "mvrfrw_year_fe")
-# ) %>%
-#   mutate(
-#     AIC = purrr::map(.$fit, AIC) %>%
-#       unlist(),
-#     log_likelihood = purrr::map(
-#       .$fit,
-#       ~ logLik(.x) %>%
-#         # attr(., "df") %>%
-#         as.numeric()
-#     ) %>%
-#       unlist(),
-#     n_FE = purrr::map(
-#       .$fit,
-#       ~ tidy(.x, effects = "fixed", conf.int = T) %>%
-#         nrow()
-#     ) %>%
-#       unlist()
-#   )
-# 
-# dat_tbl %>%
-#   select(species, model, AIC, log_likelihood, n_FE) %>%
-#   arrange(species, AIC)
-# 
-# 
-# # FEs favored for sockeye and pink, finalize accordingly
-# dat_tbl <- dat_tbl %>%
-#   filter((species %in% c("chinook", "coho", "chum") & model == "mvrfrw") |
-#            (species %in% c("pink", "sockeye") & model == "mvrfrw_year_fe"))
-# saveRDS(
-#   dat_tbl,
-#   here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_final.rds")
-# )
+dat_tbl <- rbind(
+  dat_tbl_mvrfrw %>% mutate(model = "mvrfrw"),
+  dat_tbl_rw %>% mutate(model = "mvrfrw_rw")
+) %>%
+  mutate(
+    AIC = purrr::map(.$fit, AIC) %>%
+      unlist(),
+    log_likelihood = purrr::map(
+      .$fit,
+      ~ logLik(.x) %>%
+        # attr(., "df") %>%
+        as.numeric()
+    ) %>%
+      unlist(),
+    n_FE = purrr::map(
+      .$fit,
+      ~ tidy(.x, effects = "fixed", conf.int = T) %>%
+        nrow()
+    ) %>%
+      unlist()
+  )
+
+dat_tbl %>%
+  select(species, model, AIC, log_likelihood, n_FE) %>%
+  arrange(species, AIC)
+
+
+# RW doesn't converge for coho, but use for all other species
+dat_tbl <- dat_tbl %>%
+  filter((species %in% c("coho") & model == "mvrfrw") |
+           (species != "coho" & model == "mvrfrw_rw"))
+saveRDS(
+  dat_tbl,
+  here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_final.rds")
+)
 
 
 ## CHECKS ----------------------------------------------------------------------
