@@ -155,10 +155,11 @@ purrr::map2(
       obj_mle <- object
       obj_mle$tmb_obj <- obj
       obj_mle$tmb_map <- map
-      simulate(obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp),
-               nsim = 100L)
+      sim_out <- simulate(
+        obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp), nsim = 100L
+      )
       saveRDS(
-        sims_list,
+        sim_out,
         here::here("data", "fits", 
                    paste(y, "_mcmc_draws_nb2_mvrfrw.rds", sep = ""))
       )  
