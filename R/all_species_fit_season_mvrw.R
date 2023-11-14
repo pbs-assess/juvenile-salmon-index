@@ -8,14 +8,15 @@
 ## Aug 22, 223
 
 
+# ensure mvrfrw branch installed
+devtools::install_github("https://github.com/pbs-assess/sdmTMB",
+                         ref = "mvrfrw")
+
+
 library(tidyverse)
 library(sdmTMB)
 library(ggplot2)
 library(sdmTMBextra)
-
-# ensure mvrfrw branch installed
-devtools::install_github("https://github.com/pbs-assess/sdmTMB",
-                         ref = "mvrfrw")
 
 # make subdirectories for storage
 dir.create("data/fits", recursive = TRUE, showWarnings = FALSE)
