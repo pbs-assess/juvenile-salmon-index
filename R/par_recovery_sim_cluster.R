@@ -15,27 +15,14 @@ future::plan(future::multisession, workers = 5L)
 # make subdirectories for storage
 dir.create("data/fits", recursive = TRUE, showWarnings = FALSE)
 
-# fitted model from all_species_fit.R
-all_fit_tbl1 <- readRDS(
-  here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_final.rds")
-)
-spde <- all_fit_tbl1$fit[[1]]$spde
+
+# downscale data and predictive grid
+dat_in <- readRDS(here::here("data", "catch_survey_sbc.rds")) 
 
 
-## UPDATE FITS -----------------------------------------------------------------
-
-# replace pink/sockeye fits
-sox_dat1 <- all_fit_tbl1 %>% 
-  filter(species == "sockeye") %>% 
-  select(data) %>% 
-  unnest(cols = c(data)) %>% 
-  select(
-    unique_event:scale_depth
-  )
-
-# add species-specific cycles 
+# make year key representing pink/sockeye cycle lines
 yr_key <- data.frame(
-  year = unique(sox_dat1$year)
+  year = unique(dat_in$year)
 ) %>% 
   arrange(year) %>% 
   mutate(
@@ -45,141 +32,179 @@ yr_key <- data.frame(
       as.factor()
   )
 
-sox_dat <- sox_dat1 %>% 
-  left_join(., yr_key, by = "year")
-pink_dat <- all_fit_tbl1 %>% 
-  filter(species == "pink") %>% 
-  select(data) %>% 
-  unnest(cols = c(data)) %>% 
-  select(
-    unique_event:scale_depth
-  ) %>% 
-  left_join(., yr_key, by = "year")
-
-sox_fit_cycle <- sdmTMB(
-  n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
-    scale_depth + sox_cycle,
-  offset = sox_dat$effort,
-  data = sox_dat,
-  mesh = spde,
-  family = sdmTMB::nbinom2(),
-  spatial = "off",
-  spatial_varying = ~ 0 + season_f,
-  time = "year",
-  spatiotemporal = "rw",
-  anisotropy = TRUE,
-  groups = "season_f",
-  control = sdmTMBcontrol(
-    map = list(
-      ln_tau_Z = factor(
-        rep(1, times = length(unique(sox_dat$season_f)))
-      )
-    )
-  ),
-  silent = FALSE
-)
-
-pink_fit_cycle <- sdmTMB(
-  n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
-    scale_depth + pink_cycle,
-  offset = pink_dat$effort,
-  data = pink_dat,
-  mesh = spde,
-  family = sdmTMB::nbinom2(),
-  spatial = "off",
-  spatial_varying = ~ 0 + season_f,
-  time = "year",
-  spatiotemporal = "rw",
-  anisotropy = TRUE,
-  groups = "season_f",
-  control = sdmTMBcontrol(
-    map = list(
-      ln_tau_Z = factor(
-        rep(1, times = length(unique(pink_dat$season_f)))
-      )
-    )
-  ),
-  silent = FALSE
-)
-
-# combine
-trim_tbl <- all_fit_tbl1 %>% 
-  filter(species %in% c("pink", "sockeye")) %>% 
+# downscale data and predictive grid
+dat <- dat_in %>% 
   mutate(
-    fit = list(pink_fit_cycle, sox_fit_cycle),
-    model = rep("mvrfrw_cyc", 2)
-  )
-
-all_fit_tbl <- rbind(
-  all_fit_tbl1 %>% 
-    filter(!species %in% c("pink", "sockeye")),
-  trim_tbl
-) %>% 
-  #drop spare cols since AIC and FEs are wrogn for pink/sockeye
-  select(
-    species, data, fit, model
-  )
+    year_f = as.factor(year),
+    yday = lubridate::yday(date),
+    utm_x_1000 = utm_x / 1000,
+    utm_y_1000 = utm_y / 1000,
+    effort = log(volume_km3 * 500),
+    scale_dist = scale(as.numeric(dist_to_coast_km))[ , 1],
+    scale_depth = scale(as.numeric(target_depth))[ , 1],
+    day_night = as.factor(day_night)) %>% 
+  filter(!species == "steelhead") %>% 
+  droplevels() %>% 
+  left_join(., yr_key, by = "year")
 
 
-## UPDATE MCMC DRAWS -----------------------------------------------------------
+## mesh shared among species
+dat_coords <- dat %>% 
+  filter(species == "chinook") %>% 
+  select(utm_x_1000, utm_y_1000) %>% 
+  as.matrix()
+inla_mesh_raw <- INLA::inla.mesh.2d(
+  loc = dat_coords,
+  max.edge = c(2, 10) * 500,
+  cutoff = 30,
+  offset = c(10, 50)
+)  
+spde <- make_mesh(
+  dat %>% 
+    filter(species == "chinook"),
+  c("utm_x_1000", "utm_y_1000"),
+  mesh = inla_mesh_raw
+) 
 
-# import original mcmc fits, split and save as species-specific files
-sims_list_old <- readRDS(
-  here::here("data", "fits", "nb_mcmc_draws_nb2_mvrfrw.rds")
-)
-purrr::map2(
-  sims_list_old, all_fit_tbl$species,
-  ~ saveRDS(
-    .x,
-    here::here("data", "fits", 
-               paste(.y, "_mcmc_draws_nb2_mvrfrw.rds", sep = ""))
-  )
-)
 
-# overwrite MCMC sims for pink/sockeye
-set.seed(456)
-purrr::map2(
-  all_fit_tbl$fit, all_fit_tbl$species, function (x, y) {
-    if (y %in% c("pink", "sockeye")) {
-      object <- x
-      samp <- sample_mle_mcmc(
-        object, mcmc_iter = 110L, mcmc_warmup = 100L, mcmc_chains = 50L,
-        stan_args = list(thin = 5L, cores = 50L)
+dat_tbl <- dat %>%
+  group_by(species) %>%
+  group_nest()
+
+
+index_grid_hss <- readRDS(here::here("data", "index_hss_grid.rds")) %>% 
+  mutate(day_night = as.factor(day_night),
+         trim = ifelse(
+           season_f == "wi" & utm_y_1000 < 5551, "yes", "no"
+         )) %>%
+  #subset to northern domain
+  filter(trim == "no") %>% 
+  left_join(., yr_key, by = "year")
+
+sp_scalar <- 1 * (13 / 1000) * 500
+
+
+## FIT MODEL TO EACH SPECIES ---------------------------------------------------
+
+dat_tbl$fit <- furrr::future_map2(
+  dat_tbl$data, dat_tbl$species,
+  function(dat_in, sp) {
+    if (sp == "pink") {
+      sdmTMB(
+        n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+          scale_depth + pink_cycle,
+        offset = dat_in$effort,
+        data = dat_in,
+        mesh = spde,
+        family = sdmTMB::nbinom2(),
+        spatial = "off",
+        spatial_varying = ~ 0 + season_f,
+        time = "year",
+        spatiotemporal = "rw",
+        anisotropy = TRUE,
+        groups = "season_f",
+        control = sdmTMBcontrol(
+          map = list(
+            ln_tau_Z = factor(
+              rep(1, times = length(unique(dat$season_f)))
+            )
+          )
+        ),
+        silent = FALSE
       )
-      obj <- object$tmb_obj
-      random <- unique(names(obj$env$par[obj$env$random]))
-      pl <- as.list(object$sd_report, "Estimate")
-      fixed <- !(names(pl) %in% random)
-      map <- lapply(pl[fixed], function(x) factor(rep(NA, length(x))))
-      obj <- TMB::MakeADFun(obj$env$data, pl, map = map, DLL = "sdmTMB")
-      obj_mle <- object
-      obj_mle$tmb_obj <- obj
-      obj_mle$tmb_map <- map
-      sim_out <- simulate(
-        obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp), nsim = 100L
+    } else if (sp == "sockeye") {
+      sdmTMB(
+        n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+          scale_depth + sox_cycle,
+        offset = dat_in$effort,
+        data = dat_in,
+        mesh = spde,
+        family = sdmTMB::nbinom2(),
+        spatial = "off",
+        spatial_varying = ~ 0 + season_f,
+        time = "year",
+        spatiotemporal = "rw",
+        anisotropy = TRUE,
+        groups = "season_f",
+        control = sdmTMBcontrol(
+          map = list(
+            ln_tau_Z = factor(
+              rep(1, times = length(unique(dat$season_f)))
+            )
+          )
+        ),
+        silent = FALSE
       )
-      saveRDS(
-        sim_out,
-        here::here("data", "fits", 
-                   paste(y, "_mcmc_draws_nb2_mvrfrw.rds", sep = ""))
-      )  
+    } else {
+      sdmTMB(
+        n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+          scale_depth,
+        offset = dat_in$effort,
+        data = dat_in,
+        mesh = spde,
+        family = sdmTMB::nbinom2(),
+        spatial = "off",
+        spatial_varying = ~ 0 + season_f,
+        time = "year",
+        spatiotemporal = "rw",
+        anisotropy = TRUE,
+        groups = "season_f",
+        control = sdmTMBcontrol(
+          map = list(
+            ln_tau_Z = factor(
+              rep(1, times = length(unique(dat$season_f)))
+            )
+          )
+        ),
+        silent = FALSE
+      )
     }
   }
 )
 
-sims_list <- purrr::map(
-  all_fit_tbl$species,
+
+## UPDATE MCMC DRAWS -----------------------------------------------------------
+
+set.seed(456)
+furrr::future_map2(
+  dat_tbl$fit, dat_tbl$species, function (x, y) {
+    object <- x
+    samp <- sample_mle_mcmc(
+      object, mcmc_iter = 110L, mcmc_warmup = 100L, mcmc_chains = 50L,
+      stan_args = list(thin = 5L, cores = 50L)
+    )
+    obj <- object$tmb_obj
+    random <- unique(names(obj$env$par[obj$env$random]))
+    pl <- as.list(object$sd_report, "Estimate")
+    fixed <- !(names(pl) %in% random)
+    map <- lapply(pl[fixed], function(x) factor(rep(NA, length(x))))
+    obj <- TMB::MakeADFun(obj$env$data, pl, map = map, DLL = "sdmTMB")
+    obj_mle <- object
+    obj_mle$tmb_obj <- obj
+    obj_mle$tmb_map <- map
+    sim_out <- simulate(
+      obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp), nsim = 100L
+    )
+    saveRDS(
+      sim_out,
+      here::here("data", "fits",
+                 paste(y, "_mcmc_draws_nb2_mvrfrw.rds", sep = ""))
+    )
+  }
+)
+
+dat_tbl$sims <- purrr::map(
+  dat_tbl$species,
   ~ readRDS(
     here::here("data", "fits", 
                paste(.x, "_mcmc_draws_nb2_mvrfrw.rds", sep = ""))
   )
 )
 
-all_fit_tbl$sims <- sims_list
 
 # make a tibble for each species simulations
 sim_tbl <- purrr::pmap(
-  list(all_fit_tbl$species, all_fit_tbl$fit, all_fit_tbl$sims),
+  list(dat_tbl$species, dat_tbl$fit, dat_tbl$sims),
   function (sp, fits, x) {
     tibble(
       species = sp,
@@ -194,7 +219,7 @@ sim_tbl <- purrr::pmap(
 ) %>% 
   bind_rows() %>% 
   left_join(., 
-            all_fit_tbl %>% select(species, fit), 
+            dat_tbl %>% select(species, fit), 
             by = c("species"))
 
 
@@ -204,17 +229,17 @@ gc()
 dir.create(here::here("data", "fits", "sim_fit"), showWarnings = FALSE)
 # fit model to species 
 
-sp_vec <- c("pink", "sockeye")
+sp_vec <- unique(sim_tbl$species)
 
 future::plan(future::multisession, workers = 2L)
 # if (FALSE) {
 for (i in seq_along(sp_vec)) {
   sim_tbl_sub <- sim_tbl %>% filter(species == sp_vec[i])
-  fit <- furrr::future_map2(
-    sim_tbl_sub$sim_dat, sim_tbl_sub$fit, 
-    function (x, fit) {
+  furrr::future_pmap(
+    list(sim_tbl_sub$sim_dat, sim_tbl_sub$fit, sim_tbl_sub$iter), 
+    function (x, fit, iter) {
       if (sp_vec[i] %in% c("chinook", "coho", "chum")) {
-        sdmTMB(
+        sim_fit <- sdmTMB(
           sim_catch ~ 0 + season_f + day_night + survey_f + scale_dist +
             scale_depth,
           offset = x$effort,
@@ -237,7 +262,7 @@ for (i in seq_along(sp_vec)) {
           silent = FALSE
         )
       } else if (sp_vec[i] == "pink") {
-        sdmTMB(
+        sim_fit <- sdmTMB(
           sim_catch ~ 0 + season_f + day_night + survey_f + scale_dist +
             scale_depth + pink_cycle,
           offset = x$effort,
@@ -260,217 +285,260 @@ for (i in seq_along(sp_vec)) {
           silent = FALSE
         )
       } else if (sp_vec[i] == "sockeye") {
-      sdmTMB(
-        sim_catch ~ 0 + season_f + day_night + survey_f + scale_dist +
-          scale_depth + sox_cycle,
-        offset = x$effort,
-        data = x,
-        mesh = spde,
-        family = sdmTMB::nbinom2(),
-        spatial = "off",
-        spatial_varying = ~ 0 + season_f,
-        time = "year",
-        spatiotemporal = "rw",
-        anisotropy = TRUE,
-        groups = "season_f",
-        control = sdmTMBcontrol(
-          map = list(
-            ln_tau_Z = factor(
-              rep(1, times = length(unique(x$season_f)))
+        sim_fit <- sdmTMB(
+          sim_catch ~ 0 + season_f + day_night + survey_f + scale_dist +
+            scale_depth + sox_cycle,
+          offset = x$effort,
+          data = x,
+          mesh = spde,
+          family = sdmTMB::nbinom2(),
+          spatial = "off",
+          spatial_varying = ~ 0 + season_f,
+          time = "year",
+          spatiotemporal = "rw",
+          anisotropy = TRUE,
+          groups = "season_f",
+          control = sdmTMBcontrol(
+            map = list(
+              ln_tau_Z = factor(
+                rep(1, times = length(unique(x$season_f)))
+              )
             )
-          )
-        ),
-        silent = FALSE
-      )
+          ),
+          silent = FALSE
+        )
       }
+      
+      # recover pars
+      fix <- tidy(sim_fit, effects = "fixed") 
+      ran <- tidy(sim_fit, effects = "ran_pars") 
+      
+      # pull upsilon estimate separately (not currently generated by predict)
+      est <- as.list(sim_fit$sd_report, "Estimate", report = TRUE)
+      se <- as.list(sim_fit$sd_report, "Std. Error", report = TRUE)
+      upsilon <- data.frame(
+        term = "sigma_U",
+        log_est = est$log_sigma_U,
+        log_se = se$log_sigma_U
+      ) %>% 
+        mutate(
+          estimate = exp(log_est),
+          std.error = exp(log_se) 
+        ) %>% 
+        select(term, estimate, std.error)
+      
+      pars <- rbind(fix, ran, upsilon) %>% 
+        # add unique identifier for second range term
+        group_by(term) %>% 
+        mutate(
+          iter = iter,
+          par_id = row_number(),
+          term = ifelse(par_id > 1, paste(term, par_id, sep = "_"), term)
+        ) %>% 
+        ungroup() 
+      
+      file_name <- paste(sp_vec[i], "_", iter, "_pars.rds", sep = "")
+      saveRDS(pars, here::here("data", "fits", "sim_fit", file_name))
+      
+      su_preds <- predict(
+        sim_fit,
+        newdata = index_grid_hss %>%
+          filter(season_f == "su"),
+        se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
+      su_index <- get_index(su_preds, area = sp_scalar, bias_correct = TRUE) %>%
+        mutate(season_f = "su",
+               species = sp_vec[i],
+               iter = iter)
+      fall_preds <- predict(
+        sim_fit, 
+        newdata = index_grid_hss %>%
+          filter(season_f == "wi"),
+        se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE
+      )
+      fall_index <- get_index(fall_preds, area = sp_scalar, bias_correct = TRUE) %>%
+        mutate(season_f = "wi",
+               species = sp_vec[i],
+               iter = iter)
+      
+      file_name2 <- paste(sp_vec[i], "_", iter, "_index.rds", sep = "")
+      saveRDS(rbind(su_index, fall_index),
+              here::here("data", "fits", "sim_fit", file_name2))
     }
-  )
-  saveRDS(
-    fit,
-    here::here("data", "fits", "sim_fit", 
-               paste(sp_vec[i], "_nb2_mvrfrw.rds", sep = ""))
   )
 }
 
-# }
-# import saved sim fits 
-sim_fit_list <- purrr::map(
-  sim_tbl$species,
-  ~ readRDS(
-    here::here("data", "fits", "sim_fit", paste(.x, "_nb2_mvrfrw.rds", sep = ""))
-  )
-)
 
-sim_tbl$sim_fit <- do.call(c, sim_fit_list)
+
+# }
+# # import saved sim fits 
+# sim_fit_list <- purrr::map(
+#   sim_tbl$species,
+#   ~ readRDS(
+#     here::here("data", "fits", "sim_fit", paste(.x, "_nb2_mvrfrw.rds", sep = ""))
+#   )
+# )
+# 
+# sim_tbl$sim_fit <- do.call(c, sim_fit_list)
 
 
 
 ## RECOVER PARAMETERS ----------------------------------------------------------
 
 # extract fixed and ran effects pars from simulations
-sim_tbl$pars <- purrr::map(
-  sim_tbl$sim_fit, function (x) {
-    fix <- tidy(x, effects = "fixed") 
-    ran <- tidy(x, effects = "ran_pars") 
-    
-    # pull upsilon estimate separately (not currently generated by predict)
-    est <- as.list(x$sd_report, "Estimate", report = TRUE)
-    se <- as.list(x$sd_report, "Std. Error", report = TRUE)
-    upsilon <- data.frame(
-      term = "sigma_U",
-      log_est = est$log_sigma_U,
-      log_se = se$log_sigma_U
-    ) %>% 
-      mutate(
-        estimate = exp(log_est),
-        std.error = exp(log_se) 
-      ) %>% 
-      select(term, estimate, std.error)
-    
-    rbind(fix, ran, upsilon) %>% 
-      # add unique identifier for second range term
-      group_by(term) %>% 
-      mutate(
-        par_id = row_number(),
-        term = ifelse(par_id > 1, paste(term, par_id, sep = "_"), term)
-      ) %>% 
-      ungroup() 
-  }
-)
-
-sim_pars <- sim_tbl %>% 
-  select(species, iter, pars) %>% 
-  unnest(cols = c(pars)) %>% 
-  mutate(
-    iter = as.factor(iter),
-    species = abbreviate(species, minlength = 3),
-    term = fct_recode(
-      as.factor(term), 
-      "diel" = "day_nightNIGHT", "depth" = "scale_depth",
-      "dist" = "scale_dist",
-      "spring_int" = "season_fsp", 
-      "summer_int" = "season_fsu", "fall_int" = "season_fwi", 
-      "survey_design" = "survey_fipes"
-    )
-  ) 
-dir.create(here::here("data", "preds"), showWarnings = FALSE)
-saveRDS(sim_pars, here::here("data", "preds", "sim_pars_mvrfrw.rds"))
+# sim_tbl$pars <- purrr::map(
+#   sim_tbl$sim_fit, function (x) {
+#     fix <- tidy(x, effects = "fixed") 
+#     ran <- tidy(x, effects = "ran_pars") 
+#     
+#     # pull upsilon estimate separately (not currently generated by predict)
+#     est <- as.list(x$sd_report, "Estimate", report = TRUE)
+#     se <- as.list(x$sd_report, "Std. Error", report = TRUE)
+#     upsilon <- data.frame(
+#       term = "sigma_U",
+#       log_est = est$log_sigma_U,
+#       log_se = se$log_sigma_U
+#     ) %>% 
+#       mutate(
+#         estimate = exp(log_est),
+#         std.error = exp(log_se) 
+#       ) %>% 
+#       select(term, estimate, std.error)
+#     
+#     rbind(fix, ran, upsilon) %>% 
+#       # add unique identifier for second range term
+#       group_by(term) %>% 
+#       mutate(
+#         par_id = row_number(),
+#         term = ifelse(par_id > 1, paste(term, par_id, sep = "_"), term)
+#       ) %>% 
+#       ungroup() 
+#   }
+# )
+# 
+# sim_pars <- sim_tbl %>% 
+#   select(species, iter, pars) %>% 
+#   unnest(cols = c(pars)) %>% 
+#   mutate(
+#     iter = as.factor(iter),
+#     species = abbreviate(species, minlength = 3),
+#     term = fct_recode(
+#       as.factor(term), 
+#       "diel" = "day_nightNIGHT", "depth" = "scale_depth",
+#       "dist" = "scale_dist",
+#       "spring_int" = "season_fsp", 
+#       "summer_int" = "season_fsu", "fall_int" = "season_fwi", 
+#       "survey_design" = "survey_fipes"
+#     )
+#   ) 
+# dir.create(here::here("data", "preds"), showWarnings = FALSE)
+# saveRDS(sim_pars, here::here("data", "preds", "sim_pars_mvrfrw.rds"))
 
 
 # as above but for fitted models
-fit_effs <- purrr::map2(
-  sim_tbl$fit, sim_tbl$species, function (x, sp) {
-    fix <- tidy(x, effects = "fixed")
-    ran <- tidy(x, effects = "ran_pars")
-    
-    # pull upsilon estimate separately (not currently generated by predict)
-    est <- as.list(x$sd_report, "Estimate", report = TRUE)
-    se <- as.list(x$sd_report, "Std. Error", report = TRUE)
-    upsilon <- data.frame(
-      term = "sigma_U",
-      log_est = est$log_sigma_U,
-      log_se = se$log_sigma_U
-    ) %>% 
-      mutate(
-        estimate = exp(log_est),
-        std.error = exp(log_se) 
-      ) %>% 
-      select(term, estimate, std.error)
-    
-    rbind(fix, ran, upsilon) %>% 
-      mutate(species = abbreviate(sp, minlength = 3)) %>% 
-      # add unique identifier for second range term
-      group_by(term) %>% 
-      mutate(
-        par_id = row_number(),
-        term = ifelse(par_id > 1, paste(term, par_id, sep = "_"), term)
-      ) %>% 
-      ungroup()
-  }
-) %>% 
-  bind_rows() %>% 
-  mutate(
-    term = fct_recode(
-      as.factor(term), "diel" = "day_nightNIGHT", "depth" = "scale_depth",
-      "dist" = "scale_dist",
-      "spring_int" = "season_fsp", 
-      "summer_int" = "season_fsu", "fall_int" = "season_fwi", 
-      "survey_design" = "survey_fipes"
-    )
-  )
-
-sim_box <- ggplot() +
-  geom_boxplot(data = sim_pars,
-               aes(x = species, y = estimate)) +
-  geom_point(data = fit_effs,
-             aes(x = species, y = estimate), colour = "red") +
-  facet_wrap(~term, scales = "free", ncol = 3) +
-  labs(y = "Parameter Estimate", x =  "Species") +
-  ggsidekick::theme_sleek() 
-
-dir.create(here::here("figs"), showWarnings = FALSE)
-dir.create(here::here("figs", "ms_figs_season_mvrw"), showWarnings = FALSE)
-png(here::here("figs", "ms_figs_season_mvrw", "par_recovery_sim_box_mcmc.png"), 
-    height = 8, width = 8, units = "in", res = 200)
-sim_box
-dev.off()
+# fit_effs <- purrr::map2(
+#   sim_tbl$fit, sim_tbl$species, function (x, sp) {
+#     fix <- tidy(x, effects = "fixed")
+#     ran <- tidy(x, effects = "ran_pars")
+#     
+#     # pull upsilon estimate separately (not currently generated by predict)
+#     est <- as.list(x$sd_report, "Estimate", report = TRUE)
+#     se <- as.list(x$sd_report, "Std. Error", report = TRUE)
+#     upsilon <- data.frame(
+#       term = "sigma_U",
+#       log_est = est$log_sigma_U,
+#       log_se = se$log_sigma_U
+#     ) %>% 
+#       mutate(
+#         estimate = exp(log_est),
+#         std.error = exp(log_se) 
+#       ) %>% 
+#       select(term, estimate, std.error)
+#     
+#     rbind(fix, ran, upsilon) %>% 
+#       mutate(species = abbreviate(sp, minlength = 3)) %>% 
+#       # add unique identifier for second range term
+#       group_by(term) %>% 
+#       mutate(
+#         par_id = row_number(),
+#         term = ifelse(par_id > 1, paste(term, par_id, sep = "_"), term)
+#       ) %>% 
+#       ungroup()
+#   }
+# ) %>% 
+#   bind_rows() %>% 
+#   mutate(
+#     term = fct_recode(
+#       as.factor(term), "diel" = "day_nightNIGHT", "depth" = "scale_depth",
+#       "dist" = "scale_dist",
+#       "spring_int" = "season_fsp", 
+#       "summer_int" = "season_fsu", "fall_int" = "season_fwi", 
+#       "survey_design" = "survey_fipes"
+#     )
+#   )
+# 
+# sim_box <- ggplot() +
+#   geom_boxplot(data = sim_pars,
+#                aes(x = species, y = estimate)) +
+#   geom_point(data = fit_effs,
+#              aes(x = species, y = estimate), colour = "red") +
+#   facet_wrap(~term, scales = "free", ncol = 3) +
+#   labs(y = "Parameter Estimate", x =  "Species") +
+#   ggsidekick::theme_sleek() 
+# 
+# dir.create(here::here("figs"), showWarnings = FALSE)
+# dir.create(here::here("figs", "ms_figs_season_mvrw"), showWarnings = FALSE)
+# png(here::here("figs", "ms_figs_season_mvrw", "par_recovery_sim_box_mcmc.png"), 
+#     height = 8, width = 8, units = "in", res = 200)
+# sim_box
+# dev.off()
 
 
 
 # RECOVER INDEX ----------------------------------------------------------------
 
 # index grid with cycle lines added
-index_grid_hss <- readRDS(here::here("data", "index_hss_grid.rds")) %>% 
-  mutate(day_night = as.factor(day_night),
-         trim = ifelse(
-           season_f == "wi" & utm_y_1000 < 5551, "yes", "no"
-         )) %>%
-  #subset to northern domain
-  filter(trim == "no") %>% 
-  left_join(., yr_key, by = "year")
-
-sp_scalar <- 1 * (13 / 1000)
 
 
-future::plan(future::multisession, workers = 2L)
-# estimate season-specific index for each simulation draw 
-for (i in seq_along(sp_vec)) {
-  sim_tbl_sub <- sim_tbl %>% filter(species == sp_vec[i])
-  sim_ind_list_summer <- furrr::future_map(
-    sim_tbl_sub$sim_fit[1:100],
-    function (x) {
-      pp <- predict(x,
-                    newdata = index_grid_hss %>%
-                      filter(season_f == "su"),
-                    se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
-      get_index(pp, area = sp_scalar, bias_correct = TRUE) %>%
-        mutate(season_f = "su",
-               species = sp_vec[i])
-    }
-  )
-  saveRDS(
-    sim_ind_list_summer ,
-    here::here("data", "fits", "sim_fit",
-               paste(sp_vec[i], "_summer_sim_index_final_mvrfrw.rds", sep = ""))
-  )
-  sim_ind_list_fall <- furrr::future_map(
-    sim_tbl_sub$sim_fit[1:100],
-    function (x) {
-      pp <- predict(x, 
-                    newdata = index_grid_hss %>%
-                      filter(season_f == "wi"),
-                    se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
-      get_index(pp, area = sp_scalar, bias_correct = TRUE) %>%
-        mutate(season_f = "wi",
-               species = sp_vec[i])
-    }
-  )
-  saveRDS(
-    sim_ind_list_fall ,
-    here::here("data", "fits", "sim_fit",
-               paste(sp_vec[i], "_fall_sim_index_final_mvrfrw.rds", sep = ""))
-  )
-}
+
+# future::plan(future::multisession, workers = 2L)
+# # estimate season-specific index for each simulation draw 
+# for (i in seq_along(sp_vec)) {
+#   sim_tbl_sub <- sim_tbl %>% filter(species == sp_vec[i])
+#   sim_ind_list_summer <- furrr::future_map(
+#     sim_tbl_sub$sim_fit[1:100],
+#     function (x) {
+#       pp <- predict(x,
+#                     newdata = index_grid_hss %>%
+#                       filter(season_f == "su"),
+#                     se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
+#       get_index(pp, area = sp_scalar, bias_correct = TRUE) %>%
+#         mutate(season_f = "su",
+#                species = sp_vec[i])
+#     }
+#   )
+#   saveRDS(
+#     sim_ind_list_summer ,
+#     here::here("data", "fits", "sim_fit",
+#                paste(sp_vec[i], "_summer_sim_index_final_mvrfrw.rds", sep = ""))
+#   )
+#   sim_ind_list_fall <- furrr::future_map(
+#     sim_tbl_sub$sim_fit[1:100],
+#     function (x) {
+#       pp <- predict(x, 
+#                     newdata = index_grid_hss %>%
+#                       filter(season_f == "wi"),
+#                     se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
+#       get_index(pp, area = sp_scalar, bias_correct = TRUE) %>%
+#         mutate(season_f = "wi",
+#                species = sp_vec[i])
+#     }
+#   )
+#   saveRDS(
+#     sim_ind_list_fall ,
+#     here::here("data", "fits", "sim_fit",
+#                paste(sp_vec[i], "_fall_sim_index_final_mvrfrw.rds", sep = ""))
+#   )
+# }
 
 
 # import saved indices from all_species_fit_season.R
@@ -479,7 +547,7 @@ for (i in seq_along(sp_vec)) {
 # )
 
 # true_index_summer <- furrr::future_map2(
-#   all_fit_tbl$fit, all_fit_tbl$species,
+#   dat_tbl$fit, dat_tbl$species,
 #   function (x, y) {
 #     pp <- predict(x, 
 #                   newdata = index_grid_hss %>%
@@ -491,7 +559,7 @@ for (i in seq_along(sp_vec)) {
 #   }
 # )
 # true_index_fall <- furrr::future_map2(
-#   all_fit_tbl$fit, all_fit_tbl$species,
+#   dat_tbl$fit, dat_tbl$species,
 #   function (x, y) {
 #     pp <- predict(x, 
 #                   newdata = index_grid_hss %>%
