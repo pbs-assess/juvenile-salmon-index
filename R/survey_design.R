@@ -137,14 +137,17 @@ full_grid <- replicate_df(
     effort = mean(dat$effort)
   ) 
 
-set.seed(123)
-samp_foo <- function(draws, type = c("paired", "unpaired")) {
+# function to generate random samples across multiple scenarios
+samp_foo <- function(draws, type = c("paired", "unpaired"), iter_number) {
+# add seed to ensure similar stations are drawn for each scenario
+  set.seed(123 * iter_number)
   out_dat <- vector(mode = "list", length = length(extra_yrs))
   if (type == "paired") {
     for (i in seq_along(extra_yrs)) {
-      out_dat[[i]] <- data.frame(
+      out_dat[[i]] <- expand.grid(
         cell_id = sample.int(nrow(grid_in), draws),
-        year = extra_yrs[i]
+        year = extra_yrs[i],
+        day_night = c("DAY", "NIGHT")
         )
     }
   }
@@ -158,69 +161,104 @@ samp_foo <- function(draws, type = c("paired", "unpaired")) {
       )
     }
   }
-  tt <- bind_rows(out_dat)
+  bind_rows(out_dat)
 } 
 
+small_paired <- samp_foo(draws = 35, type = "paired", iter_number = x)
+big_paired <- samp_foo(draws = 50, type = "paired", iter_number = x)
+small_unpaired <- samp_foo(draws = 70, type = "unpaired", iter_number = x)
+big_unpaired <- samp_foo(draws = 100, type = "unpaired", iter_number = x)
 
-
-future_obs <- full_grid %>% 
-  filter(cell_id %in% scen_1) %>% 
-  select(intersect(colnames(.), colnames(dat))) 
-all_obs <- rbind(
-  dat %>% 
-    select(colnames(future_obs)),
-  future_obs
+# make tibble of scenarios
+scen_tbl <- tibble(
+  name = c("small_paired", "big_paired", "small_unpaired", "big_unpaired"),
+  samp_key = list(small_paired, big_paired, small_unpaired, big_unpaired)
 ) %>% 
   mutate(
-    full_grid = FALSE
+    # combine future obs based on samp key with true obs from survey
+    future_obs = purrr::map(
+      samp_key, 
+      ~ left_join(.x, full_grid) %>% 
+        select(intersect(colnames(.), colnames(dat))) 
+    ),
+    all_obs = purrr::map(
+      future_obs, 
+      ~ rbind(dat %>% 
+                select(colnames(.x)),
+              .x) %>% 
+        mutate(
+          full_grid = FALSE
+        )
+    )
   )
 
-# join observations to full grid when simulating
-new_dat <- rbind(
-  full_grid %>% 
-    select(colnames(all_obs)),
-  all_obs
-) %>% 
-  left_join(
-    ., yr_key, by = "year"
-  ) 
-new_mesh <- make_mesh(new_dat, c("utm_x_1000", "utm_y_1000"),
-                      mesh = spde$mesh)
+# combine full grid with observed samples to represent "true" data
+scen_tbl$nd <- purrr::map(
+  scen_tbl$all_obs, 
+  ~ rbind(
+    full_grid %>% 
+      select(colnames(all_obs)),
+    .x
+  ) %>% 
+    left_join(
+      ., yr_key, by = "year"
+    ) 
+)
+mesh_list <- purrr::map(
+  scen_tbl$nd, ~ make_mesh(.x, c("utm_x_1000", "utm_y_1000"),
+                           mesh = spde$mesh)
+)
 
+
+## simulate true and observed data
 b <- tidy(fit, "ran_pars")
-s <- sdmTMB_simulate(
-  ~ day_night + survey_f + scale_dist + scale_depth + sox_cycle,
-  data = new_dat,
-  mesh = new_mesh,
-  range = b$estimate[b$term == "range"],
-  sigma_E = b$estimate[b$term == "sigma_E"],
-  sigma_O = b$estimate[b$term == "sigma_O"],
-  phi = b$estimate[b$term == "phi"],
-  B = unname(coef(fit)),
-  offset = new_dat$effort,
-  time = "year",
-  spatiotemporal = "rw",
-  family = sdmTMB::nbinom2(),
-  seed = 2927819,
-  fixed_re = list(omega_s = p$omega_s, epsilon_st = eps2) 
+s_list <- purrr::map2(
+  scen_tbl$nd, mesh_list,
+  ~ sdmTMB_simulate(
+    ~ day_night + survey_f + scale_dist + scale_depth + sox_cycle,
+    data = .x,
+    mesh = .y,
+    range = b$estimate[b$term == "range"],
+    sigma_E = b$estimate[b$term == "sigma_E"],
+    sigma_O = b$estimate[b$term == "sigma_O"],
+    phi = b$estimate[b$term == "phi"],
+    B = unname(coef(fit)),
+    offset = .x$effort,
+    time = "year",
+    spatiotemporal = "rw",
+    family = sdmTMB::nbinom2(),
+    seed = 2927819,
+    fixed_re = list(omega_s = p$omega_s, epsilon_st = eps2) 
+  )
 )
-s2 <- sB %>% 
-  mutate(
-  scale_depth = new_dat$scale_depth,
-  scale_dist = new_dat$scale_dist,
-  survey_f = new_dat$survey_f,
-  full_grid = new_dat$full_grid,
-  day_night = new_dat$day_night,
-  sox_cycle = new_dat$sox_cycle,
-  effort = new_dat$effort
+s2_list <- purrr::map2(
+  scen_tbl$sims, scen_tbl$nd,
+  ~ .x %>% 
+    mutate(
+      scale_depth = .y$scale_depth,
+      scale_dist = .y$scale_dist,
+      survey_f = .y$survey_f,
+      full_grid = .y$full_grid,
+      day_night = .y$day_night,
+      sox_cycle = .y$sox_cycle,
+      effort = .y$effort
+    )
 )
 
-sim_grid <- s2 %>% 
-  filter(full_grid == TRUE,
-         day_night == "DAY")
-sim <- s2 %>% 
-  filter(full_grid == FALSE,
-         year > max(dat$year))
+#true
+scen_tbl$sim_grid <- purrr::map(
+  s2_list,
+  ~ .x %>% 
+    filter(full_grid == TRUE,
+           day_night == "DAY")
+)
+#obs
+scen_tbl$sim <- purrr::map(
+  s2_list,
+  ~ .x %>% 
+    filter(full_grid == FALSE,
+           year %in% extra_yrs)
+)
 
 # ggplot(sim, aes(utm_x_1000, utm_y_1000, colour = mu)) + geom_point() +
 #   scale_color_viridis_c(trans = "log10") +
@@ -232,19 +270,33 @@ sim <- s2 %>%
 #   facet_wrap(~year) +
 #   coord_fixed()
 
-sim_future <- sim  %>% 
-  select(year, utm_x_1000, utm_y_1000, day_night, survey_f, n_juv = observed,
-         effort,
-         scale_dist, scale_depth, sox_cycle) %>%  
-  mutate(simulated_data = TRUE)
-combined_dat <- bind_rows(
-  dat %>% 
-    mutate(simulated_data = FALSE) %>% 
-    select(colnames(sim_future)), 
-  sim_future
+
+# generate data to fit models
+scen_tbl$fit_data <- purrr::map(
+  scen_tbl$sim, 
+  function (x) {
+    sim_future <- x %>% 
+      select(
+        year, utm_x_1000, utm_y_1000, day_night, survey_f, n_juv = observed,
+        effort, scale_dist, scale_depth, sox_cycle
+      ) %>%  
+      mutate(simulated_data = TRUE)
+    bind_rows(
+      dat %>% 
+        mutate(simulated_data = FALSE) %>% 
+        select(colnames(sim_future)), 
+      sim_future
+    )
+  } 
 )
 
-new_mesh2 <- make_mesh(combined_dat, c("utm_x_1000", "utm_y_1000"), mesh = spde$mesh)
+new_mesh_list <- purrr::map(
+  scen_tbl$fit_data, 
+  ~ make_mesh(.x, c("utm_x_1000", "utm_y_1000"), mesh = spde$mesh)
+)
+
+# fit to observed samples
+
 fit2 <- sdmTMB(
   n_juv ~ day_night + survey_f + scale_dist + scale_depth + sox_cycle,
   offset = combined_dat$effort,
