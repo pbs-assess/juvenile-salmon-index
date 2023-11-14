@@ -1,12 +1,10 @@
 ### Juvenile all species fit - season specific 
 ## Use all_species_fit_season as template to fit species-specific models that
 ## model seasonal abundance as MVN random walk
-## 1) Fit spatial model for each species to ensure reasonable convergence and
-## to test for effects of survey domain on fixed effect estimates 
-## 2) Fit saturated spatiotemporal model to each species
-## 3) Calculate index for summer and fall (assuming surface and day tow)
-## 4) Calculate fixed effects for spatial covariates
-## 5) Calculate spatiotemporal effects (maps by year)
+## 1) Fit spatiotemporal model to each species
+## 2) Calculate index for summer and fall (assuming surface and day tow)
+## 3) Calculate fixed effects for spatial covariates
+## 4) Calculate spatiotemporal effects (maps by year)
 ## Aug 22, 223
 
 
@@ -15,6 +13,10 @@ library(sdmTMB)
 library(ggplot2)
 library(sdmTMBextra)
 
+# ensure mvrfrw branch installed
+devtools::install_github("https://github.com/pbs-assess/sdmTMB",
+                         ref = "mvrfrw")
+
 # make subdirectories for storage
 dir.create("data/fits", recursive = TRUE, showWarnings = FALSE)
 dir.create("data/preds", recursive = TRUE, showWarnings = FALSE)
@@ -22,6 +24,18 @@ dir.create("data/preds", recursive = TRUE, showWarnings = FALSE)
 # downscale data and predictive grid
 dat_in <- readRDS(here::here("data", "catch_survey_sbc.rds")) 
 
+
+# make year key representing pink/sockeye cycle lines
+yr_key <- data.frame(
+  year = unique(dat_in$year)
+) %>% 
+  arrange(year) %>% 
+  mutate(
+    sox_cycle = rep(1:4, length.out = 25L) %>% 
+      as.factor(),
+    pink_cycle = rep(1:2, length.out = 25L) %>% 
+      as.factor()
+  )
 
 # downscale data and predictive grid
 dat <- dat_in %>% 
@@ -35,7 +49,8 @@ dat <- dat_in %>%
     scale_depth = scale(as.numeric(target_depth))[ , 1],
     day_night = as.factor(day_night)) %>% 
   filter(!species == "steelhead") %>% 
-  droplevels()
+  droplevels() %>% 
+  left_join(., yr_key, by = "year")
 
 
 ## plotting color palette
@@ -59,14 +74,12 @@ inla_mesh_raw <- INLA::inla.mesh.2d(
   cutoff = 30,
   offset = c(10, 50)
 )  
-plot(inla_mesh_raw)
 spde <- make_mesh(
   dat %>% 
     filter(species == "chinook"),
   c("utm_x_1000", "utm_y_1000"),
   mesh = inla_mesh_raw
 ) 
-plot(spde)
 
 spde$mesh$n
 
@@ -84,6 +97,7 @@ coast <- rbind(rnaturalearth::ne_states( "United States of America",
 dat_tbl <- dat %>%
   group_by(species) %>%
   group_nest()
+
 
 # mvrfrw only
 fits_list_nb2 <- furrr::future_map(
@@ -113,93 +127,108 @@ fits_list_nb2 <- furrr::future_map(
     )
   }
 )
-# mvrfrw only + year FE
-fits_list_nb2_fe <- furrr::future_map(
-  dat_tbl$data,
-  function(dat_in) {
-    sdmTMB(
-      n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
-        scale_depth + year_f,
-      offset = dat_in$effort,
-      data = dat_in,
-      mesh = spde,
-      family = sdmTMB::nbinom2(),
-      spatial = "off",
-      spatial_varying = ~ 0 + season_f,
-      time = "year",
-      spatiotemporal = "rw",
-      anisotropy = TRUE,
-      groups = "season_f",
-      control = sdmTMBcontrol(
-        map = list(
-          ln_tau_Z = factor(
-            rep(1, times = length(unique(dat$season_f)))
+
+# mvrfrw only + FE by year or cycle line
+fits_list_nb2_fe <- furrr::future_map2(
+  dat_tbl$data, dat_tbl$species,
+  function(dat_in, sp) {
+    if (sp == "pink") {
+      sdmTMB(
+        n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+          scale_depth + pink_cycle,
+        offset = dat_in$effort,
+        data = dat_in,
+        mesh = spde,
+        family = sdmTMB::nbinom2(),
+        spatial = "off",
+        spatial_varying = ~ 0 + season_f,
+        time = "year",
+        spatiotemporal = "rw",
+        anisotropy = TRUE,
+        groups = "season_f",
+        control = sdmTMBcontrol(
+          map = list(
+            ln_tau_Z = factor(
+              rep(1, times = length(unique(dat$season_f)))
+            )
           )
-        )
-      ),
-      silent = FALSE
-    )
+        ),
+        silent = FALSE
+      )
+    } else if (sp == "sockeye") {
+      sdmTMB(
+        n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+          scale_depth + sox_cycle,
+        offset = dat_in$effort,
+        data = dat_in,
+        mesh = spde,
+        family = sdmTMB::nbinom2(),
+        spatial = "off",
+        spatial_varying = ~ 0 + season_f,
+        time = "year",
+        spatiotemporal = "rw",
+        anisotropy = TRUE,
+        groups = "season_f",
+        control = sdmTMBcontrol(
+          map = list(
+            ln_tau_Z = factor(
+              rep(1, times = length(unique(dat$season_f)))
+            )
+          )
+        ),
+        silent = FALSE
+      )
+    } else {
+      sdmTMB(
+        n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
+          scale_depth + year_f,
+        offset = dat_in$effort,
+        data = dat_in,
+        mesh = spde,
+        family = sdmTMB::nbinom2(),
+        spatial = "off",
+        spatial_varying = ~ 0 + season_f,
+        time = "year",
+        spatiotemporal = "rw",
+        anisotropy = TRUE,
+        groups = "season_f",
+        control = sdmTMBcontrol(
+          map = list(
+            ln_tau_Z = factor(
+              rep(1, times = length(unique(dat$season_f)))
+            )
+          )
+        ),
+        silent = FALSE
+      )
+    }
   }
 )
 
-# mvrfrw only + year FE
-fits_list_nb2_rw <- furrr::future_map(
-  dat_tbl$data,
-  function(dat_in) {
-    sdmTMB(
-      n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
-        scale_depth,
-      offset = dat_in$effort,
-      data = dat_in,
-      mesh = spde,
-      family = sdmTMB::nbinom2(),
-      spatial = "off",
-      spatial_varying = ~ 0 + season_f,
-      time_varying = ~ 1,
-      time = "year",
-      spatiotemporal = "rw",
-      time_varying_type = "rw0",
-      anisotropy = TRUE,
-      groups = "season_f",
-      control = sdmTMBcontrol(
-        map = list(
-          ln_tau_Z = factor(
-            rep(1, times = length(unique(dat$season_f)))
-          )
-        )
-      ),
-      silent = FALSE
-    )
-  }
-)
- 
-# dat_tbl_mvrfrw_rw <- dat_tbl %>%
+# dat_tbl_mvrfrw <- dat_tbl %>%
 #   mutate(fit = fits_list_nb2)
 # saveRDS(
-#   dat_tbl_mvrfrw, here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_only.rds")
+#   dat_tbl_mvrfrw,
+#   here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_only.rds")
 # )
 # 
-# dat_tbl_rw <- dat_tbl %>%
-#   mutate(fit = dd)
+# dat_tbl_fe <- dat_tbl %>%
+#   mutate(fit = fits_list_nb2_fe)
 # saveRDS(
-#   dat_tbl_rw, here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_rw.rds")
+#   dat_tbl_fe, here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_fe.rds")
 # )
 
 dat_tbl_mvrfrw <- readRDS(
   here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_only.rds")
 )
-dat_tbl_rw <- readRDS(
-  here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_rw.rds")
+dat_tbl_fe <- readRDS(
+  here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_fe.rds")
 )
-# dat_tbl_fe <- readRDS(
-#   here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw.rds")
-# )
-# 
-# 
+
 # # make AIC table
 dat_tbl <- rbind(
   dat_tbl_mvrfrw %>% mutate(model = "mvrfrw"),
-  dat_tbl_rw %>% mutate(model = "mvrfrw_rw")
+  dat_tbl_fe %>% mutate(model = "mvrfrw_fe")
 ) %>%
   mutate(
     AIC = purrr::map(.$fit, AIC) %>%
@@ -226,8 +255,8 @@ dat_tbl %>%
 
 # RW doesn't converge for coho, but use for all other species
 dat_tbl <- dat_tbl %>%
-  filter((species %in% c("coho") & model == "mvrfrw") |
-           (species != "coho" & model == "mvrfrw_rw"))
+  filter((species %in% c("pink", "sockeye") & model == "mvrfrw_fe") |
+           (species %in% c("coho", "chum", "chinook") & model == "mvrfrw"))
 saveRDS(
   dat_tbl,
   here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_final.rds")
