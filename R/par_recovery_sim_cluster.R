@@ -3,6 +3,31 @@
 ## determine whether parameters can be recovered.
 ## Sep 27, 2023
 
+# setup ---------------------------------------------------------------
+
+# full run:
+MCMC_ITER <- 110L
+MCMC_WARMUP <- 100L
+MCMC_CHAINS <- 25L
+THIN <- 5L
+CORES <- 25L
+NSIM <- 100L
+
+# testing:
+# MCMC_ITER <- 10L
+# MCMC_WARMUP <- 9L
+# MCMC_CHAINS <- 1L
+# THIN <- 1L
+# CORES <- 1L
+# NSIM <- 1L
+
+RUN_MCMC <- TRUE
+INDEX_CORES <- 2L
+
+# end setup -----------------------------------------------------------
+
+# remotes::install_github("https://github.com/pbs-assess/sdmTMB",
+#   ref = "mvrfrw")
 
 library(tidyverse)
 library(sdmTMB)
@@ -165,33 +190,35 @@ dat_tbl$fit <- furrr::future_map2(
 
 ## UPDATE MCMC DRAWS -----------------------------------------------------------
 
-set.seed(456)
-furrr::future_map2(
-  dat_tbl$fit, dat_tbl$species, function (x, y) {
-    object <- x
-    samp <- sample_mle_mcmc(
-      object, mcmc_iter = 110L, mcmc_warmup = 100L, mcmc_chains = 50L,
-      stan_args = list(thin = 5L, cores = 50L)
-    )
-    obj <- object$tmb_obj
-    random <- unique(names(obj$env$par[obj$env$random]))
-    pl <- as.list(object$sd_report, "Estimate")
-    fixed <- !(names(pl) %in% random)
-    map <- lapply(pl[fixed], function(x) factor(rep(NA, length(x))))
-    obj <- TMB::MakeADFun(obj$env$data, pl, map = map, DLL = "sdmTMB")
-    obj_mle <- object
-    obj_mle$tmb_obj <- obj
-    obj_mle$tmb_map <- map
-    sim_out <- simulate(
-      obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp), nsim = 100L
-    )
-    saveRDS(
-      sim_out,
-      here::here("data", "fits",
-                 paste(y, "_mcmc_draws_nb2_mvrfrw.rds", sep = ""))
-    )
-  }
-)
+if (RUN_MCMC) {
+  set.seed(456)
+  purrr::map2(
+    dat_tbl$fit, dat_tbl$species, function (x, y) {
+      object <- x
+      samp <- sample_mle_mcmc(
+        object, mcmc_iter = MCMC_ITER, mcmc_warmup = MCMC_WARMUP, mcmc_chains = MCMC_CHAINS,
+        stan_args = list(thin = THIN, cores = CORES)
+      )
+      obj <- object$tmb_obj
+      random <- unique(names(obj$env$par[obj$env$random]))
+      pl <- as.list(object$sd_report, "Estimate")
+      fixed <- !(names(pl) %in% random)
+      map <- lapply(pl[fixed], function(x) factor(rep(NA, length(x))))
+      obj <- TMB::MakeADFun(obj$env$data, pl, map = map, DLL = "sdmTMB")
+      obj_mle <- object
+      obj_mle$tmb_obj <- obj
+      obj_mle$tmb_map <- map
+      sim_out <- simulate(
+        obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp), nsim = NSIM
+      )
+      saveRDS(
+        sim_out,
+        here::here("data", "fits",
+          paste(y, "_mcmc_draws_nb2_mvrfrw.rds", sep = ""))
+      )
+    }
+  )
+}
 
 dat_tbl$sims <- purrr::map(
   dat_tbl$species,
@@ -231,11 +258,12 @@ dir.create(here::here("data", "fits", "sim_fit"), showWarnings = FALSE)
 
 sp_vec <- unique(sim_tbl$species)
 
-future::plan(future::multisession, workers = 2L)
+future::plan(future::multisession, workers = INDEX_CORES)
 # if (FALSE) {
 for (i in seq_along(sp_vec)) {
   sim_tbl_sub <- sim_tbl %>% filter(species == sp_vec[i])
   furrr::future_pmap(
+  # purrr::pmap(
     list(sim_tbl_sub$sim_dat, sim_tbl_sub$fit, sim_tbl_sub$iter), 
     function (x, fit, iter) {
       if (sp_vec[i] %in% c("chinook", "coho", "chum")) {
