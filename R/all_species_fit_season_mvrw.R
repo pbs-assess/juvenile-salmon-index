@@ -1578,3 +1578,42 @@ sd(dum$volume_km3)
 mean(dum$target_depth)
 sd(dum$target_depth)
 
+
+## IPES ONLY PREDICTIONS -------------------------------------------------------
+
+index_grid_ipes <- index_grid %>% 
+  filter(survey_f == "ipes") %>% 
+  mutate(day_night = as.factor(day_night),
+         trim = ifelse(
+           season_f == "wi" & utm_y_1000 < 5551, "yes", "no"
+         )) %>%
+  #subset to northern domain that's well sampled in recent years
+  filter(trim == "no")
+
+ind_preds_summer_ipes <- purrr::map(
+  dat_tbl %>% pull(fit),
+  ~ {
+    predict(.x,
+            newdata = index_grid_ipes %>%
+              filter(season_f == "su"),
+            se_fit = FALSE, re_form = NULL, return_tmb_object = TRUE)
+  }
+)
+
+index_list_summer_ipes <- furrr::future_map(
+  ind_preds_summer_ipes,
+  get_index,
+  area = sp_scalar,
+  bias_correct = TRUE
+)
+index_list_summer_ipes_out <- purrr::map2(
+  index_list_summer_ipes, dat_tbl$species,
+  function (x, y) {
+    x %>%
+      mutate(season_f = "su",
+             species = y)
+  }
+)
+
+saveRDS(index_list_summer_ipes_out,
+        here::here("data", "season_index_list_mvrfrw_summer_ipes.rds"))
