@@ -568,6 +568,10 @@ ppn_coverage <- purrr::map(ys_key$year_season_f, function (x) {
 }) %>% 
   unlist()
 
+n_tows <- all_fit_tbl$data[[1]] %>%
+  group_by(year, season_f) %>% 
+  summarise(n_tows = length(unique(unique_event)))
+
 ys_key2 <- ys_key %>% 
   mutate(
     ppn_coverage = ppn_coverage,
@@ -577,7 +581,8 @@ ys_key2 <- ys_key %>%
   mutate(
     scale_coverage = ppn_coverage / max(ppn_coverage)
   ) %>% 
-  ungroup()
+  ungroup() %>% 
+  left_join(., n_tows, by = c("year", "season_f"))
 
 
 # import saved indices from all_species_fit_season.R
@@ -623,11 +628,12 @@ sim_ind_dat <- sim_index_list %>%
   mutate(
     season = fct_recode(season_f, "summer" = "su", "fall" = "wi"),
     resid_est = true_log_est - log_est
+    # TODO: CALC spatial coverage as number of tows
   ) %>% 
   left_join(
     ., 
     ys_key2 %>% dplyr::select(-year),
-    by = c("season_f", "year_f"))
+    by = c("season_f", "year_f")) 
 
 
 png(here::here("figs", "ms_figs_season_mvrw", "sim_index.png"), 
@@ -661,3 +667,25 @@ ggplot() +
   theme(axis.title.x = element_blank())  +
   scale_fill_gradient2(name = "Relative Spatial\nCoverage")
 dev.off()
+
+
+mae_dat <- sim_ind_dat %>% 
+  #remove one iteration with error
+  filter(!is.na(resid_est)) %>% 
+  group_by(year_f, season, species, scale_coverage, n_tows) %>% 
+  summarize(
+    mae = sum(abs(resid_est) / length(unique(sim_ind_dat$iter)))
+  ) 
+mae_fit <- lme4::lmer(mae ~ scale_coverage + (1 | species), data = mae_dat)
+  
+
+png(here::here("figs", "ms_figs_season_mvrw", "mae_coverage.png"), 
+    height = 4, width = 6, units = "in", res = 200)
+ggplot(.) +
+  geom_point(aes(x = scale_coverage, y = mae, fill = season), shape = 21) +
+  scale_fill_discrete(name = "Season") +
+  facet_wrap(~species) +
+  ggsidekick::theme_sleek() +
+  labs(y = "Mean Absolute Error", x = "Relative Proportion of Grid Sampled")
+dev.off()
+  

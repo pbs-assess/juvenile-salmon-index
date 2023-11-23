@@ -1079,33 +1079,15 @@ index_dat %>%
 
 # ESTIMATE DECLINE -------------------------------------------------------------
 
-# ppn of years below long term average
-# dum <- index_dat2 %>% 
-#   select(season_f, species, log_est, mean_log_est, year) %>% 
-#   distinct() %>% 
-#   filter(year > 2016) %>% 
-#   mutate(
-#     below_avg = ifelse(log_est < mean_log_est, 1, 0)
-#   )
-# n_yrs <- length(unique(dum$year))
-# 
-# dum %>% 
-#   group_by(species, season_f) %>% 
-#   summarize(
-#     ppn_below = sum(below_avg) / n_yrs
-#   ) 
-
-
-# join
 index_lm_dat <- rbind(
   index_dat %>% 
     filter(season_f == "su",
            year > 2010) %>% 
-    select(log_est, se, species, year, season_f) %>% 
+    dplyr::select(log_est, se, species, year, season_f) %>% 
     mutate(survey_eff = "yes",
            weight = (1 / se^2)),
   index_dat2 %>% 
-    select(log_est, se, species, year, season_f) %>% 
+    dplyr::select(log_est, se, species, year, season_f) %>% 
     filter(year > 2010) %>% 
     mutate(survey_eff = "no",
            weight = (1 / se^2))
@@ -1134,7 +1116,7 @@ index_lm_dat$pred <- purrr::map2(
 
 # plot trends
 index_lm_dat %>% 
-  select(species, survey_eff, pred) %>% 
+  dplyr::select(species, survey_eff, pred) %>% 
   unnest(cols = c(pred)) %>%
   mutate(upr = pred_mean + 1.96 * pred_se,
          lwr = pred_mean - 1.96 * pred_se) %>% 
@@ -1156,7 +1138,7 @@ index_lm_dat$coefs <- purrr::map(
  ) 
  
 index_lm_plot_dat <- index_lm_dat %>% 
-  select(species, survey_eff, coefs) %>% 
+  dplyr::select(species, survey_eff, coefs) %>% 
   unnest(cols = c(coefs)) %>% 
   filter(term == "year") %>% 
   mutate(
@@ -1177,7 +1159,7 @@ ggplot(index_lm_plot_dat,
   scale_color_manual(values = col_pal) +
   scale_fill_manual(values = col_pal) +
   ggsidekick::theme_sleek() +
-  labs(x = "Survey Effects Accounted For", y = "Estimated Decline") +
+  labs(x = "Survey/Diel Effects Accounted For", y = "Estimated Decline") +
   theme(legend.position = "none") +
   scale_y_continuous(
     breaks = seq(-60, 20, by = 20),
@@ -1211,7 +1193,7 @@ spatial_grid <- pred_grid_list %>%
   filter(
     !survey_f == "ipes"
   ) %>%
-  select(-c(depth, slope)) %>% 
+  dplyr::select(-c(depth, slope)) %>% 
   left_join(
     ., yr_key, by = "year"
   )
@@ -1435,7 +1417,7 @@ dev.off()
 omega_season <- sub_spatial %>% 
   # values will be duplicated across years, seasons and surveys; select one
   filter(year_f == year_seq[1], season_f == "wi") %>% 
-  select(X, Y, species, starts_with("zeta_s_season_")) %>%
+  dplyr::select(X, Y, species, starts_with("zeta_s_season_")) %>%
   pivot_longer(cols = starts_with("zeta"), values_to = "omega_est", 
                names_to = "season", names_prefix = "zeta_s_season_f") %>% 
   filter(!season == "sp") %>% 
