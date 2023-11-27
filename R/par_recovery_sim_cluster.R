@@ -108,6 +108,11 @@ index_grid_hss <- readRDS(here::here("data", "index_hss_grid.rds")) %>%
 
 sp_scalar <- 1 * (13 / 1000) * 500
 
+# fitted model from all_species_fit.R
+all_fit_tbl <- readRDS(
+  here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_final.rds")
+)
+
 
 ## FIT MODEL TO EACH SPECIES ---------------------------------------------------
 
@@ -402,10 +407,6 @@ for (i in seq_along(sp_vec)) {
 
 ## COMPARE PARAMETERS ----------------------------------------------------------
 
-# fitted model from all_species_fit.R
-all_fit_tbl <- readRDS(
-  here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_final.rds")
-)
 
 # parameters from original fit
 fit_pars <- purrr::map2(
@@ -616,8 +617,6 @@ sim_index_list <- purrr::map2(
   }
 )
 
-n_iter <- length(sim_index_list_fall[[1]]) #how many sims per species?
-
 sim_ind_dat <- sim_index_list %>%
   bind_rows() %>% 
   left_join(
@@ -634,6 +633,8 @@ sim_ind_dat <- sim_index_list %>%
     ., 
     ys_key2 %>% dplyr::select(-year),
     by = c("season_f", "year_f")) 
+
+n_iter <- length(unique(sim_ind_dat$iter)) #how many sims per species?
 
 
 png(here::here("figs", "ms_figs_season_mvrw", "sim_index.png"), 
@@ -674,14 +675,15 @@ mae_dat <- sim_ind_dat %>%
   filter(!is.na(resid_est)) %>% 
   group_by(year_f, season, species, scale_coverage, n_tows) %>% 
   summarize(
-    mae = sum(abs(resid_est) / length(unique(sim_ind_dat$iter)))
+    mae = sum(abs(resid_est) / n_iter)
   ) 
-mae_fit <- lme4::lmer(mae ~ scale_coverage + (1 | species), data = mae_dat)
-  
+mae_fit <- lme4::lmer(log(mae) ~ scale_coverage + (1 | species), data = mae_dat)
+mae_fit2 <- lme4::lmer(log(mae) ~ n_tows + (1 | species), data = mae_dat)
+
 
 png(here::here("figs", "ms_figs_season_mvrw", "mae_coverage.png"), 
     height = 4, width = 6, units = "in", res = 200)
-ggplot(.) +
+ggplot(mae_dat) +
   geom_point(aes(x = scale_coverage, y = mae, fill = season), shape = 21) +
   scale_fill_discrete(name = "Season") +
   facet_wrap(~species) +
