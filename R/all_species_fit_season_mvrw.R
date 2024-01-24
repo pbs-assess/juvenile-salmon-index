@@ -254,7 +254,7 @@ dat_tbl %>%
   arrange(species, AIC)
 
 
-# RW doesn't converge for coho, but use for all other species
+# use FEs for species with cycles, otherwise don't
 dat_tbl <- dat_tbl %>%
   filter((species %in% c("pink", "sockeye") & model == "mvrfrw_fe") |
            (species %in% c("coho", "chum", "chinook") & model == "mvrfrw"))
@@ -430,7 +430,8 @@ ran_pars <- purrr::pmap(
   }
 ) %>% 
   bind_rows()
-ran_pars$term <- fct_recode(ran_pars$term, "sigma_omega" = "sigma_Z")
+ran_pars$term <- fct_recode(ran_pars$term, "sigma_omega" = "sigma_Z", 
+                            "kappa" = "range")
 
 png(here::here("figs", "ms_figs_season_mvrw", "ran_pars.png"), height = 4,
     width = 8,
