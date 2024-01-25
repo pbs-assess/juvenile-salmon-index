@@ -391,10 +391,13 @@ alpha_2 <- ggplot(
   theme(axis.title = element_blank())
 
 plot_g <- cowplot::plot_grid(alpha_1, alpha_2, ncol = 1)
-y_grob <- grid::textGrob("Parameter Estimate", rot = 90)
+y_grob <- grid::textGrob(
+  "Parameter Estimate", rot = 90,
+  gp = grid::gpar(col = "grey30", fontsize = 12, fontface = "plain")
+)
 
-png(here::here("figs", "ms_figs_season_mvrw", "fix_ints.png"), height = 4, width = 6,
-    units = "in", res = 200)
+png(here::here("figs", "ms_figs_season_mvrw", "fix_ints.png"), 
+    height = 4, width = 6,  units = "in", res = 250)
 gridExtra::grid.arrange(
   gridExtra::arrangeGrob(plot_g, left = y_grob)
 )
@@ -435,7 +438,7 @@ ran_pars$term <- fct_recode(ran_pars$term, "sigma_omega" = "sigma_Z",
 
 png(here::here("figs", "ms_figs_season_mvrw", "ran_pars.png"), height = 4,
     width = 8,
-    units = "in", res = 200)
+    units = "in", res = 250)
 ggplot(
   ran_pars,
   aes(species, estimate, ymin = conf.low, ymax = conf.high,
@@ -446,7 +449,8 @@ ggplot(
   ylab("Parameter Estimate") +
   geom_pointrange(position = position_dodge(width = 0.4), shape = 21) +
   facet_wrap(~term, scales = "free_y") +
-  guides(fill = "none")
+  guides(fill = "none") +
+  theme(axis.title.x = element_blank())
 dev.off()
 
 
@@ -518,7 +522,8 @@ depth_plot <- ggplot(
   xlab("Target Headrope Depth (m)") +
   guides(fill = "none") +
   theme(axis.title.y = element_blank(),
-        panel.spacing = unit(0.8, "lines")) +
+        panel.spacing = unit(0.8, "lines"),
+        axis.title.x = element_text(size = 12)) +
   ylab("Scaled Abundance Index") 
 
 
@@ -587,15 +592,18 @@ dist_plot <- ggplot(
   facet_wrap(~species, nrow = 1) +
   coord_cartesian(y = c(0, 2.5)) +
   xlab("Distance to Coastline (km)") +
-  theme(axis.title.y = element_blank()) +
+  theme(axis.title.y = element_blank(),
+        axis.title.x = element_text(size = 12)) +
   guides(fill = "none")
 
 plot_g2 <- cowplot::plot_grid(depth_plot, dist_plot, ncol = 1)
-y_grob <- grid::textGrob("Scaled Abundance Index", rot = 90)
+y_grob <- grid::textGrob(
+  "Scaled Abundance Index", rot = 90,
+  gp = grid::gpar(col = "grey30", fontsize = 14, fontface = "plain")
+  )
 
 png(here::here("figs", "ms_figs_season_mvrw", "smooth_effs.png"), height = 5,
-    width = 8,
-    units = "in", res = 200)
+    width = 8,    units = "in", res = 250)
 gridExtra::grid.arrange(
   gridExtra::arrangeGrob(plot_g2, left = y_grob)
 )
@@ -816,8 +824,10 @@ index_dat <- index_list %>%
   ungroup() %>% 
   mutate(
     scale_geo_est = est / geo_mean_est,
-    scale_geo_lwr = ifelse(survey == "sampled", lwr / geo_mean_est, scale_geo_est),
-    scale_geo_upr = ifelse(survey == "sampled", upr / geo_mean_est, scale_geo_est)
+    scale_geo_lwr = lwr / geo_mean_est,
+    scale_geo_upr = upr / geo_mean_est
+    # scale_geo_lwr = ifelse(survey == "sampled", lwr / geo_mean_est, scale_geo_est),
+    # scale_geo_upr = ifelse(survey == "sampled", upr / geo_mean_est, scale_geo_est)
   )
 
 
@@ -837,10 +847,13 @@ log_index <- ggplot(index_dat, aes(year, est)) +
   facet_grid(species~season, scales = "free_y") +
   scale_fill_manual(values = col_pal) +
   theme(legend.position = "none",
-        axis.title.x = element_blank())
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 18),
+        axis.text = element_text(size = 12),
+        strip.text = element_text(size = 13))
 
 png(here::here("figs", "ms_figs_season_mvrw", "log_index.png"),
-    height = 8, width = 8, units = "in", res = 200)
+    height = 8, width = 8, units = "in", res = 250)
 log_index
 dev.off()
 
@@ -857,33 +870,36 @@ geo_mean_index <- ggplot(index_dat, aes(year, scale_geo_est)) +
   facet_grid(species~season, scales = "free_y") +
   scale_fill_manual(values = col_pal) +
   theme(legend.position = "none",
-        axis.title.x = element_blank()) 
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 18),
+        axis.text = element_text(size = 12),
+        strip.text = element_text(size = 13)) 
 
 png(here::here("figs", "ms_figs_season_mvrw", "gm_index.png"), 
-    height = 8, width = 8, units = "in", res = 200)
+    height = 8, width = 8, units = "in", res = 250)
 geo_mean_index
 dev.off()
 
 
 # log abundance coded by survey coverage (looks good)
-shape_pal2 <- c(1, 21)
-names(shape_pal2) <- unique(index_dat$sparse)
-log_index_sparse <- ggplot(index_dat, aes(year, est)) +
-  geom_pointrange(aes(ymin = lwr, ymax = upr, fill = species,
-                      shape = sparse)) +
-  scale_y_log10() +
-  # geom_hline(aes(yintercept = mean_log_est), lty = 2) +
-  labs(x = "Year", y = "Log Abundance Index") +
-  scale_shape_manual(values = shape_pal2) +
-  ggsidekick::theme_sleek() +
-  facet_grid(species~season, scales = "free_y") +
-  scale_fill_manual(values = col_pal) +
-  theme(axis.title.x = element_blank())
-
-png(here::here("figs", "diagnostics", "log_index_sparse.png"),
-    height = 8, width = 8, units = "in", res = 200)
-log_index_sparse
-dev.off()
+# shape_pal2 <- c(1, 21)
+# names(shape_pal2) <- unique(index_dat$sparse)
+# log_index_sparse <- ggplot(index_dat, aes(year, est)) +
+#   geom_pointrange(aes(ymin = lwr, ymax = upr, fill = species,
+#                       shape = sparse)) +
+#   scale_y_log10() +
+#   # geom_hline(aes(yintercept = mean_log_est), lty = 2) +
+#   labs(x = "Year", y = "Log Abundance Index") +
+#   scale_shape_manual(values = shape_pal2) +
+#   ggsidekick::theme_sleek() +
+#   facet_grid(species~season, scales = "free_y") +
+#   scale_fill_manual(values = col_pal) +
+#   theme(axis.title.x = element_blank())
+# 
+# png(here::here("figs", "diagnostics", "log_index_sparse.png"),
+#     height = 8, width = 8, units = "in", res = 200)
+# log_index_sparse
+# dev.off()
 
 
 ## scaled abundance 
@@ -908,7 +924,10 @@ scaled_index <- index_dat %>%
   facet_grid(species~season, scales = "free_y") +
   scale_fill_manual(values = col_pal) +
   theme(legend.position = "none",
-        axis.title.x = element_blank())
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 18),
+        axis.text = element_text(size = 12),
+        strip.text = element_text(size = 13))
 
 png(here::here("figs", "ms_figs_season_mvrw", "scaled_index.png"), 
     height = 8, width = 8, units = "in", res = 200)
@@ -1047,27 +1066,39 @@ index_list_naive_out <- readRDS(
 
 index_dat2 <- index_list_naive_out %>% 
   bind_rows() %>% 
-  mutate(preds = "obs",
-         log_lwr = log_est - (1.96 * se),
-         log_upr = log_est + (1.96 * se)
-  ) %>% 
+  mutate(model = "no survey effects") %>% 
   filter(season_f == "su")
 
+index_by_model <- index_dat %>% 
+  mutate(
+    model = "survey effects"
+  ) %>% 
+  filter(season_f == "su") %>% 
+  select(colnames(index_dat2)) %>% 
+  bind_rows(., index_dat2)
 
-png(here::here("figs", "ms_figs_season_mvrw", "log_index_no_survey_eff.png"), 
-    height = 8, width = 8, units = "in", res = 200)
-ggplot(index_dat2, aes(year, log_est)) +
-  geom_pointrange(aes(ymin = log_lwr, ymax = log_upr, fill = species),
-                  shape = 24) +
-  labs(x = "Year", y = "Log Abundance Index") +
-  scale_shape_manual(values = shape_pal) +
+shape_pal2 <- c(24, 21)
+names(shape_pal2) <-  c("no survey effects", "survey effects")
+
+png(here::here("figs", "ms_figs_season_mvrw", "log_index_both_surveys.png"), 
+    height = 8, width = 8, units = "in", res = 250)
+ggplot(index_by_model, aes(year, est)) +
+  geom_pointrange(
+    aes(ymin = lwr, ymax = upr, fill = species, shape = model),
+    position = position_dodge(width = .7)
+  ) +
+  labs(x = "Year", y = "Abundance Index") +
+  scale_shape_manual(values = shape_pal2) +
+  scale_y_log10() +
   ggsidekick::theme_sleek() +
-  facet_wrap(~species, scales = "free_y", ncol =  1) +
-  scale_fill_manual(values = col_pal) +
-  theme(legend.position = "none",
-        axis.title.x = element_blank())
+  facet_wrap(~species, scales = "free_y", ncol = 1) +
+  scale_fill_manual(values = col_pal, guide = "none") +
+  theme(legend.position = "top",
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 18),
+        axis.text = element_text(size = 12),
+        strip.text = element_text(size = 13))
 dev.off()
-
 
 # sd of index in summer vs fall
 index_dat %>% 
@@ -1161,7 +1192,10 @@ ggplot(index_lm_plot_dat,
   scale_fill_manual(values = col_pal) +
   ggsidekick::theme_sleek() +
   labs(x = "Survey/Diel Effects Accounted For", y = "Estimated Decline") +
-  theme(legend.position = "none") +
+  theme(legend.position = "none",
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 12),
+        strip.text = element_text(size = 13)) +
   scale_y_continuous(
     breaks = seq(-60, 20, by = 20),
     labels = paste(seq(-60, 20, by = 20), "%", sep = "")
