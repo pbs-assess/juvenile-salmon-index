@@ -1034,6 +1034,48 @@ dat_tbl_naive <- readRDS(
   here::here("data", "fits", "all_spatial_varying_nb2_mvrfrw_naive.rds")
 )
 
+
+# AIC table
+survey_eff_aic <- purrr::map(
+  dat_tbl$fit,
+  AIC
+) %>% 
+  unlist()
+no_survey_eff_aic <- purrr::map(
+  dat_tbl_naive$fit,
+  AIC
+) %>% 
+  unlist()
+
+survey_eff_aic - no_survey_eff_aic
+
+both_fits <- c(dat_tbl$fit, dat_tbl_naive$fit)
+survey_eff_out <- data.frame(
+  species = rep(dat_tbl$species, times = 2),
+  model = rep(c("survey effects", "no survey effects"), each = 5),
+  AIC = purrr::map(both_fits, AIC) %>%
+    unlist(),
+  log_likelihood = purrr::map(
+    both_fits,
+    ~ logLik(.x) %>%
+      as.numeric()
+  ) %>%
+    unlist(),
+  n_FE = purrr::map(
+    both_fits,
+    ~ tidy(.x, effects = "fixed", conf.int = T) %>%
+      nrow()
+  ) %>%
+    unlist()
+) %>% 
+  arrange(
+    species, model
+  )
+write.csv(survey_eff_out,
+          here::here("data", "survey_eff_model_comp.csv"),
+          row.names = FALSE)
+  
+
 # compare HSS index to one where survey design is not accounted for
 ind_preds_naive <- purrr::map(
   dat_tbl_naive %>% pull(fit),

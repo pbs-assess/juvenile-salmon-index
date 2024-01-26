@@ -49,13 +49,18 @@ dat <- dat_in %>%
 
 # define training and testing data; use 30% of post-2016 (IPES period) data as
 # testing
-test_dum <- dat %>% 
-  filter(year > 2016) %>% 
-  pull(unique_event) %>% 
-  unique()
+# test_dum <- dat %>% 
+#   filter(year > 2016) %>% 
+#   pull(unique_event) %>% 
+#   unique()
+# set.seed(1234)
+# test_sets <- sample(
+#   test_dum, size = round(0.4 * length(test_dum), digits = 0), replace = FALSE
+# )
 set.seed(1234)
+sets <- unique(dat$unique_event)
 test_sets <- sample(
-  test_dum, size = round(0.4 * length(test_dum), digits = 0), replace = FALSE
+  sets, size = round(0.1 * length(sets), digits = 0), replace = FALSE
 )
 
 dat$test <- ifelse(
@@ -271,15 +276,15 @@ train_dat_tbl$fit_no_survey <- train_fits_list2
 
 saveRDS(
   train_dat_tbl,
-  here::here("data", "fits", "cv_survey_effect_fits.RDS")
+  here::here("data", "fits", "cv_survey_effect_fits_no_block.RDS")
 )
 
 
 ## EVALUATE PERFORMANCE WITH RMSE ----------------------------------------------
 
-
-aic_survey <- purrr::map(train_dat_tbl$fit_survey, AIC) %>% unlist()
-aic_no_survey <- purrr::map(train_dat_tbl$fit_no_survey, AIC) %>% unlist()
+train_dat_tbl <- readRDS(
+  here::here("data", "fits", "cv_survey_effect_fits.RDS")
+)
 
 
 test_dat_tbl <- test_dat %>%
@@ -320,5 +325,13 @@ rmse_no_survey <- purrr::map2(
 ) %>% 
   unlist()
 
+model_comp_out <- data.frame(
+  species = rep(test_dat_tbl$species, times = 2),
+  model = rep(c("survey eff", "no survey eff"), each = 5),
+  rmse = c(rmse_survey, rmse_no_survey)
+) 
 
-
+unblocked_cv <- data.frame(
+  species = test_dat_tbl$species,
+  rmse = rmse_survey - rmse_no_survey
+)

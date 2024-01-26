@@ -1,0 +1,11 @@
+"species","model","AIC","log_likelihood","n_FE"
+"chinook","no survey effects",11646.8370985482,-5812.4185492741,5
+"chinook","survey effects",11650.7328079295,-5812.36640396477,7
+"chum","no survey effects",13095.0901961295,-6536.54509806475,5
+"chum","survey effects",13083.987354306,-6528.99367715299,7
+"coho","no survey effects",10367.740757427,-5172.8703787135,5
+"coho","survey effects",10325.3019212351,-5149.65096061755,7
+"pink","no survey effects",9248.74617830124,-4612.37308915062,6
+"pink","survey effects",9249.98240401178,-4610.99120200589,8
+"sockeye","no survey effects",6826.10184264526,-3399.05092132263,8
+"sockeye","survey effects",6816.44029155997,-3392.22014577999,10
