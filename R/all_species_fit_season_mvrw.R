@@ -3,8 +3,9 @@
 ## model seasonal abundance as MVN random walk
 ## 1) Fit spatiotemporal model to each species
 ## 2) Calculate index for summer and fall (assuming surface and day tow)
-## 3) Calculate fixed effects for spatial covariates
-## 4) Calculate spatiotemporal effects (maps by year)
+## 3) Compare indices including/excluding survey effects
+## 4) Calculate fixed effects for spatial covariates
+## 5) Calculate spatiotemporal effects (maps by year)
 ## Aug 22, 223
 
 
