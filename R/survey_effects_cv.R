@@ -57,20 +57,20 @@ dat <- dat_in %>%
 # test_sets <- sample(
 #   test_dum, size = round(0.4 * length(test_dum), digits = 0), replace = FALSE
 # )
-set.seed(1234)
-sets <- unique(dat$unique_event)
-test_sets <- sample(
-  sets, size = round(0.1 * length(sets), digits = 0), replace = FALSE
-)
-
-dat$test <- ifelse(
-  dat$unique_event %in% test_sets,
-  TRUE,
-  FALSE
-)
-
-train_dat <- dat %>% filter(test == FALSE)
-test_dat <- dat %>% filter(test == TRUE)
+# set.seed(1234)
+# sets <- unique(dat$unique_event)
+# test_sets <- sample(
+#   sets, size = round(0.1 * length(sets), digits = 0), replace = FALSE
+# )
+# 
+# dat$test <- ifelse(
+#   dat$unique_event %in% test_sets,
+#   TRUE,
+#   FALSE
+# )
+# 
+# train_dat <- dat %>% filter(test == FALSE)
+# test_dat <- dat %>% filter(test == TRUE)
 
 
 ## plotting color palette
@@ -84,7 +84,7 @@ future::plan(future::multisession, workers = 5)
 
 
 ## mesh shared among species
-dat_coords <- train_dat %>% 
+dat_coords <- dat %>% 
   filter(species == "chinook") %>% 
   select(utm_x_1000, utm_y_1000) %>% 
   as.matrix()
@@ -95,7 +95,7 @@ inla_mesh_raw <- INLA::inla.mesh.2d(
   offset = c(10, 50)
 )  
 spde <- make_mesh(
-  train_dat %>% 
+  dat %>% 
     filter(species == "chinook"),
   c("utm_x_1000", "utm_y_1000"),
   mesh = inla_mesh_raw
@@ -114,15 +114,15 @@ coast <- rbind(rnaturalearth::ne_states( "United States of America",
 
 ## FIT -------------------------------------------------------------------------
 
-train_dat_tbl <- train_dat %>%
+train_dat_tbl <- dat %>%
   group_by(species) %>%
   group_nest()
 
-train_fits_list <- furrr::future_map2(
+train_fits_list <- purrr::map2(
   train_dat_tbl$data, train_dat_tbl$species,
   function(dat_in, sp) {
     if (sp == "pink") {
-      sdmTMB(
+      sdmTMB_cv(
         n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
           scale_depth + pink_cycle,
         offset = dat_in$effort,
@@ -142,10 +142,11 @@ train_fits_list <- furrr::future_map2(
             )
           )
         ),
-        silent = FALSE
+        silent = FALSE,
+        k_folds = 6
       )
     } else if (sp == "sockeye") {
-      sdmTMB(
+      sdmTMB_cv(
         n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
           scale_depth + sox_cycle,
         offset = dat_in$effort,
@@ -165,10 +166,11 @@ train_fits_list <- furrr::future_map2(
             )
           )
         ),
-        silent = FALSE
+        silent = FALSE,
+        k_folds = 6
       )
     } else {
-      sdmTMB(
+      sdmTMB_cv(
         n_juv ~ 0 + season_f + day_night + survey_f + scale_dist +
           scale_depth,
         offset = dat_in$effort,
@@ -188,7 +190,8 @@ train_fits_list <- furrr::future_map2(
             )
           )
         ),
-        silent = FALSE
+        silent = FALSE,
+        k_folds = 6
       )
     }
   }
@@ -196,11 +199,11 @@ train_fits_list <- furrr::future_map2(
 
 
 # as above but no survey effects
-train_fits_list2 <- furrr::future_map2(
+train_fits_list2 <- purrr::map2(
   train_dat_tbl$data, train_dat_tbl$species,
   function(dat_in, sp) {
     if (sp == "pink") {
-      sdmTMB(
+      sdmTMB_cv(
         n_juv ~ 0 + season_f + scale_dist + scale_depth + pink_cycle,
         offset = dat_in$effort,
         data = dat_in,
@@ -219,10 +222,11 @@ train_fits_list2 <- furrr::future_map2(
             )
           )
         ),
-        silent = FALSE
+        silent = FALSE,
+        k_folds = 6
       )
     } else if (sp == "sockeye") {
-      sdmTMB(
+      sdmTMB_cv(
         n_juv ~ 0 + season_f + scale_dist + scale_depth + sox_cycle,
         offset = dat_in$effort,
         data = dat_in,
@@ -241,10 +245,11 @@ train_fits_list2 <- furrr::future_map2(
             )
           )
         ),
-        silent = FALSE
+        silent = FALSE,
+        k_folds = 6
       )
     } else {
-      sdmTMB(
+      sdmTMB_cv(
         n_juv ~ 0 + season_f + scale_dist + scale_depth,
         offset = dat_in$effort,
         data = dat_in,
@@ -263,7 +268,8 @@ train_fits_list2 <- furrr::future_map2(
             )
           )
         ),
-        silent = FALSE
+        silent = FALSE,
+        k_folds = 6
       )
     }
   }
@@ -276,62 +282,30 @@ train_dat_tbl$fit_no_survey <- train_fits_list2
 
 saveRDS(
   train_dat_tbl,
-  here::here("data", "fits", "cv_survey_effect_fits_no_block.RDS")
+  here::here("data", "fits", "cv_survey_effect_fits2.RDS")
 )
 
 
-## EVALUATE PERFORMANCE WITH RMSE ----------------------------------------------
+## EVALUTATE WITH LOGLIK -------------------------------------------------------
 
-train_dat_tbl <- readRDS(
-  here::here("data", "fits", "cv_survey_effect_fits.RDS")
-)
+train_dat_tbl$fit_survey[[1]]$sum_loglik
+train_dat_tbl$fit_no_survey[[1]]$sum_loglik
 
-
-test_dat_tbl <- test_dat %>%
-  group_by(species) %>%
-  group_nest() 
-
-fit_survey_preds <- purrr::map2(
-  train_dat_tbl$fit_survey,
-  test_dat_tbl$data,
-  ~ predict(
-    .x, newdata = .y, se_fit = FALSE
-  )
-)
-rmse_survey <- purrr::map2(
-  test_dat_tbl$data,
-  fit_survey_preds,
-  ~ Metrics::rmse(
-    .x$n_juv,
-    exp(.y$est)
-  )
+surv_loglik <- purrr::map(
+  train_dat_tbl$fit_survey, ~ .x$sum_loglik
 ) %>% 
   unlist()
- 
-fit_no_survey_preds <- purrr::map2(
-  train_dat_tbl$fit_no_survey,
-  test_dat_tbl$data,
-  ~ predict(
-    .x, newdata = .y, se_fit = FALSE
-  )
-) 
-rmse_no_survey <- purrr::map2(
-  test_dat_tbl$data,
-  fit_no_survey_preds,
-  ~ Metrics::rmse(
-    .x$n_juv,
-    exp(.y$est)
-  )
+no_surv_loglik <- purrr::map(
+  train_dat_tbl$fit_no_survey, ~ .x$sum_loglik
 ) %>% 
   unlist()
 
-model_comp_out <- data.frame(
-  species = rep(test_dat_tbl$species, times = 2),
-  model = rep(c("survey eff", "no survey eff"), each = 5),
-  rmse = c(rmse_survey, rmse_no_survey)
-) 
-
-unblocked_cv <- data.frame(
-  species = test_dat_tbl$species,
-  rmse = rmse_survey - rmse_no_survey
+loglik_out <- data.frame(
+  species = train_dat_tbl$species,
+  delta_loglik = surv_loglik - no_surv_loglik
 )
+
+
+write.csv(loglik_out,
+          here::here("data", "survey_eff_model_comp_kfolds.csv"),
+          row.names = FALSE)
