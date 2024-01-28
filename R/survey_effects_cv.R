@@ -301,11 +301,19 @@ no_surv_loglik <- purrr::map(
   unlist()
 
 loglik_out <- data.frame(
-  species = train_dat_tbl$species,
-  delta_loglik = surv_loglik - no_surv_loglik
+  species = rep(train_dat_tbl$species, times = 2),
+  model = rep(c("no survey effects", "survey effects"), each = 5),
+  kfolds_cv_sum_loglik = c(no_surv_loglik, surv_loglik)
 )
 
 
-write.csv(loglik_out,
+# import AIC model comparison table
+aic_tab <- read.csv(
+  here::here("data", "survey_eff_model_comp.csv"))
+
+tab_out <- aic_tab %>% 
+  left_join(., loglik_out, by = c("species", "model"))
+
+write.csv(tab_out,
           here::here("data", "survey_eff_model_comp_kfolds.csv"),
           row.names = FALSE)
