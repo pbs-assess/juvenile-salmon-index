@@ -72,6 +72,14 @@ dat <- dat_in %>%
 # train_dat <- dat %>% filter(test == FALSE)
 # test_dat <- dat %>% filter(test == TRUE)
 
+fold_ids <- dat %>% 
+  select(unique_event) %>% 
+  distinct() %>% 
+  mutate(
+    fold_id = sample(seq(1, 6, by = 1), nrow(.), replace = T)
+  )
+
+
 
 ## plotting color palette
 col_pal <- c('#7fc97f','#beaed4','#fdc086','#ffff99','#386cb0')
@@ -115,9 +123,11 @@ coast <- rbind(rnaturalearth::ne_states( "United States of America",
 ## FIT -------------------------------------------------------------------------
 
 train_dat_tbl <- dat %>%
+  left_join(., fold_ids, by = "unique_event") %>% 
   group_by(species) %>%
   group_nest()
 
+set.seed(123)
 train_fits_list <- purrr::map2(
   train_dat_tbl$data, train_dat_tbl$species,
   function(dat_in, sp) {
@@ -143,7 +153,8 @@ train_fits_list <- purrr::map2(
           )
         ),
         silent = FALSE,
-        k_folds = 6
+        fold_ids = fold_id,
+        use_initial_fit = TRUE
       )
     } else if (sp == "sockeye") {
       sdmTMB_cv(
@@ -167,7 +178,8 @@ train_fits_list <- purrr::map2(
           )
         ),
         silent = FALSE,
-        k_folds = 6
+        fold_ids = fold_id,
+        use_initial_fit = TRUE
       )
     } else {
       sdmTMB_cv(
@@ -191,7 +203,8 @@ train_fits_list <- purrr::map2(
           )
         ),
         silent = FALSE,
-        k_folds = 6
+        fold_ids = fold_id,
+        use_initial_fit = TRUE
       )
     }
   }
@@ -199,6 +212,7 @@ train_fits_list <- purrr::map2(
 
 
 # as above but no survey effects
+set.seed(123)
 train_fits_list2 <- purrr::map2(
   train_dat_tbl$data, train_dat_tbl$species,
   function(dat_in, sp) {
@@ -223,7 +237,8 @@ train_fits_list2 <- purrr::map2(
           )
         ),
         silent = FALSE,
-        k_folds = 6
+        fold_ids = fold_id,
+        use_initial_fit = TRUE
       )
     } else if (sp == "sockeye") {
       sdmTMB_cv(
@@ -246,7 +261,8 @@ train_fits_list2 <- purrr::map2(
           )
         ),
         silent = FALSE,
-        k_folds = 6
+        fold_ids = fold_id,
+        use_initial_fit = TRUE
       )
     } else {
       sdmTMB_cv(
@@ -269,7 +285,9 @@ train_fits_list2 <- purrr::map2(
           )
         ),
         silent = FALSE,
-        k_folds = 6
+        # k_folds = 6,
+        fold_ids = fold_id, 
+        use_initial_fit = TRUE
       )
     }
   }
