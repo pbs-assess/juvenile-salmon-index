@@ -49,7 +49,8 @@ dat <- dat_in %>%
     effort = log(volume_km3 * 500),
     scale_dist = scale(as.numeric(dist_to_coast_km))[ , 1],
     scale_depth = scale(as.numeric(target_depth))[ , 1],
-    day_night = as.factor(day_night)) %>% 
+    day_night = as.factor(day_night),
+    cpue = n_juv / (volume_km3 * 500)) %>% 
   filter(!species == "steelhead") %>% 
   droplevels() %>% 
   left_join(., yr_key, by = "year")

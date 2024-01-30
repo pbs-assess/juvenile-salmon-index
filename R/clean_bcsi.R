@@ -419,6 +419,33 @@ bubble_temp_coverage
 dev.off()
 
 
+# bubble plots of day/night coverage
+bubble_temp_coverage_dn <- dat_trim %>% 
+  group_by(year, week, day_night, season_f2) %>% 
+  summarize(n_tows = length(unique_event), .groups = "drop") %>% 
+  ungroup() %>% 
+  ggplot(.) +
+  geom_jitter(aes(y = week, x = year, size = n_tows, fill = day_night, 
+                  shape = season_f2),
+              # alpha = 0.3,
+              width = 0.25) +
+  ggsidekick::theme_sleek() +
+  scale_size_area(name = "Number\nof\nTows") +
+  scale_fill_brewer(type = "qual", palette = "Dark2", name = "Day/Night") +
+  scale_shape_manual(values = shape_pal, name = "Season") +
+  labs(x = "Year", y = "Week") +
+  guides(
+    fill = guide_legend(
+      override.aes = list(shape = 21)
+    )
+  )
+
+png(here::here("figs", "ms_figs_season_mvrw", "temp_cov_dn.png"), height = 5.5, 
+    width = 5.5, units = "in", res = 250)
+bubble_temp_coverage_dn
+dev.off()
+
+
 # histogram of swept volume
 hist_vol_swept <- ggplot(dat_trim) +
   geom_histogram(aes(x = volume_m3), bins = 50, alpha = 0.6) +
