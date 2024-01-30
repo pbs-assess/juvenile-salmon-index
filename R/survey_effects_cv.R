@@ -76,7 +76,7 @@ fold_ids <- dat %>%
   select(unique_event) %>% 
   distinct() %>% 
   mutate(
-    fold_id = sample(seq(1, 6, by = 1), nrow(.), replace = T)
+    fold_id = sample(seq(1, 5, by = 1), nrow(.), replace = T)
   )
 
 
@@ -153,7 +153,7 @@ train_fits_list <- purrr::map2(
           )
         ),
         silent = FALSE,
-        fold_ids = fold_id,
+        fold_ids = dat_in$fold_id,
         use_initial_fit = TRUE
       )
     } else if (sp == "sockeye") {
@@ -178,7 +178,7 @@ train_fits_list <- purrr::map2(
           )
         ),
         silent = FALSE,
-        fold_ids = fold_id,
+        fold_ids = dat_in$fold_id,
         use_initial_fit = TRUE
       )
     } else {
@@ -203,7 +203,7 @@ train_fits_list <- purrr::map2(
           )
         ),
         silent = FALSE,
-        fold_ids = fold_id,
+        fold_ids = dat_in$fold_id,
         use_initial_fit = TRUE
       )
     }
@@ -237,7 +237,7 @@ train_fits_list2 <- purrr::map2(
           )
         ),
         silent = FALSE,
-        fold_ids = fold_id,
+        fold_ids = dat_in$fold_id,
         use_initial_fit = TRUE
       )
     } else if (sp == "sockeye") {
@@ -261,7 +261,7 @@ train_fits_list2 <- purrr::map2(
           )
         ),
         silent = FALSE,
-        fold_ids = fold_id,
+        fold_ids = dat_in$fold_id,
         use_initial_fit = TRUE
       )
     } else {
@@ -285,14 +285,66 @@ train_fits_list2 <- purrr::map2(
           )
         ),
         silent = FALSE,
-        # k_folds = 6,
-        fold_ids = fold_id, 
+        fold_ids = dat_in$fold_id, 
         use_initial_fit = TRUE
       )
     }
   }
 )
 
+
+
+set.seed(123)
+coho_refit1 <- sdmTMB_cv(
+  n_juv ~ 0 + season_f + scale_dist + scale_depth + day_night + survey_f,
+  offset = "effort",
+  data = train_dat_tbl$data[[4]],
+  mesh = spde,
+  family = sdmTMB::nbinom2(),
+  spatial = "off",
+  spatial_varying = ~ 0 + season_f,
+  time = "year",
+  spatiotemporal = "rw",
+  anisotropy = TRUE,
+  groups = "season_f",
+  control = sdmTMBcontrol(
+    map = list(
+      ln_tau_Z = factor(
+        rep(1, times = length(unique(dat$season_f)))
+      )
+    )
+  ),
+  silent = FALSE,
+  fold_ids = train_dat_tbl$data[[4]]$fold_id,
+  use_initial_fit = TRUE
+)
+set.seed(123)
+coho_refit2 <- sdmTMB_cv(
+  n_juv ~ 0 + season_f + scale_dist + scale_depth,
+  offset =  "effort",
+  data = train_dat_tbl$data[[4]],
+  mesh = spde,
+  family = sdmTMB::nbinom2(),
+  spatial = "off",
+  spatial_varying = ~ 0 + season_f,
+  time = "year",
+  spatiotemporal = "rw",
+  anisotropy = TRUE,
+  groups = "season_f",
+  control = sdmTMBcontrol(
+    map = list(
+      ln_tau_Z = factor(
+        rep(1, times = length(unique(dat$season_f)))
+      )
+    )
+  ),
+  silent = FALSE,
+  fold_ids = train_dat_tbl$data[[4]]$fold_id,
+  use_initial_fit = TRUE
+)
+
+train_fits_list[[3]] <- coho_refit1
+train_fits_list2[[3]] <- coho_refit2
 
 train_dat_tbl$fit_survey <- train_fits_list
 train_dat_tbl$fit_no_survey <- train_fits_list2
@@ -308,6 +360,11 @@ saveRDS(
 
 train_dat_tbl$fit_survey[[1]]$sum_loglik
 train_dat_tbl$fit_no_survey[[1]]$sum_loglik
+
+purrr::map(
+  train_dat_tbl$fit_no_survey, ~ .x$converged
+) %>%
+  unlist()
 
 surv_loglik <- purrr::map(
   train_dat_tbl$fit_survey, ~ .x$sum_loglik
