@@ -1,6 +1,6 @@
 # Juvenile Salmon Fisheries-Independent Index
 
-Data and code associated with species-specific indices accounting for variability in timing, location, and design of DFO High Seas/Basin Scale Coastal Interactions Surveys surveys.
+Data and code associated with species-specific indices accounting for variability in timing, location, and design of DFO High Seas/Basin Scale Coastal Interactions Surveys surveys. Manuscript (**Model-based indices of juvenile Pacific salmon abundance highlight species-specific seasonal distributions and impacts of changes to survey design**) in revision with **Fisheries Research**.
 
 Scripts:
 1. clean_bcsi.R: data cleaning and figures related to raw data
