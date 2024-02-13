@@ -1,0 +1,11 @@
+species,model,AIC,log_likelihood,n_FE,kfolds_cv_sum_loglik
+chinook,no survey effects,11646.8371,-5812.418549,5,-5840.701913
+chinook,survey effects,11650.73281,-5812.366404,7,-5845.250056
+chum,no survey effects,13095.0902,-6536.545098,5,-9127.175743
+chum,survey effects,13083.98735,-6528.993677,7,-8949.599687
+coho,no survey effects,10367.74076,-5172.870379,5,-7065.311321
+coho,survey effects,10325.30192,-5149.650961,7,-7058.10471
+pink,no survey effects,9248.746178,-4612.373089,6,-7899.387151
+pink,survey effects,9249.982404,-4610.991202,8,-7861.020445
+sockeye,no survey effects,6826.101843,-3399.050921,8,-3895.089689
+sockeye,survey effects,6816.440292,-3392.220146,10,-3875.654138
