@@ -10,6 +10,7 @@ prediction-grids/*
 !data/*.rds
 !data/spatial/*.rds
 !data/preds/*.rds
+data/fits/sp_preds_mvrfrw.rds
 data/fits/*.rds
 figs/sopo_figs/
 figs/mesh_comparison/
