@@ -19,6 +19,7 @@ library(sdmTMB)
 library(ggplot2)
 library(sdmTMBextra)
 
+
 # make subdirectories for storage
 dir.create("data/fits", recursive = TRUE, showWarnings = FALSE)
 dir.create("data/preds", recursive = TRUE, showWarnings = FALSE)
@@ -71,19 +72,18 @@ dat_coords <- dat %>%
   filter(species == "chinook") %>% 
   select(utm_x_1000, utm_y_1000) %>% 
   as.matrix()
-inla_mesh_raw <- INLA::inla.mesh.2d(
+inla_mesh_raw <- fmesher::fm_mesh_2d_inla(
   loc = dat_coords,
   max.edge = c(2, 10) * 500,
   cutoff = 30,
   offset = c(10, 50)
-)  
+)
 spde <- make_mesh(
   dat %>% 
     filter(species == "chinook"),
   c("utm_x_1000", "utm_y_1000"),
   mesh = inla_mesh_raw
 ) 
-
 spde$mesh$n
 
 
